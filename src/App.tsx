@@ -73,6 +73,7 @@ function App() {
   const locationRef = useRef(location)
   locationRef.current = location
   const lastSyncAt = useRef(0)
+  const syncNeedsRerun = useRef(false)
 
   const refreshLocal = useCallback(async (selectedProfile: string) => {
     const [nextRecords, nextFiles, nextPending, nextOffline, publicOffline] = await Promise.all([localRecords(selectedProfile), getFiles(selectedProfile), getPending(selectedProfile), getOfflineBooks(selectedProfile), getOfflineBooks('PUBLIC_OFFLINE')])
@@ -111,30 +112,40 @@ function App() {
     }
     const targetProfile = profileFor(activeSession)
     if (syncFlight.current) {
-      if (syncFlight.current.profile === targetProfile) return syncFlight.current.promise
+      if (syncFlight.current.profile === targetProfile) {
+        syncNeedsRerun.current = true
+        return syncFlight.current.promise
+      }
       await syncFlight.current.promise
       if (profileRef.current !== targetProfile) return
     }
     setSyncing(true)
     const flight = (async () => {
       try {
-        const result = await syncNow(activeSession)
-        lastSyncAt.current = Date.now()
-        await refreshLocal(profileFor(activeSession))
-        if (profileRef.current === profileFor(activeSession)) {
-          if (result.conflicts) {
-            setNotice(`${result.conflicts} thay đổi cần đối soát; bản trên trình duyệt vẫn được giữ.`)
-          } else if (!silent) {
-            setNotice('Đã đồng bộ với tài khoản của bạn.')
+        do {
+          syncNeedsRerun.current = false
+          const result = await syncNow(activeSession)
+          lastSyncAt.current = Date.now()
+          await refreshLocal(profileFor(activeSession))
+          if (profileRef.current === profileFor(activeSession)) {
+            if (result.conflicts) {
+              setNotice(`${result.conflicts} thay đổi cần đối soát; bản trên trình duyệt vẫn được giữ.`)
+            } else if (!silent && !syncNeedsRerun.current) {
+              setNotice('Đã đồng bộ với tài khoản của bạn.')
+            }
           }
-        }
+        } while (syncNeedsRerun.current && profileRef.current === targetProfile)
       } catch (error) {
         if (profileRef.current === profileFor(activeSession)) {
           if (!silent || (error instanceof Error && error.message.includes('hết hạn'))) {
             setNotice(readableError(error))
           }
         }
-      } finally { setSyncing(false) }
+      } finally {
+        syncFlight.current = null
+        syncNeedsRerun.current = false
+        setSyncing(false)
+      }
     })()
     syncFlight.current = { profile: targetProfile, promise: flight }
     try { await flight } finally { if (syncFlight.current?.promise === flight) syncFlight.current = null }
@@ -180,6 +191,7 @@ function App() {
         }
         const payload = { book_id: book.id, locator_json: loc.locatorJson, progression: Math.max(0, Math.min(1, loc.progression)), chapter_title: loc.chapterTitle || null, last_read_at: ms(), sync_version: 1 }
         void mutate(curProfile, 'reading_progress', androidRecordId('reading_progress', book.id), payload, false, book.source === 'local').then(() => {
+          void refreshLocal(curProfile)
           if (curSession && navigator.onLine && book.source !== 'local') {
             void synchronize(curSession, true)
           }
@@ -380,9 +392,10 @@ async function sha256Hex(file: Blob): Promise<string> {
 
   function closeReader() {
     if (progressTimer.current) { clearTimeout(progressTimer.current); progressTimer.current = null }
-    if (reader && location) {
+    const loc = locationRef.current || location
+    if (reader && loc) {
       const book = reader.book
-      const payload = { book_id: book.id, locator_json: location.locatorJson, progression: Math.max(0, Math.min(1, location.progression)), chapter_title: location.chapterTitle || null, last_read_at: ms(), sync_version: 1 }
+      const payload = { book_id: book.id, locator_json: loc.locatorJson, progression: Math.max(0, Math.min(1, loc.progression)), chapter_title: loc.chapterTitle || null, last_read_at: ms(), sync_version: 1 }
       void mutate(profile, 'reading_progress', androidRecordId('reading_progress', book.id), payload, false, book.source === 'local').then(() => {
         void refreshLocal(profile)
         if (session && book.source !== 'local') void synchronize(session, true)
