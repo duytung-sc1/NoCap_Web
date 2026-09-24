@@ -55,6 +55,26 @@ export async function pushOperation(token: string, operation: SyncOperation) {
   return api<{ receipts: Array<{ opId: string; status: string; current: { version: number; deleted: number; payload: Record<string, unknown> } | null }> }>('/api/v1/sync/push', { method: 'POST', body: JSON.stringify({ operations: [operation] }) }, token)
 }
 
+export async function uploadBlob(token: string, hash: string, blob: Blob): Promise<{ hash: string }> {
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE}/api/v1/sync/blobs/${hash}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': String(blob.size),
+      },
+      body: blob,
+      cache: 'no-store',
+    })
+  } catch {
+    throw new Error('Không kết nối được máy chủ khi tải tệp lên. Kiểm tra mạng rồi thử lại.')
+  }
+  if (!response.ok) return parseError(response)
+  return response.json() as Promise<{ hash: string }>
+}
+
 export async function loadBookBytes(book: Book, token?: string): Promise<ArrayBuffer> {
   let url: string
   if (book.fileUrl?.startsWith('nocap-private:')) {
@@ -64,10 +84,12 @@ export async function loadBookBytes(book: Book, token?: string): Promise<ArrayBu
     throw new Error('Tài liệu này được lưu trên trình duyệt.')
   } else if (book.fileUrl) {
     const source = new URL(book.fileUrl)
-    // The local dev server proxies only catalogued Gutenberg books; their files
-    // do not set browser CORS headers. Worker-hosted files are fetched directly.
-    url = import.meta.env.DEV && source.hostname.endsWith('gutenberg.org')
-      ? `/dev-book/${encodeURIComponent(book.id)}` : book.fileUrl
+    // Sách từ Gutenberg hoặc nguồn ngoài không có CORS được tải qua endpoint của Worker.
+    if (source.hostname.endsWith('gutenberg.org') || (!source.hostname.includes('workers.dev') && !book.fileUrl.startsWith(API_BASE))) {
+      url = `${API_BASE}/api/v1/catalog/books/${encodeURIComponent(book.id)}/file`
+    } else {
+      url = book.fileUrl
+    }
   } else throw new Error('Sách chưa có tệp để đọc.')
   const headers = token && book.fileUrl?.startsWith('nocap-private:') ? { Authorization: `Bearer ${token}` } : undefined
   let response: Response

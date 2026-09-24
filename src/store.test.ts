@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto'
 import { expect, it } from 'vitest'
-import { getFiles, getPending, getRecords, removeLocalDocument, saveFile, savePending, saveRecord } from './store'
+import { getCachedCatalog, getFiles, getOfflineBook, getPending, getRecords, removeLocalDocument, removeOfflineBook, saveCachedCatalog, saveFile, saveOfflineBook, savePending, saveRecord } from './store'
 
 it('keeps Guest and two accounts separate and removes only a deleted local document', async () => {
   const documentId = `web-${crypto.randomUUID()}`
@@ -18,4 +18,17 @@ it('keeps Guest and two accounts separate and removes only a deleted local docum
   expect((await getPending('ACCOUNT:A')).length).toBe(0)
   expect((await getFiles('DEVICE_LOCAL')).some(file => file.book.id === documentId)).toBe(true)
   expect((await getFiles('ACCOUNT:B')).some(file => file.book.id === documentId)).toBe(true)
+})
+
+it('keeps downloaded books offline only for their owning profile', async () => {
+  const id = `offline-${crypto.randomUUID()}`
+  await saveOfflineBook('ACCOUNT:A', id, new Blob(['private test book']))
+  expect(await (await getOfflineBook('ACCOUNT:A', id))?.data.text()).toBe('private test book')
+  expect(await getOfflineBook('ACCOUNT:B', id)).toBeUndefined()
+  expect(await getOfflineBook('DEVICE_LOCAL', id)).toBeUndefined()
+
+  await removeOfflineBook('ACCOUNT:A', id)
+  expect(await getOfflineBook('ACCOUNT:A', id)).toBeUndefined()
+  await saveCachedCatalog([{ id, title: 'Public test book', author: '' }], [{ id: 'test', name: 'Test' }])
+  expect((await getCachedCatalog())?.books[0].id).toBe(id)
 })

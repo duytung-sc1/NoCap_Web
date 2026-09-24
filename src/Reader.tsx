@@ -38,6 +38,17 @@ function parseInitial(value?: string): Record<string, unknown> | null {
   try { return value ? JSON.parse(value) as Record<string, unknown> : null } catch { return null }
 }
 
+function findSpineHref(spine: unknown, targetHref?: string): string | undefined {
+  if (!targetHref) return undefined
+  const cleanTarget = targetHref.replace(/^\/+/, '').split('#')[0]
+  const items = (spine as { items?: Array<{ href?: string }> })?.items || []
+  const exact = items.find(item => item.href === cleanTarget || item.href === targetHref)
+  if (exact?.href) return exact.href
+  const ends = items.find(item => item.href && (item.href.endsWith(cleanTarget) || cleanTarget.endsWith(item.href)))
+  if (ends?.href) return ends.href
+  return cleanTarget
+}
+
 function EpubPane({ bytes, initial, fontSize, theme, onLocation, onSelection, onControls }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const rendition = useRef<Rendition | null>(null)
@@ -70,18 +81,62 @@ function EpubPane({ bytes, initial, fontSize, theme, onLocation, onSelection, on
           if (!start?.cfi) return
           const spineLength = (book?.spine as unknown as { items?: unknown[] })?.items?.length || 1
           const progression = Math.max(0, Math.min(1, Number.isFinite(start.percentage) ? start.percentage! : (start.index || 0) / spineLength))
-          const locatorJson = JSON.stringify({ href: start.href || '', type: 'application/xhtml+xml', locations: { cfi: start.cfi, progression, totalProgression: progression } })
+          let href = start.href || ''
+          if (!href && start.cfi && book?.spine) {
+            const section = (book.spine as unknown as { get: (cfi: string) => { href?: string } }).get(start.cfi)
+            if (section?.href) href = section.href
+          }
+          const locatorJson = JSON.stringify({
+            href: href.replace(/^\/+/, ''),
+            type: 'application/xhtml+xml',
+            locations: {
+              cfi: start.cfi,
+              progression,
+              totalProgression: progression,
+            },
+          })
           locationRef.current({ locatorJson, progression, chapterTitle: '' })
         })
         view.on('selected', (cfiRange: string, contents: { window?: Window }) => {
           const selected = contents.window?.getSelection()?.toString().trim() || ''
-          if (selected) selectionRef.current(selected.slice(0, 5000), JSON.stringify({ href: '', type: 'application/xhtml+xml', locations: { cfi: cfiRange } }))
+          if (!selected) return
+          let href = ''
+          if (book?.spine) {
+            const section = (book.spine as unknown as { get: (cfi: string) => { href?: string } }).get(cfiRange)
+            if (section?.href) href = section.href
+          }
+          selectionRef.current(selected.slice(0, 5000), JSON.stringify({
+            href: href.replace(/^\/+/, ''),
+            type: 'application/xhtml+xml',
+            locations: { cfi: cfiRange },
+          }))
         })
         controlsRef.current({ previous: () => { void view?.prev() }, next: () => { void view?.next() } })
         const saved = parseInitial(initial)
-        const locations = saved?.locations as { cfi?: string } | undefined
-        try { await view.display(locations?.cfi || (saved?.href as string) || undefined) }
-        catch { await view.display((saved?.href as string) || undefined) }
+        const locations = saved?.locations as { cfi?: string; progression?: number; totalProgression?: number } | undefined
+        if (locations?.cfi) {
+          try { await view.display(locations.cfi) }
+          catch { await view.display() }
+        } else if (saved?.href) {
+          const targetHref = findSpineHref(book?.spine, saved.href as string)
+          try {
+            await view.display(targetHref)
+            const prog = typeof locations?.progression === 'number' ? locations.progression : undefined
+            if (typeof prog === 'number' && prog > 0 && host.current) {
+              setTimeout(() => {
+                if (!host.current) return
+                const maxScroll = host.current.scrollHeight - host.current.clientHeight
+                if (maxScroll > 0) {
+                  host.current.scrollTo({ top: maxScroll * prog, behavior: 'instant' as ScrollBehavior })
+                }
+              }, 250)
+            }
+          } catch {
+            await view.display()
+          }
+        } else {
+          await view.display()
+        }
       } catch { if (alive) setError('Không mở được EPUB này. Tệp có thể bị hỏng hoặc không đúng định dạng.') }
     }
     void open()

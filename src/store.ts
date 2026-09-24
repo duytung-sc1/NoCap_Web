@@ -1,19 +1,30 @@
 import { openDB, type DBSchema } from 'idb'
-import type { LocalFile, PendingOperation, SyncRecord } from './types'
+import type { Book, Category, LocalFile, PendingOperation, SyncRecord } from './types'
+
+export type OfflineBook = { key: string; profile: string; bookId: string; data: Blob; savedAt: number }
+type CachedCatalog = { key: 'public-catalog'; books: Book[]; categories: Category[]; savedAt: number }
 
 interface NoCapDB extends DBSchema {
   files: { key: string; value: LocalFile }
   records: { key: string; value: SyncRecord }
   pending: { key: string; value: PendingOperation }
+  offlineBooks: { key: string; value: OfflineBook }
+  metadata: { key: string; value: CachedCatalog }
 }
 
 let connection: ReturnType<typeof openDB<NoCapDB>> | null = null
 function db() {
-  if (!connection) connection = openDB<NoCapDB>('nocap-web-v1', 1, {
-    upgrade(database) {
-      database.createObjectStore('files', { keyPath: 'key' })
-      database.createObjectStore('records', { keyPath: 'key' })
-      database.createObjectStore('pending', { keyPath: 'key' })
+  if (!connection) connection = openDB<NoCapDB>('nocap-web-v1', 2, {
+    upgrade(database, oldVersion) {
+      if (oldVersion < 1) {
+        database.createObjectStore('files', { keyPath: 'key' })
+        database.createObjectStore('records', { keyPath: 'key' })
+        database.createObjectStore('pending', { keyPath: 'key' })
+      }
+      if (oldVersion < 2) {
+        database.createObjectStore('offlineBooks', { keyPath: 'key' })
+        database.createObjectStore('metadata', { keyPath: 'key' })
+      }
     },
   })
   return connection
@@ -25,6 +36,16 @@ export const keyFor = (profile: string, id: string) => `${profile}:${id}`
 export async function getFiles(profile: string) { return (await db()).getAll('files', range(profile)) }
 export async function getFile(profile: string, id: string) { return (await db()).get('files', keyFor(profile, id)) }
 export async function saveFile(value: LocalFile) { await (await db()).put('files', value) }
+export async function getOfflineBooks(profile: string) { return (await db()).getAll('offlineBooks', range(profile)) }
+export async function getOfflineBook(profile: string, bookId: string) { return (await db()).get('offlineBooks', keyFor(profile, bookId)) }
+export async function saveOfflineBook(profile: string, bookId: string, data: Blob) {
+  await (await db()).put('offlineBooks', { key: keyFor(profile, bookId), profile, bookId, data, savedAt: Date.now() })
+}
+export async function removeOfflineBook(profile: string, bookId: string) { await (await db()).delete('offlineBooks', keyFor(profile, bookId)) }
+export async function getCachedCatalog() { return (await db()).get('metadata', 'public-catalog') }
+export async function saveCachedCatalog(books: Book[], categories: Category[]) {
+  await (await db()).put('metadata', { key: 'public-catalog', books, categories, savedAt: Date.now() })
+}
 export async function removeLocalDocument(profile: string, id: string) {
   const database = await db()
   const transaction = database.transaction(['files', 'records', 'pending'], 'readwrite')

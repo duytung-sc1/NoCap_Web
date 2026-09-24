@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, ArrowRight, BookMarked, BookOpen, Bookmark, Check, ChevronLeft, ChevronRight, Cloud, CloudOff, FileText, Highlighter, Library, LogIn, LogOut, Menu, Plus, RotateCw, Search, Settings2, Trash2, X } from 'lucide-react'
-import { forgotPassword, getCatalog, getUser, loadBookBytes, login, logout, register } from './api'
+import { ArrowLeft, ArrowRight, BookMarked, BookOpen, Bookmark, Check, ChevronLeft, ChevronRight, Cloud, CloudOff, Download, FileText, Highlighter, Library, LogIn, LogOut, Menu, Plus, RotateCw, Search, Settings2, Trash2, X } from 'lucide-react'
+import { forgotPassword, getCatalog, getUser, loadBookBytes, login, logout, register, uploadBlob } from './api'
 import { ReaderPane } from './Reader'
-import { getFile, getFiles, getPending, readSession, removeLocalDocument, saveFile, saveSession } from './store'
+import { getCachedCatalog, getFile, getFiles, getOfflineBook, getOfflineBooks, getPending, readSession, removeLocalDocument, removeOfflineBook, saveCachedCatalog, saveFile, saveOfflineBook, saveSession } from './store'
 import { androidRecordId, localRecords, mutate, profileFor, readableError, syncNow } from './sync'
 import type { Book, Category, LocalFile, ReaderLocation, Session, SyncRecord } from './types'
 import './App.css'
@@ -13,6 +13,7 @@ type Theme = 'paper' | 'sepia' | 'night'
 
 const toText = (value: unknown) => typeof value === 'string' ? value : ''
 const ms = () => Date.now()
+const offlineProfileFor = (book: Book, accountProfile: string) => book.source === 'cloud' || book.fileUrl?.startsWith('nocap-private:') ? accountProfile : 'PUBLIC_OFFLINE'
 
 function syncedBook(record: SyncRecord): Book | null {
   if (record.deleted || record.kind !== 'catalog_books') return null
@@ -40,6 +41,8 @@ function App() {
   const [categories, setCategories] = useState<Category[]>([])
   const [records, setRecords] = useState<SyncRecord[]>([])
   const [localFiles, setLocalFiles] = useState<LocalFile[]>([])
+  const [offlineIds, setOfflineIds] = useState<Set<string>>(new Set())
+  const [offlineBusy, setOfflineBusy] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('all')
   const [reader, setReader] = useState<{ book: Book; bytes: ArrayBuffer; initial?: string } | null>(null)
@@ -67,19 +70,31 @@ function App() {
   profileRef.current = profile
 
   const refreshLocal = useCallback(async (selectedProfile: string) => {
-    const [nextRecords, nextFiles, nextPending] = await Promise.all([localRecords(selectedProfile), getFiles(selectedProfile), getPending(selectedProfile)])
+    const [nextRecords, nextFiles, nextPending, nextOffline, publicOffline] = await Promise.all([localRecords(selectedProfile), getFiles(selectedProfile), getPending(selectedProfile), getOfflineBooks(selectedProfile), getOfflineBooks('PUBLIC_OFFLINE')])
     if (profileRef.current !== selectedProfile) return
     setRecords(nextRecords)
     setLocalFiles(nextFiles)
     setPendingCount(nextPending.length)
+    setOfflineIds(new Set([...nextOffline, ...publicOffline].map(item => item.bookId)))
   }, [])
 
   useEffect(() => {
-    void getCatalog().then(data => { setCatalog(data.books); setCategories(data.categories) }).catch(error => setNotice(readableError(error)))
+    let active = true
+    void (async () => {
+      const cached = await getCachedCatalog().catch(() => null)
+      if (active && cached) { setCatalog(cached.books); setCategories(cached.categories) }
+      try {
+        const data = await getCatalog()
+        if (active) { setCatalog(data.books); setCategories(data.categories) }
+        await saveCachedCatalog(data.books, data.categories)
+      } catch (error) {
+        if (active && !cached) setNotice(readableError(error))
+      }
+    })()
     const update = () => setOnline(navigator.onLine)
     window.addEventListener('online', update)
     window.addEventListener('offline', update)
-    return () => { window.removeEventListener('online', update); window.removeEventListener('offline', update) }
+    return () => { active = false; window.removeEventListener('online', update); window.removeEventListener('offline', update) }
   }, [])
 
   useEffect(() => { void refreshLocal(profile) }, [profile, refreshLocal])
@@ -137,7 +152,7 @@ function App() {
   const books = useMemo(() => [...catalog, ...cloudBooks, ...localFiles.map(file => file.book)], [catalog, cloudBooks, localFiles])
   const favorites = useMemo(() => new Set(records.filter(r => r.kind === 'favorites' && !r.deleted).map(r => toText(r.payload.book_id))), [records])
   const reading = useMemo(() => books.filter(book => !!progressFor(records, book.id)).sort((a, b) => Number(progressFor(records, b.id)?.payload.last_read_at || 0) - Number(progressFor(records, a.id)?.payload.last_read_at || 0)), [books, records])
-  const libraryBooks = useMemo(() => books.filter(book => book.source === 'local' || book.source === 'cloud' || favorites.has(book.id) || !!progressFor(records, book.id)), [books, favorites, records])
+  const libraryBooks = useMemo(() => books.filter(book => book.source === 'local' || book.source === 'cloud' || offlineIds.has(book.id) || favorites.has(book.id) || !!progressFor(records, book.id)), [books, offlineIds, favorites, records])
   const filteredBooks = useMemo(() => {
     const list = page === 'library' ? libraryBooks : catalog
     return list.filter(book => (category === 'all' || book.categoryId === category) && `${book.title} ${book.author}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
@@ -146,30 +161,89 @@ function App() {
 
   async function authenticated(value: Session) {
     if (progressTimer.current) clearTimeout(progressTimer.current)
-    setReader(null); readerRef.current = null; setRecords([]); setLocalFiles([])
+    setReader(null); readerRef.current = null; setRecords([]); setLocalFiles([]); setOfflineIds(new Set())
     saveSession(value); setSession(value); setAuthOpen(false); setPage('home'); setNotice(`Đã đăng nhập ${value.user.email}.`)
   }
 
   async function signOut() {
     if (progressTimer.current) clearTimeout(progressTimer.current)
     const oldToken = session?.token
-    saveSession(null); setSession(null); setRecords([]); setLocalFiles([]); setReader(null); readerRef.current = null
+    saveSession(null); setSession(null); setRecords([]); setLocalFiles([]); setOfflineIds(new Set()); setReader(null); readerRef.current = null
     setPage('home'); setNotice('Đã đăng xuất. Dữ liệu tài khoản được giữ riêng và không bị xóa.')
     if (oldToken) void logout(oldToken).catch(() => {})
   }
+
+async function sha256Hex(file: Blob): Promise<string> {
+  const buffer = await file.arrayBuffer()
+  const digestBuffer = await crypto.subtle.digest('SHA-256', buffer)
+  return Array.from(new Uint8Array(digestBuffer), b => b.toString(16).padStart(2, '0')).join('')
+}
 
   async function importFile(file: File) {
     const extension = file.name.split('.').pop()?.toLowerCase() || ''
     if (!['epub', 'pdf', 'txt', 'html', 'htm', 'docx'].includes(extension)) { setNotice('Hỗ trợ EPUB, PDF, TXT, HTML và DOCX.'); return }
     if (!file.size || file.size > 250 * 1024 * 1024) { setNotice('Tệp trống hoặc vượt giới hạn 250 MB.'); return }
-    const book: Book = { id: `web-${crypto.randomUUID()}`, title: file.name.replace(/\.[^.]+$/, ''), author: 'Tài liệu của bạn', fileUrl: file.name, format: extension.toUpperCase(), categoryId: 'imported', source: 'local', fileSizeBytes: file.size }
+    setNotice('Đang tính mã băm và chuẩn bị tài liệu...')
     try {
+      const hash = await sha256Hex(file)
+      const isCloud = !!session
+      const bookId = `web-${crypto.randomUUID()}`
+      const book: Book = {
+        id: bookId,
+        title: file.name.replace(/\.[^.]+$/, ''),
+        author: 'Tài liệu của bạn',
+        fileUrl: `nocap-private:${hash}`,
+        format: extension.toUpperCase(),
+        categoryId: 'imported',
+        source: isCloud ? 'cloud' : 'local',
+        fileSizeBytes: file.size,
+      }
       await saveFile({ key: `${profile}:${book.id}`, profile, book, data: file, addedAt: ms() })
       await refreshLocal(profile)
       if (profileRef.current !== profile) return
       setPage('library')
-      setNotice('Đã thêm tài liệu vào trình duyệt này. Tài liệu riêng chưa được tải lên cloud.')
-    } catch { if (profileRef.current === profile) setNotice('Không lưu được tệp. Kiểm tra dung lượng trình duyệt rồi thử lại.') }
+
+      if (isCloud && session) {
+        setNotice('Đang tải tệp lên Cloud...')
+        try {
+          await uploadBlob(session.token, hash, file)
+          const mediaType = extension === 'pdf' ? 'application/pdf'
+            : extension === 'txt' ? 'text/plain'
+            : extension === 'html' || extension === 'htm' ? 'text/html'
+            : extension === 'docx' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            : 'application/epub+zip'
+          const now = ms()
+          const payload = {
+            id: book.id,
+            title: book.title,
+            author: book.author,
+            description: '',
+            cover_url: '',
+            category_id: 'imported',
+            file_url: `nocap-private:${hash}`,
+            file_size_bytes: file.size,
+            content_hash: hash,
+            format: extension.toUpperCase(),
+            media_type: mediaType,
+            source_type: 'LOCAL_FILE',
+            is_in_inbox: 1,
+            reading_status: 'UNREAD',
+            added_at: now,
+            updated_at: now,
+          }
+          await mutate(profile, 'catalog_books', androidRecordId('catalog_books', book.id), payload, false, false)
+          await refreshLocal(profile)
+          void synchronize(session)
+          setNotice('Đã thêm và đồng bộ tài liệu riêng lên Cloud thành công.')
+        } catch (uploadError) {
+          setNotice(`Tài liệu đã lưu trên trình duyệt, nhưng tải lên cloud gặp sự cố: ${readableError(uploadError)}`)
+        }
+      } else {
+        setNotice('Đã thêm tài liệu vào trình duyệt này. Đăng nhập để tự động sao lưu lên Cloud.')
+      }
+    } catch {
+      if (profileRef.current === profile) setNotice('Không lưu được tệp. Kiểm tra dung lượng trình duyệt rồi thử lại.')
+    }
   }
 
   async function openBook(book: Book) {
@@ -177,14 +251,35 @@ function App() {
     if (progressTimer.current) clearTimeout(progressTimer.current)
     setReaderError(''); setReaderLoading(true); setLocation(null); setSelection(null)
     try {
-      const local = await getFile(profile, book.id)
-      const bytes = local ? await local.data.arrayBuffer() : await loadBookBytes(book, session?.token)
+      const [local, offlineCopy] = await Promise.all([getFile(profile, book.id), getOfflineBook(offlineProfileFor(book, profile), book.id)])
+      const bytes = local ? await local.data.arrayBuffer() : offlineCopy ? await offlineCopy.data.arrayBuffer() : await loadBookBytes(book, session?.token)
       if (profileRef.current !== targetProfile) return
       if (!bytes.byteLength) throw new Error('Tệp sách không có nội dung.')
       readerRef.current = book
       setReader({ book, bytes, initial: toText(progressFor(records, book.id)?.payload.locator_json) })
     } catch (error) { if (profileRef.current === targetProfile) setReaderError(readableError(error)) }
     finally { setReaderLoading(false) }
+  }
+
+  async function toggleOffline(book: Book) {
+    if (offlineBusy) return
+    const targetProfile = profile
+    const storageProfile = offlineProfileFor(book, targetProfile)
+    setOfflineBusy(book.id)
+    try {
+      if (offlineIds.has(book.id)) {
+        await removeOfflineBook(storageProfile, book.id)
+        if (profileRef.current === targetProfile) setNotice('Đã bỏ bản tải offline. Ghi chú và tiến độ đọc vẫn được giữ.')
+      } else {
+        if (!navigator.onLine) throw new Error('Cần kết nối mạng để tải sách lần đầu.')
+        const bytes = await loadBookBytes(book, session?.token)
+        if (!bytes.byteLength) throw new Error('Tệp sách không có nội dung.')
+        await saveOfflineBook(storageProfile, book.id, new Blob([bytes]))
+        if (profileRef.current === targetProfile) setNotice('Đã tải sách để đọc offline trên trình duyệt này.')
+      }
+      await refreshLocal(targetProfile)
+    } catch (error) { if (profileRef.current === targetProfile) setNotice(readableError(error)) }
+    finally { setOfflineBusy(null) }
   }
 
   const onLocation = useCallback((next: ReaderLocation) => {
@@ -243,10 +338,16 @@ function App() {
     finally { setNoteSaving(false) }
   }
 
-  async function deleteLocal(book: Book) {
-    if (!window.confirm(`Xóa “${book.title}” khỏi trình duyệt này?`)) return
-    await removeLocalDocument(profile, book.id); await refreshLocal(profile)
-    setNotice('Đã xóa tệp trên trình duyệt này.')
+  async function deleteBook(book: Book) {
+    if (!window.confirm(`Xóa “${book.title}” khỏi thư viện?`)) return
+    if (book.source === 'local') {
+      await removeLocalDocument(profile, book.id)
+    } else if (book.source === 'cloud') {
+      await mutate(profile, 'catalog_books', androidRecordId('catalog_books', book.id), {}, true)
+      if (session && online) void synchronize(session)
+    }
+    await refreshLocal(profile)
+    setNotice('Đã xóa tài liệu.')
   }
 
   const nav: Array<{ id: Page; label: string; icon: typeof BookOpen }> = [
@@ -274,15 +375,15 @@ function App() {
         {page === 'home' && <>
           <div className="hero"><div><p className="eyebrow">KHÔNG GIAN KIẾN THỨC CỦA BẠN</p><h1>Đọc chậm lại.<br /><em>Nhớ lâu hơn.</em></h1><p>Mọi cuốn sách, ghi chú và ý tưởng của bạn ở một nơi yên tĩnh.</p><div className="hero-actions"><button className="primary" onClick={() => setPage('catalog')}>Khám phá sách <ArrowRight size={17} /></button><button className="light-button" onClick={() => fileInput.current?.click()}><Plus size={17} /> Thêm tài liệu</button></div></div><div className="hero-art" aria-hidden="true"><div className="orbit one" /><div className="orbit two" /><BookOpen size={92} strokeWidth={1.2} /></div></div>
           <SectionHeader title="Đọc tiếp" action="Xem tủ sách" onAction={() => setPage('library')} />
-          {reading.length ? <div className="book-grid">{reading.slice(0, 4).map(book => <BookCard key={book.id} book={book} progress={Number(progressFor(records, book.id)?.payload.progression || 0)} onOpen={() => void openBook(book)} onFavorite={() => void toggleFavorite(book)} favorite={favorites.has(book.id)} />)}</div> : <div className="empty-state"><BookOpen size={30} /><h3>Hành trình đọc bắt đầu ở đây</h3><p>Chọn một cuốn sách hoặc thêm tài liệu của bạn để bắt đầu.</p><button className="secondary" onClick={() => setPage('catalog')}>Xem thư viện sách</button></div>}
+          {reading.length ? <div className="book-grid">{reading.slice(0, 4).map(book => <BookCard key={book.id} book={book} progress={Number(progressFor(records, book.id)?.payload.progression || 0)} onOpen={() => void openBook(book)} onFavorite={() => void toggleFavorite(book)} favorite={favorites.has(book.id)} offline={book.source === 'local' || offlineIds.has(book.id)} offlineBusy={offlineBusy === book.id} onOffline={book.source !== 'local' && book.fileUrl ? () => void toggleOffline(book) : undefined} />)}</div> : <div className="empty-state"><BookOpen size={30} /><h3>Hành trình đọc bắt đầu ở đây</h3><p>Chọn một cuốn sách hoặc thêm tài liệu của bạn để bắt đầu.</p><button className="secondary" onClick={() => setPage('catalog')}>Xem thư viện sách</button></div>}
           <SectionHeader title="Gợi ý cho bạn" action="Xem tất cả" onAction={() => setPage('catalog')} />
-          <div className="book-grid">{catalog.filter(book => book.fileUrl).slice(0, 4).map(book => <BookCard key={book.id} book={book} onOpen={() => void openBook(book)} onFavorite={() => void toggleFavorite(book)} favorite={favorites.has(book.id)} />)}</div>
+          <div className="book-grid">{catalog.filter(book => book.fileUrl).slice(0, 4).map(book => <BookCard key={book.id} book={book} onOpen={() => void openBook(book)} onFavorite={() => void toggleFavorite(book)} favorite={favorites.has(book.id)} offline={offlineIds.has(book.id)} offlineBusy={offlineBusy === book.id} onOffline={() => void toggleOffline(book)} />)}</div>
         </>}
 
         {(page === 'catalog' || page === 'library') && <>
           <div className="page-heading"><div><p className="eyebrow">{page === 'catalog' ? 'THƯ VIỆN MỞ' : 'KHÔNG GIAN CÁ NHÂN'}</p><h1>{page === 'catalog' ? 'Khám phá sách' : 'Tủ sách của bạn'}</h1><p>{page === 'catalog' ? 'Những cuốn sách để đọc, tìm hiểu và ghi nhớ.' : 'Sách đã lưu, đang đọc và tài liệu thêm từ trình duyệt.'}</p></div><button className="primary" onClick={() => fileInput.current?.click()}><Plus size={17} /> Thêm tài liệu</button></div>
           <div className="filter-bar"><label className="search-field"><Search size={18} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm tên sách hoặc tác giả…" aria-label="Tìm sách" /></label><select value={category} onChange={event => setCategory(event.target.value)} aria-label="Lọc thể loại"><option value="all">Tất cả thể loại</option>{categories.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><span>{filteredBooks.length} tài liệu</span></div>
-          {filteredBooks.length ? <div className="book-grid">{filteredBooks.map(book => <BookCard key={book.id} book={book} progress={Number(progressFor(records, book.id)?.payload.progression || 0)} onOpen={() => void openBook(book)} onFavorite={book.source === 'local' ? undefined : () => void toggleFavorite(book)} favorite={favorites.has(book.id)} onDelete={book.source === 'local' ? () => void deleteLocal(book) : undefined} />)}</div> : <div className="empty-state"><Library size={30} /><h3>Chưa có tài liệu phù hợp</h3><p>Thử từ khóa khác hoặc thêm một tài liệu từ máy của bạn.</p><button className="secondary" onClick={() => { setQuery(''); setCategory('all') }}>Xóa bộ lọc</button></div>}
+          {filteredBooks.length ? <div className="book-grid">{filteredBooks.map(book => <BookCard key={book.id} book={book} progress={Number(progressFor(records, book.id)?.payload.progression || 0)} onOpen={() => void openBook(book)} onFavorite={book.source === 'local' ? undefined : () => void toggleFavorite(book)} favorite={favorites.has(book.id)} onDelete={book.source === 'local' || book.source === 'cloud' ? () => void deleteBook(book) : undefined} offline={book.source === 'local' || offlineIds.has(book.id)} offlineBusy={offlineBusy === book.id} onOffline={book.source !== 'local' && book.fileUrl ? () => void toggleOffline(book) : undefined} />)}</div> : <div className="empty-state"><Library size={30} /><h3>Chưa có tài liệu phù hợp</h3><p>Thử từ khóa khác hoặc thêm một tài liệu từ máy của bạn.</p><button className="secondary" onClick={() => { setQuery(''); setCategory('all') }}>Xóa bộ lọc</button></div>}
         </>}
 
         {page === 'memory' && <><div className="page-heading"><div><p className="eyebrow">READING MEMORY</p><h1>Điều đáng nhớ</h1><p>Tìm lại ghi chú, đoạn đánh dấu và dấu trang trong một chỗ.</p></div><div className="count-chip">{annotations.length} mục đã lưu</div></div><label className="search-field memory-search"><Search size={18} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm trong ghi chú…" aria-label="Tìm ghi chú" /></label>{annotations.filter(record => `${record.payload.text || ''} ${record.payload.note || ''} ${record.payload.chapter_title || ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())).length ? <div className="memory-list">{annotations.filter(record => `${record.payload.text || ''} ${record.payload.note || ''} ${record.payload.chapter_title || ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())).map(record => { const book = books.find(item => item.id === record.payload.book_id); return <div className="memory-item" key={record.key}><div className="memory-icon">{record.kind === 'highlights' ? <Highlighter size={18} /> : <Bookmark size={18} />}</div><div><div className="memory-book">{book?.title || 'Tài liệu riêng'}</div><blockquote>{toText(record.payload.text) || toText(record.payload.chapter_title) || 'Dấu trang'}</blockquote>{!!record.payload.note && <p>{toText(record.payload.note)}</p>}</div>{book && <button className="text-button" onClick={() => void openBook(book)}>Mở sách <ArrowRight size={15} /></button>}</div> })}</div> : <div className="empty-state"><Highlighter size={30} /><h3>Chưa có điều gì được lưu</h3><p>Khi đọc, chọn đoạn văn để thêm ghi chú hoặc bấm dấu trang.</p><button className="secondary" onClick={() => setPage('catalog')}>Tìm sách để đọc</button></div>}</>}
@@ -306,8 +407,8 @@ function SectionHeader({ title, action, onAction }: { title: string; action: str
   return <div className="section-header"><h2>{title}</h2><button onClick={onAction}>{action} <ArrowRight size={16} /></button></div>
 }
 
-function BookCard({ book, progress, onOpen, favorite, onFavorite, onDelete }: { book: Book; progress?: number; onOpen: () => void; favorite: boolean; onFavorite?: () => void; onDelete?: () => void }) {
-  return <article className="book-card"><button className="cover-button" onClick={onOpen} aria-label={`Mở ${book.title}`}><div className="book-cover">{book.coverUrl ? <img src={book.coverUrl} alt="" loading="lazy" onError={event => { event.currentTarget.style.display = 'none' }} /> : null}<div className="cover-fallback"><BookOpen size={34} /><small>NoCap</small></div></div></button><div className="book-info"><div className="book-meta">{book.source === 'local' ? 'TRÊN TRÌNH DUYỆT' : book.source === 'cloud' ? 'CLOUD CỦA BẠN' : book.language === 'vi' ? 'TIẾNG VIỆT' : 'SÁCH ĐIỆN TỬ'}</div><button className="book-title" onClick={onOpen}>{book.title}</button><p>{bookLabel(book)}</p>{!!progress && <div className="progress-bar" aria-label={`Đã đọc ${Math.round(progress * 100)} phần trăm`}><span style={{ width: `${Math.max(2, progress * 100)}%` }} /></div>}<div className="card-actions"><button className="read-link" onClick={onOpen}>{progress ? 'Đọc tiếp' : 'Bắt đầu đọc'} <ArrowRight size={15} /></button>{onFavorite && <button className="icon-button" title={favorite ? 'Bỏ lưu' : 'Lưu vào tủ sách'} aria-label={favorite ? 'Bỏ lưu' : 'Lưu vào tủ sách'} onClick={onFavorite}><BookMarked size={17} fill={favorite ? 'currentColor' : 'none'} /></button>}{onDelete && <button className="icon-button" title="Xóa tệp trên trình duyệt" aria-label="Xóa tệp" onClick={onDelete}><Trash2 size={17} /></button>}</div></div></article>
+function BookCard({ book, progress, onOpen, favorite, onFavorite, onDelete, offline, offlineBusy, onOffline }: { book: Book; progress?: number; onOpen: () => void; favorite: boolean; onFavorite?: () => void; onDelete?: () => void; offline?: boolean; offlineBusy?: boolean; onOffline?: () => void }) {
+  return <article className="book-card"><button className="cover-button" onClick={onOpen} aria-label={`Mở ${book.title}`}><div className="book-cover">{book.coverUrl ? <img src={book.coverUrl} alt="" loading="lazy" onError={event => { event.currentTarget.style.display = 'none' }} /> : null}<div className="cover-fallback"><BookOpen size={34} /><small>NoCap</small></div></div></button><div className="book-info"><div className="book-meta">{offline ? 'ĐÃ LƯU OFFLINE' : book.source === 'cloud' ? 'CLOUD CỦA BẠN' : book.language === 'vi' ? 'TIẾNG VIỆT' : 'SÁCH ĐIỆN TỬ'}</div><button className="book-title" onClick={onOpen}>{book.title}</button><p>{bookLabel(book)}</p>{!!progress && <div className="progress-bar" aria-label={`Đã đọc ${Math.round(progress * 100)} phần trăm`}><span style={{ width: `${Math.max(2, progress * 100)}%` }} /></div>}<div className="card-actions"><button className="read-link" onClick={onOpen}>{progress ? 'Đọc tiếp' : 'Bắt đầu đọc'} <ArrowRight size={15} /></button>{onOffline && <button className="icon-button" title={offline ? 'Bỏ bản tải offline' : 'Tải để đọc offline'} aria-label={offline ? `Bỏ bản tải offline của ${book.title}` : `Tải ${book.title} để đọc offline`} onClick={onOffline} disabled={offlineBusy}>{offline ? <Check size={17} /> : <Download size={17} />}</button>}{onFavorite && <button className="icon-button" title={favorite ? 'Bỏ lưu' : 'Lưu vào tủ sách'} aria-label={favorite ? 'Bỏ lưu' : 'Lưu vào tủ sách'} onClick={onFavorite}><BookMarked size={17} fill={favorite ? 'currentColor' : 'none'} /></button>}{onDelete && <button className="icon-button" title="Xóa tệp trên trình duyệt" aria-label="Xóa tệp" onClick={onDelete}><Trash2 size={17} /></button>}</div></div></article>
 }
 
 function AuthDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess: (session: Session) => void }) {

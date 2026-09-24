@@ -19,6 +19,30 @@ untracked `.env.local` with `VITE_API_BASE_URL` set to the QA Worker.
 
 `npm run build`, `npm run lint`, and `npm test` are the local gates.
 
+## Try offline reading locally
+
+The service worker is generated for the built preview, not the Vite development
+server. Run:
+
+```powershell
+npm run build
+npm run preview -- --host 127.0.0.1
+```
+
+Open `http://127.0.0.1:4173` while online. In the catalog, use the download
+button on a book and wait for “Đã tải sách để đọc offline”. Reload once while
+online to let the service worker control the page. Then disconnect the network
+or stop the preview server, reload the same URL, and open the downloaded book.
+Its public metadata and content remain available in this browser. Bookmarks,
+notes, and reading progress remain local until sync can retry online.
+
+Only books explicitly downloaded for offline use are available without a
+connection. Public catalog downloads are shared across profiles on this browser;
+private cloud downloads remain scoped to the signed-in account. Because the
+session is stored only for the current browser session, private account content
+cannot be reopened after closing the browser until login is available again.
+Browser storage can be cleared or evicted, so it is not a backup.
+
 ## Available now
 
 - Browse/search/filter the current public catalog.
@@ -27,6 +51,9 @@ untracked `.env.local` with `VITE_API_BASE_URL` set to the QA Worker.
   server session; no admin credentials are included.
 - Import EPUB, PDF, DOCX, HTML and TXT to this browser's IndexedDB, scoped to
   the current guest/account profile. Imported files are local to this browser.
+- Installable PWA shell and opt-in offline downloads for public catalog books;
+  private cloud downloads are isolated by account. The catalog is cached for
+  offline browsing and the service worker never caches authenticated API calls.
 - Read EPUB, PDF and text documents, keep local progress, set bookmarks and
   notes, and find them in Reading Memory.
 - Pull/push M14 progress, favorites, bookmarks and highlights for signed-in
