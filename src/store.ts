@@ -54,7 +54,7 @@ export async function removeLocalDocument(profile: string, id: string) {
     if (record.payload.book_id === id || (record.kind === 'catalog_books' && record.payload.id === id)) await transaction.objectStore('records').delete(record.key)
   }
   for (const pending of await transaction.objectStore('pending').getAll(range(profile))) {
-    if (pending.operation.payload.book_id === id) await transaction.objectStore('pending').delete(pending.key)
+    if (pending.operation.payload.book_id === id || (pending.operation.kind === 'catalog_books' && pending.operation.payload.id === id)) await transaction.objectStore('pending').delete(pending.key)
   }
   await transaction.done
 }

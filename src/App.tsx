@@ -234,7 +234,7 @@ function App() {
       window.removeEventListener('pagehide', flushReadingProgress)
       clearInterval(interval)
     }
-  }, [synchronize])
+  }, [synchronize, refreshLocal])
 
   const cloudBooks = useMemo(() => records.map(syncedBook).filter((book): book is Book => !!book && !!book.id && !catalog.some(item => item.id === book.id)), [records, catalog])
   const books = useMemo(() => [...catalog, ...cloudBooks, ...localFiles.map(file => file.book)], [catalog, cloudBooks, localFiles])
@@ -310,14 +310,31 @@ async function sha256Hex(file: Blob): Promise<string> {
             category_id: 'imported',
             file_url: `nocap-private:${hash}`,
             file_size_bytes: file.size,
+            content_version: 1,
             content_hash: hash,
+            is_featured: 0,
+            is_new: 0,
+            is_premium: 0,
+            play_product_id: null,
+            entitlement_type: 'FREE',
+            rating: 0,
+            published_date: null,
             format: extension.toUpperCase(),
             media_type: mediaType,
             source_type: 'LOCAL_FILE',
+            source_url: null,
             is_in_inbox: 1,
+            inbox_added_at: now,
+            is_pinned: 0,
+            is_archived: 0,
             reading_status: 'UNREAD',
+            user_title_override: null,
+            user_author_override: null,
+            custom_cover_path: null,
+            last_opened_at: null,
             added_at: now,
             updated_at: now,
+            original_filename: file.name,
           }
           await mutate(profile, 'catalog_books', androidRecordId('catalog_books', book.id), payload, false, false)
           await refreshLocal(profile)
@@ -443,6 +460,7 @@ async function sha256Hex(file: Blob): Promise<string> {
     if (book.source === 'local') {
       await removeLocalDocument(profile, book.id)
     } else if (book.source === 'cloud') {
+      await removeOfflineBook(offlineProfileFor(book, profile), book.id)
       await mutate(profile, 'catalog_books', androidRecordId('catalog_books', book.id), {}, true)
       if (session && online) void synchronize(session)
     }
