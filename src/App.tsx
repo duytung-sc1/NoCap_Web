@@ -68,6 +68,11 @@ function App() {
   const readerRef = useRef<Book | null>(null)
   const profileRef = useRef(profile)
   profileRef.current = profile
+  const sessionRef = useRef(session)
+  sessionRef.current = session
+  const locationRef = useRef(location)
+  locationRef.current = location
+  const lastSyncAt = useRef(0)
 
   const refreshLocal = useCallback(async (selectedProfile: string) => {
     const [nextRecords, nextFiles, nextPending, nextOffline, publicOffline] = await Promise.all([localRecords(selectedProfile), getFiles(selectedProfile), getPending(selectedProfile), getOfflineBooks(selectedProfile), getOfflineBooks('PUBLIC_OFFLINE')])
@@ -99,8 +104,11 @@ function App() {
 
   useEffect(() => { void refreshLocal(profile) }, [profile, refreshLocal])
 
-  const synchronize = useCallback(async (activeSession: Session) => {
-    if (!navigator.onLine) { setNotice('Đang ngoại tuyến. Thay đổi của bạn được giữ trên trình duyệt.'); return }
+  const synchronize = useCallback(async (activeSession: Session, silent = false) => {
+    if (!navigator.onLine) {
+      if (!silent) setNotice('Đang ngoại tuyến. Thay đổi của bạn được giữ trên trình duyệt.')
+      return
+    }
     const targetProfile = profileFor(activeSession)
     if (syncFlight.current) {
       if (syncFlight.current.profile === targetProfile) return syncFlight.current.promise
@@ -111,10 +119,21 @@ function App() {
     const flight = (async () => {
       try {
         const result = await syncNow(activeSession)
+        lastSyncAt.current = Date.now()
         await refreshLocal(profileFor(activeSession))
-        if (profileRef.current === profileFor(activeSession)) setNotice(result.conflicts ? `${result.conflicts} thay đổi cần đối soát; bản trên trình duyệt vẫn được giữ.` : 'Đã đồng bộ với tài khoản của bạn.')
+        if (profileRef.current === profileFor(activeSession)) {
+          if (result.conflicts) {
+            setNotice(`${result.conflicts} thay đổi cần đối soát; bản trên trình duyệt vẫn được giữ.`)
+          } else if (!silent) {
+            setNotice('Đã đồng bộ với tài khoản của bạn.')
+          }
+        }
       } catch (error) {
-        if (profileRef.current === profileFor(activeSession)) setNotice(readableError(error))
+        if (profileRef.current === profileFor(activeSession)) {
+          if (!silent || (error instanceof Error && error.message.includes('hết hạn'))) {
+            setNotice(readableError(error))
+          }
+        }
       } finally { setSyncing(false) }
     })()
     syncFlight.current = { profile: targetProfile, promise: flight }
@@ -145,8 +164,65 @@ function App() {
 
   useEffect(() => {
     if (!online || !session) return
-    void synchronize(session)
+    void synchronize(session, true)
   }, [online, session, synchronize])
+
+  useEffect(() => {
+    const flushReadingProgress = () => {
+      const book = readerRef.current
+      const loc = locationRef.current
+      const curProfile = profileRef.current
+      const curSession = sessionRef.current
+      if (book && loc) {
+        if (progressTimer.current) {
+          clearTimeout(progressTimer.current)
+          progressTimer.current = null
+        }
+        const payload = { book_id: book.id, locator_json: loc.locatorJson, progression: Math.max(0, Math.min(1, loc.progression)), chapter_title: loc.chapterTitle || null, last_read_at: ms(), sync_version: 1 }
+        void mutate(curProfile, 'reading_progress', androidRecordId('reading_progress', book.id), payload, false, book.source === 'local').then(() => {
+          if (curSession && navigator.onLine && book.source !== 'local') {
+            void synchronize(curSession, true)
+          }
+        })
+      }
+    }
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        flushReadingProgress()
+      } else if (document.visibilityState === 'visible') {
+        const curSession = sessionRef.current
+        if (curSession && navigator.onLine && Date.now() - lastSyncAt.current > 15000) {
+          void synchronize(curSession, true)
+        }
+      }
+    }
+
+    const onFocus = () => {
+      const curSession = sessionRef.current
+      if (curSession && navigator.onLine && Date.now() - lastSyncAt.current > 15000) {
+        void synchronize(curSession, true)
+      }
+    }
+
+    const interval = setInterval(() => {
+      const curSession = sessionRef.current
+      if (curSession && navigator.onLine && document.visibilityState === 'visible' && Date.now() - lastSyncAt.current > 45000) {
+        void synchronize(curSession, true)
+      }
+    }, 45000)
+
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    window.addEventListener('focus', onFocus)
+    window.addEventListener('pagehide', flushReadingProgress)
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      window.removeEventListener('focus', onFocus)
+      window.removeEventListener('pagehide', flushReadingProgress)
+      clearInterval(interval)
+    }
+  }, [synchronize])
 
   const cloudBooks = useMemo(() => records.map(syncedBook).filter((book): book is Book => !!book && !!book.id && !catalog.some(item => item.id === book.id)), [records, catalog])
   const books = useMemo(() => [...catalog, ...cloudBooks, ...localFiles.map(file => file.book)], [catalog, cloudBooks, localFiles])
@@ -284,24 +360,35 @@ async function sha256Hex(file: Blob): Promise<string> {
 
   const onLocation = useCallback((next: ReaderLocation) => {
     setLocation(next)
+    locationRef.current = next
     const book = readerRef.current
     if (!book) return
     if (progressTimer.current) clearTimeout(progressTimer.current)
     const currentProfile = profileRef.current
     progressTimer.current = setTimeout(() => {
+      progressTimer.current = null
       const payload = { book_id: book.id, locator_json: next.locatorJson, progression: Math.max(0, Math.min(1, next.progression)), chapter_title: next.chapterTitle || null, last_read_at: ms(), sync_version: 1 }
-      void mutate(currentProfile, 'reading_progress', androidRecordId('reading_progress', book.id), payload, false, book.source === 'local').then(() => refreshLocal(currentProfile))
-    }, 1200)
-  }, [refreshLocal])
+      void mutate(currentProfile, 'reading_progress', androidRecordId('reading_progress', book.id), payload, false, book.source === 'local').then(() => {
+        void refreshLocal(currentProfile)
+        const curSession = sessionRef.current
+        if (curSession && navigator.onLine && book.source !== 'local') {
+          void synchronize(curSession, true)
+        }
+      })
+    }, 1500)
+  }, [refreshLocal, synchronize])
 
   function closeReader() {
     if (progressTimer.current) { clearTimeout(progressTimer.current); progressTimer.current = null }
     if (reader && location) {
       const book = reader.book
       const payload = { book_id: book.id, locator_json: location.locatorJson, progression: Math.max(0, Math.min(1, location.progression)), chapter_title: location.chapterTitle || null, last_read_at: ms(), sync_version: 1 }
-      void mutate(profile, 'reading_progress', androidRecordId('reading_progress', book.id), payload, false, book.source === 'local').then(() => { void refreshLocal(profile); if (session && book.source !== 'local') void synchronize(session) })
+      void mutate(profile, 'reading_progress', androidRecordId('reading_progress', book.id), payload, false, book.source === 'local').then(() => {
+        void refreshLocal(profile)
+        if (session && book.source !== 'local') void synchronize(session, true)
+      })
     }
-    setReader(null); readerRef.current = null; setSelection(null)
+    setReader(null); readerRef.current = null; locationRef.current = null; setSelection(null)
   }
 
   async function toggleFavorite(book: Book) {
@@ -363,7 +450,7 @@ async function sha256Hex(file: Blob): Promise<string> {
       <nav className="main-nav" aria-label="Điều hướng">
         {nav.map(item => <button key={item.id} className={page === item.id ? 'active' : ''} onClick={() => { setPage(item.id); setSidebarOpen(false); setQuery(''); setCategory('all') }}><item.icon size={19} /><span>{item.label}</span></button>)}
       </nav>
-      <div className="sidebar-bottom"><div className="sync-summary">{online ? <Cloud size={17} /> : <CloudOff size={17} />}<div><strong>{!session ? 'Chế độ khách' : syncing ? 'Đang đồng bộ' : pendingCount ? 'Chờ đồng bộ' : 'Đã đồng bộ'}</strong><small>{session ? (pendingCount ? `${pendingCount} thay đổi trên máy` : session.user.email) : 'Đăng nhập để dùng trên nhiều thiết bị'}</small></div></div>{session ? <button className="secondary wide" onClick={() => void synchronize(session)} disabled={syncing}><RotateCw size={16} className={syncing ? 'spin' : ''} /> Đồng bộ ngay</button> : <button className="primary wide" onClick={() => setAuthOpen(true)}><LogIn size={16} /> Đăng nhập</button>}</div>
+      <div className="sidebar-bottom"><div className="sync-summary">{online ? <Cloud size={17} /> : <CloudOff size={17} />}<div><strong>{!session ? 'Chế độ khách' : syncing ? 'Đang tự động đồng bộ…' : pendingCount ? 'Chờ gửi tự động' : 'Tự động đồng bộ bật'}</strong><small>{session ? (pendingCount ? `${pendingCount} thay đổi trên máy` : session.user.email) : 'Đăng nhập để tự đồng bộ qua Android'}</small></div></div>{session ? <button className="secondary wide" onClick={() => void synchronize(session)} disabled={syncing}><RotateCw size={16} className={syncing ? 'spin' : ''} /> Đồng bộ ngay</button> : <button className="primary wide" onClick={() => setAuthOpen(true)}><LogIn size={16} /> Đăng nhập</button>}</div>
     </aside>
     {sidebarOpen && <button className="sidebar-shade" aria-label="Đóng menu" onClick={() => setSidebarOpen(false)} />}
 
@@ -388,7 +475,7 @@ async function sha256Hex(file: Blob): Promise<string> {
 
         {page === 'memory' && <><div className="page-heading"><div><p className="eyebrow">READING MEMORY</p><h1>Điều đáng nhớ</h1><p>Tìm lại ghi chú, đoạn đánh dấu và dấu trang trong một chỗ.</p></div><div className="count-chip">{annotations.length} mục đã lưu</div></div><label className="search-field memory-search"><Search size={18} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm trong ghi chú…" aria-label="Tìm ghi chú" /></label>{annotations.filter(record => `${record.payload.text || ''} ${record.payload.note || ''} ${record.payload.chapter_title || ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())).length ? <div className="memory-list">{annotations.filter(record => `${record.payload.text || ''} ${record.payload.note || ''} ${record.payload.chapter_title || ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())).map(record => { const book = books.find(item => item.id === record.payload.book_id); return <div className="memory-item" key={record.key}><div className="memory-icon">{record.kind === 'highlights' ? <Highlighter size={18} /> : <Bookmark size={18} />}</div><div><div className="memory-book">{book?.title || 'Tài liệu riêng'}</div><blockquote>{toText(record.payload.text) || toText(record.payload.chapter_title) || 'Dấu trang'}</blockquote>{!!record.payload.note && <p>{toText(record.payload.note)}</p>}</div>{book && <button className="text-button" onClick={() => void openBook(book)}>Mở sách <ArrowRight size={15} /></button>}</div> })}</div> : <div className="empty-state"><Highlighter size={30} /><h3>Chưa có điều gì được lưu</h3><p>Khi đọc, chọn đoạn văn để thêm ghi chú hoặc bấm dấu trang.</p><button className="secondary" onClick={() => setPage('catalog')}>Tìm sách để đọc</button></div>}</>}
 
-        {page === 'account' && <><div className="page-heading"><div><p className="eyebrow">TÀI KHOẢN & ĐỒNG BỘ</p><h1>{session ? 'Không gian của bạn' : 'Đọc như khách'}</h1><p>{session ? 'Sách và ghi chú của tài khoản này được tách riêng.' : 'Bạn vẫn có thể đọc và thêm tài liệu trên trình duyệt này.'}</p></div></div><div className="settings-grid"><section className="settings-card"><h2>Tài khoản</h2>{session ? <><p className="account-email">{session.user.displayName || session.user.email}</p><p className="muted">{session.user.email}</p>{!session.user.emailVerified && <p className="warning-text">Email chưa xác minh. Một số thao tác cloud cần xác minh email.</p>}<button className="secondary" onClick={() => void signOut()}><LogOut size={17} /> Đăng xuất</button></> : <><p className="muted">Đăng nhập để tiếp tục trên Android và các thiết bị khác.</p><button className="primary" onClick={() => setAuthOpen(true)}>Đăng nhập / Đăng ký</button></>}</section><section className="settings-card"><h2>Trạng thái dữ liệu</h2><p>{online ? 'Có kết nối mạng' : 'Đang ngoại tuyến'}</p><p className="muted">{session ? `${pendingCount} thay đổi đang chờ đồng bộ. Tệp nhập trong bản web hiện được lưu trên trình duyệt này.` : 'Dữ liệu khách được lưu riêng trên trình duyệt hiện tại.'}</p>{session && <button className="secondary" onClick={() => void synchronize(session)} disabled={syncing}><RotateCw size={17} /> {syncing ? 'Đang đồng bộ…' : 'Thử đồng bộ'}</button>}</section><section className="settings-card"><h2>Đọc thoải mái</h2><label className="range-label">Cỡ chữ <strong>{fontSize}%</strong><input type="range" min="80" max="170" step="10" value={fontSize} onChange={event => setFontSize(Number(event.target.value))} /></label><div className="theme-row">{(['paper', 'sepia', 'night'] as const).map(value => <button key={value} className={`theme-chip ${value} ${theme === value ? 'chosen' : ''}`} onClick={() => setTheme(value)}>{value === 'paper' ? 'Giấy sáng' : value === 'sepia' ? 'Vàng dịu' : 'Ban đêm'}</button>)}</div></section></div></>}
+        {page === 'account' && <><div className="page-heading"><div><p className="eyebrow">TÀI KHOẢN & ĐỒNG BỘ</p><h1>{session ? 'Không gian của bạn' : 'Đọc như khách'}</h1><p>{session ? 'Sách và ghi chú của tài khoản này được tách riêng.' : 'Bạn vẫn có thể đọc và thêm tài liệu trên trình duyệt này.'}</p></div></div><div className="settings-grid"><section className="settings-card"><h2>Tài khoản</h2>{session ? <><p className="account-email">{session.user.displayName || session.user.email}</p><p className="muted">{session.user.email}</p>{!session.user.emailVerified && <p className="warning-text">Email chưa xác minh. Một số thao tác cloud cần xác minh email.</p>}<button className="secondary" onClick={() => void signOut()}><LogOut size={17} /> Đăng xuất</button></> : <><p className="muted">Đăng nhập để tiếp tục trên Android và các thiết bị khác.</p><button className="primary" onClick={() => setAuthOpen(true)}>Đăng nhập / Đăng ký</button></>}</section><section className="settings-card"><h2>Tự động đồng bộ</h2><p>{online ? 'Đang kết nối Cloud • Tự động đồng bộ đa thiết bị' : 'Đang ngoại tuyến'}</p><p className="muted">{session ? (pendingCount ? `${pendingCount} thay đổi đang chờ tự động đồng bộ.` : 'Tiến độ đọc và ghi chú được tự động đồng bộ giữa Web và Android khi bạn đọc.') : 'Dữ liệu khách được lưu riêng trên trình duyệt hiện tại.'}</p>{session && <button className="secondary" onClick={() => void synchronize(session)} disabled={syncing}><RotateCw size={17} className={syncing ? 'spin' : ''} /> {syncing ? 'Đang đồng bộ…' : 'Đồng bộ ngay'}</button>}</section><section className="settings-card"><h2>Đọc thoải mái</h2><label className="range-label">Cỡ chữ <strong>{fontSize}%</strong><input type="range" min="80" max="170" step="10" value={fontSize} onChange={event => setFontSize(Number(event.target.value))} /></label><div className="theme-row">{(['paper', 'sepia', 'night'] as const).map(value => <button key={value} className={`theme-chip ${value} ${theme === value ? 'chosen' : ''}`} onClick={() => setTheme(value)}>{value === 'paper' ? 'Giấy sáng' : value === 'sepia' ? 'Vàng dịu' : 'Ban đêm'}</button>)}</div></section></div></>}
       </div>
       <input ref={fileInput} type="file" accept=".epub,.pdf,.txt,.html,.htm,.docx" hidden onChange={event => { const file = event.target.files?.[0]; if (file) void importFile(file); event.target.value = '' }} />
     </main>
