@@ -3,3 +3,35 @@
 @media(max-width:1250px){.book-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.book-card{gap:10px}.cover-button{width:78px;height:118px}}
 @media(max-width:950px){.sidebar{width:210px}.book-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.hero-art{min-width:180px;width:210px}}
 @media(max-width:700px){.sidebar{position:fixed;left:0;top:0;bottom:0;width:270px;transform:translateX(-100%);transition:transform .2s}.sidebar.open{transform:translateX(0)}.sidebar-shade{display:block!important;position:fixed;inset:0;background:#07101c99;border:0;z-index:14}.mobile-menu,.mobile-close{display:grid!important}.mobile-close{margin-left:auto;color:#b7c8d6}.topbar{height:60px;padding:0 18px;gap:12px}.topbar-title{margin-right:auto}.topbar-title small{display:none}.connection{display:none}.content{padding:23px 18px 65px}.hero{min-height:270px;padding:28px}.hero-art{display:none}.hero h1{font-size:34px}.book-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.book-card{display:block;padding:9px}.cover-button{width:100%;height:155px}.book-cover img{object-fit:contain;background:#24344b}.book-info{padding:9px 2px 2px;height:110px}.book-title{font-size:12px}.book-info p{font-size:10px}.book-meta{font-size:8px}.card-actions{margin-top:auto}.read-link{font-size:10px}.page-heading{align-items:start}.page-heading .primary{font-size:0;width:40px;padding:0}.page-heading .primary svg{width:20px}.filter-bar{flex-wrap:wrap}.filter-bar .search-field{flex-basis:100%}.filter-bar select{flex:1}.memory-item{padding:13px}.memory-item .text-button{font-size:0}.reader-topbar{padding:0 12px}.reader-back{min-width:44px;font-size:0}.reader-back span{display:none}.reader-actions{min-width:80px}.reader-title strong{max-width:45vw}.text-host article{padding:27px 23px 80px}}
+
+.toc-drawer{position:fixed;top:0;left:0;bottom:0;width:min(90vw,360px);background:#fff;z-index:45;display:flex;flex-direction:column;box-shadow:5px 0 25px rgba(0,0,0,0.15)}
+.reader-shell.night .toc-drawer{background:#172238;color:#e8edf7}
+.reader-shell.night .toc-header{border-bottom-color:#2a3a53}
+.reader-shell.night .toc-header h2{color:#fff}
+.reader-shell.night .toc-btn{color:#c5d4e2}
+.reader-shell.night .toc-btn:hover{background:#22334e;color:#52cdb3}
+.reader-shell.sepia .toc-drawer{background:#f5e9d1;color:#443627}
+.toc-header{display:flex;justify-content:space-between;align-items:flex-start;padding:22px 20px;border-bottom:1px solid var(--line)}
+.toc-header h2{font-size:16px;margin:0;font-family:'Literata',serif;color:#1c2940}
+.toc-list{flex:1;overflow:auto;padding:12px 14px}
+.toc-btn{display:block;width:100%;text-align:left;border:0;background:transparent;padding:10px 12px;border-radius:8px;font-size:13px;color:#2c3e55;cursor:pointer;line-height:1.4}
+.toc-btn:hover{background:#edf6f4;color:#137c70}
+.toc-sub{padding-left:18px;border-left:1px dashed #d5e2de;margin:3px 0 3px 8px}
+.settings-popup{width:min(100%,440px);padding:24px}
+.settings-popup .dialog-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.settings-popup .dialog-header h2{margin:0;font-size:18px}
+.setting-group{margin-bottom:16px}
+.setting-label{display:block;font-size:11px;font-weight:700;color:#65788d;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.05em}
+.toggle-row{display:flex;flex-wrap:wrap;gap:8px}
+.choice-chip{border:1px solid #d9e2e1;border-radius:8px;background:#fff;padding:8px 12px;font-size:12px;font-weight:600;color:#354a5f;display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+.choice-chip.active{background:#159781;color:#fff;border-color:#159781}
+.color-selector{display:flex;align-items:center;gap:10px;margin:12px 0}
+.color-selector span{font-size:12px;font-weight:700;color:#55697d}
+.color-dot{width:24px;height:24px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0;transition:transform .15s}
+.color-dot.active{transform:scale(1.25);border-color:#1c2940}
+.color-dot.yellow{background:#fde047}
+.color-dot.green{background:#86efac}
+.color-dot.blue{background:#93c5fd}
+.color-dot.pink{background:#f472b6}
+.color-dot.purple{background:#c084fc}
+.memory-actions{display:flex;gap:10px;align-items:center}

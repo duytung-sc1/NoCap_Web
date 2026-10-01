@@ -38,3 +38,13 @@ export type PendingOperation = { key: string; profile: string; operation: SyncOp
 export type LocalFile = { key: string; profile: string; book: Book; data: Blob; addedAt: number }
 
 export type ReaderLocation = { locatorJson: string; progression: number; chapterTitle: string }
+
+export type TocItem = {
+  id: string
+  label: string
+  href: string
+  subitems?: TocItem[]
+}
+
+export type FontFamily = 'serif' | 'sans' | 'mono'
+export type TextAlignment = 'justify' | 'left'

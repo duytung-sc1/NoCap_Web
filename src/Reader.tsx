@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import DOMPurify from 'dompurify'
 import { getDocument, GlobalWorkerOptions, type PDFDocumentProxy, type RenderTask } from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
-import type { Book, ReaderLocation } from './types'
+import type { Book, FontFamily, ReaderLocation, TextAlignment, TocItem } from './types'
 import type Rendition from 'epubjs/types/rendition'
 
 GlobalWorkerOptions.workerSrc = workerUrl
@@ -12,10 +12,15 @@ type Props = {
   bytes: ArrayBuffer
   initial?: string
   fontSize: number
+  fontFamily?: FontFamily
+  lineHeight?: number
+  textAlignment?: TextAlignment
   theme: 'paper' | 'sepia' | 'night'
   onLocation: (location: ReaderLocation) => void
   onSelection: (text: string, locator: string) => void
   onControls: (controls: { previous: () => void; next: () => void }) => void
+  onToc?: (toc: TocItem[]) => void
+  navigateTarget?: string | null
 }
 
 function formatOf(book: Book): 'epub' | 'pdf' | 'text' | 'html' | 'docx' {
@@ -49,15 +54,33 @@ function findSpineHref(spine: unknown, targetHref?: string): string | undefined 
   return cleanTarget
 }
 
-function EpubPane({ bytes, initial, fontSize, theme, onLocation, onSelection, onControls }: Props) {
+function fontStack(family?: FontFamily): string {
+  if (family === 'sans') return 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+  if (family === 'mono') return 'ui-monospace, "SF Mono", Menlo, Consolas, monospace'
+  return 'Merriweather, Georgia, "Times New Roman", serif'
+}
+
+function EpubPane({ bytes, initial, fontSize, fontFamily, lineHeight, textAlignment, theme, onLocation, onSelection, onControls, onToc, navigateTarget }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const rendition = useRef<Rendition | null>(null)
+  const bookRef = useRef<import('epubjs/types/book').default | null>(null)
   const locationRef = useRef(onLocation)
   const selectionRef = useRef(onSelection)
   const controlsRef = useRef(onControls)
-  const initialStyle = useRef({ fontSize, theme })
+  const onTocRef = useRef(onToc)
   const [error, setError] = useState('')
-  useEffect(() => { locationRef.current = onLocation; selectionRef.current = onSelection; controlsRef.current = onControls }, [onLocation, onSelection, onControls])
+  useEffect(() => {
+    locationRef.current = onLocation
+    selectionRef.current = onSelection
+    controlsRef.current = onControls
+    onTocRef.current = onToc
+  }, [onLocation, onSelection, onControls, onToc])
+
+  useEffect(() => {
+    if (!navigateTarget || !rendition.current) return
+    const target = findSpineHref(bookRef.current?.spine, navigateTarget) || navigateTarget
+    void rendition.current.display(target)
+  }, [navigateTarget])
 
   useEffect(() => {
     if (!host.current) return
@@ -69,13 +92,33 @@ function EpubPane({ bytes, initial, fontSize, theme, onLocation, onSelection, on
         const { default: ePub } = await import('epubjs')
         if (!alive || !host.current) return
         book = ePub(bytes.slice(0))
+        bookRef.current = book
         await book.ready
         if (!alive || !host.current) return
+        void book.loaded.navigation.then(nav => {
+          if (!alive || !nav?.toc || !onTocRef.current) return
+          type RawToc = { id?: string; href: string; label?: string; subitems?: RawToc[] }
+          const formatToc = (list: RawToc[]): TocItem[] => list.map(item => ({
+            id: item.id || item.href,
+            label: (item.label || '').trim() || 'Chương',
+            href: item.href,
+            subitems: item.subitems?.length ? formatToc(item.subitems) : undefined,
+          }))
+          onTocRef.current(formatToc(nav.toc as RawToc[]))
+        }).catch(() => {})
         view = book.renderTo(host.current, { width: '100%', height: '100%', flow: 'scrolled-doc', manager: 'continuous', allowScriptedContent: false })
         rendition.current = view
-        view.themes.fontSize(`${initialStyle.current.fontSize}%`)
-        const palette = initialStyle.current.theme === 'night' ? { color: '#e8edf7', background: '#111b2b' } : initialStyle.current.theme === 'sepia' ? { color: '#443627', background: '#f3e9d3' } : { color: '#172033', background: '#fffdf8' }
-        view.themes.default({ body: { color: `${palette.color} !important`, background: `${palette.background} !important`, 'line-height': '1.65 !important' } })
+        view.themes.fontSize(`${fontSize}%`)
+        const palette = theme === 'night' ? { color: '#e8edf7', background: '#111b2b' } : theme === 'sepia' ? { color: '#443627', background: '#f3e9d3' } : { color: '#172033', background: '#fffdf8' }
+        view.themes.default({
+          body: {
+            color: `${palette.color} !important`,
+            background: `${palette.background} !important`,
+            'font-family': `${fontStack(fontFamily)} !important`,
+            'line-height': `${lineHeight || 1.65} !important`,
+            'text-align': `${textAlignment || 'left'} !important`,
+          },
+        })
         view.on('relocated', (location: { start?: { cfi?: string; href?: string; percentage?: number; index?: number }; end?: unknown }) => {
           const start = location.start
           if (!start?.cfi) return
@@ -148,13 +191,21 @@ function EpubPane({ bytes, initial, fontSize, theme, onLocation, onSelection, on
     if (!view) return
     view.themes.fontSize(`${fontSize}%`)
     const palette = theme === 'night' ? { color: '#e8edf7', background: '#111b2b' } : theme === 'sepia' ? { color: '#443627', background: '#f3e9d3' } : { color: '#172033', background: '#fffdf8' }
-    view.themes.default({ body: { color: `${palette.color} !important`, background: `${palette.background} !important`, 'line-height': '1.65 !important' } })
-  }, [fontSize, theme])
+    view.themes.default({
+      body: {
+        color: `${palette.color} !important`,
+        background: `${palette.background} !important`,
+        'font-family': `${fontStack(fontFamily)} !important`,
+        'line-height': `${lineHeight || 1.65} !important`,
+        'text-align': `${textAlignment || 'left'} !important`,
+      },
+    })
+  }, [fontSize, theme, fontFamily, lineHeight, textAlignment])
 
   return error ? <div className="reader-error">{error}</div> : <div ref={host} className="epub-host" aria-label="Nội dung EPUB" />
 }
 
-function PdfPane({ bytes, initial, onLocation, onControls }: Props) {
+function PdfPane({ bytes, initial, onLocation, onControls, onToc, navigateTarget }: Props) {
   const canvas = useRef<HTMLCanvasElement>(null)
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null)
   const [page, setPage] = useState(() => {
@@ -162,13 +213,39 @@ function PdfPane({ bytes, initial, onLocation, onControls }: Props) {
     return typeof saved?.pageNumber === 'number' ? saved.pageNumber : 1
   })
   const [error, setError] = useState('')
+  const onTocRef = useRef(onToc)
+  useEffect(() => { onTocRef.current = onToc }, [onToc])
+
+  useEffect(() => {
+    if (!navigateTarget) return
+    if (navigateTarget.startsWith('page:')) {
+      const p = parseInt(navigateTarget.replace('page:', ''), 10)
+      if (p >= 1 && (!document || p <= document.numPages)) setPage(p)
+    }
+  }, [navigateTarget, document])
+
   useEffect(() => {
     let active = true
     const task = getDocument({ data: bytes.slice(0) })
-    void task.promise.then(pdf => { if (active) setDocument(pdf) })
-      .catch(() => { if (active) setError('Không mở được PDF này. Tệp có thể bị hỏng hoặc được bảo vệ.') })
+    void task.promise.then(pdf => {
+      if (!active) return
+      setDocument(pdf)
+      void pdf.getOutline().then(outline => {
+        if (!active || !outline || !outline.length || !onTocRef.current) return
+        type RawOutline = { title?: string; dest?: unknown; items?: RawOutline[] }
+        const formatPdfToc = (items: RawOutline[], prefix = ''): TocItem[] => items.map((item, idx) => ({
+          id: `${prefix}pdf-item-${idx}`,
+          label: (item.title || `Mục ${idx + 1}`).trim(),
+          href: typeof item.dest === 'string' ? item.dest : `page:${idx + 1}`,
+          subitems: item.items?.length ? formatPdfPdf(item.items, `${prefix}${idx}-`) : undefined,
+        }))
+        const formatPdfPdf = formatPdfToc
+        onTocRef.current(formatPdfToc(outline))
+      }).catch(() => {})
+    }).catch(() => { if (active) setError('Không mở được PDF này. Tệp có thể bị hỏng hoặc được bảo vệ.') })
     return () => { active = false; void task.destroy() }
   }, [bytes])
+
   useEffect(() => {
     if (!document || !canvas.current) return
     let active = true
@@ -195,10 +272,22 @@ function PdfPane({ bytes, initial, onLocation, onControls }: Props) {
   return error ? <div className="reader-error">{error}</div> : <div className="pdf-host"><canvas ref={canvas} /><p>Trang {page} / {document?.numPages || '…'}</p></div>
 }
 
-function TextPane({ bytes, initial, fontSize, theme, onLocation, onSelection, onControls, format }: Props & { format: 'text' | 'html' | 'docx' }) {
+function TextPane({ bytes, initial, fontSize, fontFamily, lineHeight, textAlignment, theme, onLocation, onSelection, onControls, onToc, navigateTarget, format }: Props & { format: 'text' | 'html' | 'docx' }) {
   const host = useRef<HTMLDivElement>(null)
   const [content, setContent] = useState('')
   const [error, setError] = useState('')
+  const onTocRef = useRef(onToc)
+  useEffect(() => { onTocRef.current = onToc }, [onToc])
+
+  useEffect(() => {
+    if (!navigateTarget || !host.current) return
+    const id = navigateTarget.replace(/^#/, '')
+    const targetElement = host.current.querySelector(`[id="${id}"]`) || host.current.querySelector(navigateTarget)
+    if (targetElement) {
+      targetElement.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [navigateTarget])
+
   useEffect(() => {
     let active = true
     async function decode() {
@@ -211,8 +300,20 @@ function TextPane({ bytes, initial, fontSize, theme, onLocation, onSelection, on
           const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes)
           html = format === 'html' ? text : text.split(/\n\s*\n/).map(paragraph => `<p>${paragraph.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('\n', '<br>')}</p>`).join('')
         }
-        const clean = DOMPurify.sanitize(html, { ALLOWED_TAGS: ['p', 'br', 'h1', 'h2', 'h3', 'h4', 'strong', 'em', 'b', 'i', 'ul', 'ol', 'li', 'blockquote', 'hr', 'table', 'thead', 'tbody', 'tr', 'td', 'th'], ALLOWED_ATTR: [] })
-        if (active) setContent(clean)
+        const clean = DOMPurify.sanitize(html, { ALLOWED_TAGS: ['p', 'br', 'h1', 'h2', 'h3', 'h4', 'strong', 'em', 'b', 'i', 'ul', 'ol', 'li', 'blockquote', 'hr', 'table', 'thead', 'tbody', 'tr', 'td', 'th'], ALLOWED_ATTR: ['id'] })
+        if (active) {
+          setContent(clean)
+          const parser = new DOMParser()
+          const doc = parser.parseFromString(clean, 'text/html')
+          const headings = Array.from(doc.querySelectorAll('h1, h2, h3'))
+          if (headings.length && onTocRef.current) {
+            onTocRef.current(headings.map((h, idx) => ({
+              id: `heading-${idx}`,
+              label: h.textContent?.trim() || `Phần ${idx + 1}`,
+              href: `#heading-${idx}`,
+            })))
+          }
+        }
       } catch { if (active) setError('Không đọc được nội dung tài liệu này.') }
     }
     void decode()
@@ -241,5 +342,18 @@ function TextPane({ bytes, initial, fontSize, theme, onLocation, onSelection, on
     const text = window.getSelection()?.toString().trim()
     if (text) onSelection(text.slice(0, 5000), JSON.stringify({ type: 'TEXT', version: 1, blockIndex: 0, characterOffset: 0, scrollOffsetPx: Math.floor(host.current?.scrollTop || 0), progression: 0 }))
   }
-  return error ? <div className="reader-error">{error}</div> : <div ref={host} className={`text-host ${theme}`} onScroll={update} onMouseUp={selected} onTouchEnd={selected}><article style={{ fontSize: `${fontSize}%` }} dangerouslySetInnerHTML={{ __html: content }} /></div>
+  return error ? <div className="reader-error">{error}</div> : (
+    <div ref={host} className={`text-host ${theme}`} onScroll={update} onMouseUp={selected} onTouchEnd={selected}>
+      <article
+        style={{
+          fontSize: `${fontSize}%`,
+          fontFamily: fontStack(fontFamily),
+          lineHeight: lineHeight || 1.65,
+          textAlign: textAlignment || 'left',
+        }}
+        dangerouslySetInnerHTML={{ __html: content }}
+      />
+    </div>
+  )
 }
+
