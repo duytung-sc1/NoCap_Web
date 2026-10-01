@@ -16,7 +16,23 @@ export type Category = { id: string; name: string; displayOrder?: number }
 export type User = { id: string; email: string; displayName?: string; emailVerified: boolean; photoUrl?: string }
 export type Session = { token: string; expiresAt: number; user: User }
 
-export type SyncKind = 'reading_progress' | 'bookmarks' | 'highlights' | 'catalog_books' | 'favorites'
+export const SYNC_KINDS = [
+  'categories',
+  'catalog_books',
+  'reading_progress',
+  'bookmarks',
+  'highlights',
+  'favorites',
+  'tags',
+  'collections',
+  'book_tag_cross_ref',
+  'book_collection_cross_ref',
+  'review_items',
+  'reading_sessions',
+  'per_book_preferences',
+] as const
+
+export type SyncKind = typeof SYNC_KINDS[number]
 export type SyncRecord = {
   key: string
   profile: string
@@ -48,3 +64,10 @@ export type TocItem = {
 
 export type FontFamily = 'serif' | 'sans' | 'mono'
 export type TextAlignment = 'justify' | 'left'
+
+export type ReaderAnnotation = {
+  id: string
+  locatorJson: string
+  text: string
+  color: string
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { androidRecordId } from './sync'
+import { androidCompositeRecordId, androidRecordId } from './sync'
 
 describe('Android M14 sync identity', () => {
   it('uses a stable name UUID for the same public book', () => {
@@ -10,5 +10,11 @@ describe('Android M14 sync identity', () => {
     expect(id).toBe(androidRecordId('reading_progress', 'gutenberg-11'))
     expect(id).not.toBe(androidRecordId('reading_progress', 'gutenberg-12'))
     expect(id).not.toBe(androidRecordId('bookmarks', 'gutenberg-11'))
+  })
+
+  it('matches Android composite-key encoding', () => {
+    const id = androidCompositeRecordId('book_tag_cross_ref', ['book-a', 'tag-b'])
+    expect(id).toMatch(/^[0-9a-f-]{36}$/)
+    expect(id).not.toBe(androidRecordId('book_tag_cross_ref', 'book-a:tag-b'))
   })
 })

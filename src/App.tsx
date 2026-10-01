@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlignJustify, AlignLeft, ArrowLeft, ArrowRight, Award, BarChart3, BookMarked, BookOpen, Bookmark, Check, CheckCircle2, ChevronLeft, ChevronRight, Cloud, CloudOff, Download, FileDown, FileText, Flame, Highlighter, Layers, Library, List, LogIn, LogOut, Menu, Plus, RotateCcw, RotateCw, Search, Settings2, Sparkles, Star, Trash2, Type, X } from 'lucide-react'
-import { forgotPassword, getCatalog, getUser, loadBookBytes, login, logout, register, uploadBlob } from './api'
+import { forgotPassword, getCatalog, getEntitlement, getUser, loadBookBytes, login, logout, register, uploadBlob, type Entitlement } from './api'
 import { ReaderPane } from './Reader'
 import { getCachedCatalog, getFile, getFiles, getOfflineBook, getOfflineBooks, getPending, readSession, removeLocalDocument, removeOfflineBook, saveCachedCatalog, saveFile, saveOfflineBook, saveSession } from './store'
 import { androidRecordId, localRecords, mutate, profileFor, readableError, syncNow } from './sync'
+import { initialReviewItem, nextReview, reviewIsDue, type ReviewItemPayload } from './review'
 import type { Book, Category, FontFamily, LocalFile, ReaderLocation, Session, SyncRecord, TextAlignment, TocItem } from './types'
 import './App.css'
 
@@ -11,6 +12,37 @@ type Page = 'home' | 'catalog' | 'library' | 'memory' | 'stats' | 'account'
 type ShelfFilter = 'all' | 'reading' | 'favorites' | 'completed' | 'offline' | 'local'
 type AuthMode = 'login' | 'register' | 'forgot'
 type Theme = 'paper' | 'sepia' | 'night'
+type ReaderComfort = { fontSize: number; fontFamily: FontFamily; lineHeight: number; textAlignment: TextAlignment; theme: Theme }
+
+const defaultComfort: ReaderComfort = { fontSize: 100, fontFamily: 'serif', lineHeight: 1.65, textAlignment: 'left', theme: 'paper' }
+
+function storedComfort(): ReaderComfort {
+  try {
+    const raw = JSON.parse(localStorage.getItem('nocap-reader-comfort-v1') || 'null') as Partial<ReaderComfort> | null
+    if (!raw) return defaultComfort
+    return {
+      fontSize: Number.isFinite(raw.fontSize) ? Math.max(80, Math.min(170, Number(raw.fontSize))) : defaultComfort.fontSize,
+      fontFamily: ['serif', 'sans', 'mono'].includes(String(raw.fontFamily)) ? raw.fontFamily as FontFamily : defaultComfort.fontFamily,
+      lineHeight: [1.4, 1.65, 1.9].includes(Number(raw.lineHeight)) ? Number(raw.lineHeight) : defaultComfort.lineHeight,
+      textAlignment: raw.textAlignment === 'justify' ? 'justify' : 'left',
+      theme: ['paper', 'sepia', 'night'].includes(String(raw.theme)) ? raw.theme as Theme : defaultComfort.theme,
+    }
+  } catch { return defaultComfort }
+}
+
+function comfortFromRecord(record?: SyncRecord): ReaderComfort | null {
+  if (!record || record.deleted || record.kind !== 'per_book_preferences' || record.payload.use_book_override === 0 || record.payload.use_book_override === false) return null
+  const p = record.payload
+  const theme: Theme = p.theme === 'DARK' ? 'night' : p.theme === 'SEPIA' ? 'sepia' : 'paper'
+  const fontFamily: FontFamily = p.font_family === 'SANS_SERIF' || p.font_family === 'ROBOTO' ? 'sans' : p.font_family === 'CUSTOM' ? 'mono' : 'serif'
+  return {
+    fontSize: Math.max(80, Math.min(170, Math.round((Number(p.font_size) || 1) * 100))),
+    fontFamily,
+    lineHeight: Math.max(1.2, Math.min(2, Number(p.line_height) || defaultComfort.lineHeight)),
+    textAlignment: p.text_alignment === 'JUSTIFY' ? 'justify' : 'left',
+    theme,
+  }
+}
 
 const toText = (value: unknown) => typeof value === 'string' ? value : ''
 const ms = () => Date.now()
@@ -34,6 +66,7 @@ function progressFor(records: SyncRecord[], bookId: string) {
 function bookLabel(book: Book) { return book.author || (book.source === 'local' ? 'Tài liệu trên trình duyệt' : 'NoCap Library') }
 
 function App() {
+  const initialComfort = useMemo(storedComfort, [])
   const [page, setPage] = useState<Page>('home')
   const [session, setSession] = useState<Session | null>(() => readSession())
   const sessionToken = session?.token
@@ -55,11 +88,11 @@ function App() {
   const [syncing, setSyncing] = useState(false)
   const [pendingCount, setPendingCount] = useState(0)
   const [online, setOnline] = useState(navigator.onLine)
-  const [fontSize, setFontSize] = useState(100)
-  const [fontFamily, setFontFamily] = useState<FontFamily>('serif')
-  const [lineHeight, setLineHeight] = useState<number>(1.65)
-  const [textAlignment, setTextAlignment] = useState<TextAlignment>('left')
-  const [theme, setTheme] = useState<Theme>('paper')
+  const [fontSize, setFontSize] = useState(initialComfort.fontSize)
+  const [fontFamily, setFontFamily] = useState<FontFamily>(initialComfort.fontFamily)
+  const [lineHeight, setLineHeight] = useState<number>(initialComfort.lineHeight)
+  const [textAlignment, setTextAlignment] = useState<TextAlignment>(initialComfort.textAlignment)
+  const [theme, setTheme] = useState<Theme>(initialComfort.theme)
   const [toc, setToc] = useState<TocItem[]>([])
   const [tocOpen, setTocOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -72,15 +105,19 @@ function App() {
   const [noteSaving, setNoteSaving] = useState(false)
   const [sortOrder, setSortOrder] = useState<'recent' | 'title' | 'progress'>('recent')
   const [shelfFilter, setShelfFilter] = useState<ShelfFilter>('all')
+  const [organizationFilter, setOrganizationFilter] = useState('all')
   const [reviewOpen, setReviewOpen] = useState(false)
   const [reviewIndex, setReviewIndex] = useState(0)
   const [cardFlipped, setCardFlipped] = useState(false)
   const [reviewQueue, setReviewQueue] = useState<SyncRecord[]>([])
   const [reviewStats, setReviewStats] = useState({ mastered: 0, reviewAgain: 0 })
+  const [entitlement, setEntitlement] = useState<Entitlement | null>(null)
   const [controls, setControls] = useState<{ previous: () => void; next: () => void } | null>(null)
   const [selectedBook, setSelectedBook] = useState<Book | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const progressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const preferenceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const readingSessionRef = useRef<{ id: string; bookId: string; startedAt: number; startProgress: number; format: string; localOnly: boolean } | null>(null)
   const syncFlight = useRef<{ profile: string; promise: Promise<void> } | null>(null)
   const readerRef = useRef<Book | null>(null)
   const profileRef = useRef(profile)
@@ -91,6 +128,10 @@ function App() {
   locationRef.current = location
   const lastSyncAt = useRef(0)
   const syncNeedsRerun = useRef(false)
+
+  useEffect(() => {
+    localStorage.setItem('nocap-reader-comfort-v1', JSON.stringify({ fontSize, fontFamily, lineHeight, textAlignment, theme }))
+  }, [fontSize, fontFamily, lineHeight, textAlignment, theme])
 
   const refreshLocal = useCallback(async (selectedProfile: string) => {
     const [nextRecords, nextFiles, nextPending, nextOffline, publicOffline] = await Promise.all([localRecords(selectedProfile), getFiles(selectedProfile), getPending(selectedProfile), getOfflineBooks(selectedProfile), getOfflineBooks('PUBLIC_OFFLINE')])
@@ -168,6 +209,41 @@ function App() {
     try { await flight } finally { if (syncFlight.current?.promise === flight) syncFlight.current = null }
   }, [refreshLocal])
 
+  const beginReadingSession = useCallback((book: Book, startProgress: number) => {
+    readingSessionRef.current = {
+      id: crypto.randomUUID(),
+      bookId: book.id,
+      startedAt: ms(),
+      startProgress: Math.max(0, Math.min(1, startProgress)),
+      format: book.format || 'EPUB',
+      localOnly: book.source === 'local',
+    }
+  }, [])
+
+  const completeReadingSession = useCallback(async (book: Book, endProgress: number) => {
+    const tracked = readingSessionRef.current
+    if (!tracked || tracked.bookId !== book.id) return
+    readingSessionRef.current = null
+    const endedAt = ms()
+    const duration = Math.max(0, endedAt - tracked.startedAt)
+    if (duration < 5000) return
+    const selectedProfile = profileRef.current
+    const payload = {
+      id: tracked.id,
+      book_id: tracked.bookId,
+      started_at: tracked.startedAt,
+      ended_at: endedAt,
+      duration_ms: duration,
+      start_progress: tracked.startProgress,
+      end_progress: Math.max(0, Math.min(1, endProgress)),
+      format: tracked.format,
+    }
+    await mutate(selectedProfile, 'reading_sessions', androidRecordId('reading_sessions', tracked.id), payload, false, tracked.localOnly)
+    await refreshLocal(selectedProfile)
+    const activeSession = sessionRef.current
+    if (activeSession && navigator.onLine && !tracked.localOnly) void synchronize(activeSession, true)
+  }, [refreshLocal, synchronize])
+
   useEffect(() => {
     const token = sessionToken
     if (!token) return
@@ -189,6 +265,17 @@ function App() {
     // Only verify when the account identity changes; sync retries use the online event.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionToken, synchronize])
+
+  useEffect(() => {
+    if (!sessionToken) { setEntitlement(null); return }
+    let active = true
+    void getEntitlement(sessionToken).then(value => {
+      if (active) setEntitlement(value)
+    }).catch(() => {
+      if (active) setEntitlement(null)
+    })
+    return () => { active = false }
+  }, [sessionToken])
 
   useEffect(() => {
     if (!online || !session) return
@@ -219,7 +306,11 @@ function App() {
     const onVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
         flushReadingProgress()
+        const book = readerRef.current
+        if (book) void completeReadingSession(book, locationRef.current?.progression || 0)
       } else if (document.visibilityState === 'visible') {
+        const book = readerRef.current
+        if (book && !readingSessionRef.current) beginReadingSession(book, locationRef.current?.progression || 0)
         const curSession = sessionRef.current
         if (curSession && navigator.onLine && Date.now() - lastSyncAt.current > 15000) {
           void synchronize(curSession, true)
@@ -251,13 +342,15 @@ function App() {
       window.removeEventListener('pagehide', flushReadingProgress)
       clearInterval(interval)
     }
-  }, [synchronize, refreshLocal])
+  }, [synchronize, refreshLocal, beginReadingSession, completeReadingSession])
 
   const cloudBooks = useMemo(() => records.map(syncedBook).filter((book): book is Book => !!book && !!book.id && !catalog.some(item => item.id === book.id)), [records, catalog])
   const books = useMemo(() => [...catalog, ...cloudBooks, ...localFiles.map(file => file.book)], [catalog, cloudBooks, localFiles])
   const favorites = useMemo(() => new Set(records.filter(r => r.kind === 'favorites' && !r.deleted).map(r => toText(r.payload.book_id))), [records])
   const reading = useMemo(() => books.filter(book => !!progressFor(records, book.id)).sort((a, b) => Number(progressFor(records, b.id)?.payload.last_read_at || 0) - Number(progressFor(records, a.id)?.payload.last_read_at || 0)), [books, records])
   const libraryBooks = useMemo(() => books.filter(book => book.source === 'local' || book.source === 'cloud' || offlineIds.has(book.id) || favorites.has(book.id) || !!progressFor(records, book.id)), [books, offlineIds, favorites, records])
+  const tags = useMemo(() => records.filter(record => record.kind === 'tags' && !record.deleted).map(record => ({ id: toText(record.payload.id), name: toText(record.payload.name) })).filter(item => item.id && item.name), [records])
+  const collections = useMemo(() => records.filter(record => record.kind === 'collections' && !record.deleted).map(record => ({ id: toText(record.payload.id), name: toText(record.payload.name) })).filter(item => item.id && item.name), [records])
   const filteredBooks = useMemo(() => {
     let list = page === 'library' ? libraryBooks : catalog
     if (page === 'library') {
@@ -275,6 +368,15 @@ function App() {
       } else if (shelfFilter === 'local') {
         list = list.filter(b => b.source === 'local' || b.source === 'cloud')
       }
+      if (organizationFilter.startsWith('tag:')) {
+        const tagId = organizationFilter.slice(4)
+        const bookIds = new Set(records.filter(record => record.kind === 'book_tag_cross_ref' && !record.deleted && record.payload.tag_id === tagId).map(record => toText(record.payload.book_id)))
+        list = list.filter(book => bookIds.has(book.id))
+      } else if (organizationFilter.startsWith('collection:')) {
+        const collectionId = organizationFilter.slice('collection:'.length)
+        const bookIds = new Set(records.filter(record => record.kind === 'book_collection_cross_ref' && !record.deleted && record.payload.collection_id === collectionId).map(record => toText(record.payload.book_id)))
+        list = list.filter(book => bookIds.has(book.id))
+      }
     }
     const filtered = list.filter(book => (category === 'all' || book.categoryId === category) && `${book.title} ${book.author}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
     return [...filtered].sort((a, b) => {
@@ -288,21 +390,83 @@ function App() {
       const timeB = Number(progressFor(records, b.id)?.payload.last_read_at || 0)
       return timeB - timeA
     })
-  }, [page, libraryBooks, catalog, category, query, sortOrder, records, shelfFilter, favorites, offlineIds])
+  }, [page, libraryBooks, catalog, category, query, sortOrder, records, shelfFilter, favorites, offlineIds, organizationFilter])
   const annotations = useMemo(() => records.filter(r => !r.deleted && (r.kind === 'highlights' || r.kind === 'bookmarks')).sort((a, b) => Number(b.payload.created_at || 0) - Number(a.payload.created_at || 0)), [records])
+  const readerAnnotations = useMemo(() => {
+    if (!reader) return []
+    return records.filter(record => record.kind === 'highlights' && !record.deleted && record.payload.book_id === reader.book.id).map(record => ({
+      id: record.id,
+      locatorJson: toText(record.payload.locator_json),
+      text: toText(record.payload.text),
+      color: toText(record.payload.color) || 'YELLOW',
+    }))
+  }, [reader, records])
+  const currentBookmarked = !!(reader && location && records.some(record => record.kind === 'bookmarks' && !record.deleted && record.payload.book_id === reader.book.id && record.payload.locator_json === location.locatorJson))
+  const reviewItems = useMemo(() => records.filter(record => record.kind === 'review_items' && !record.deleted), [records])
+  const dueReviewCount = useMemo(() => {
+    const byAnnotation = new Map(reviewItems.map(item => [toText(item.payload.annotation_id), item]))
+    return annotations.filter(annotation => {
+      if (annotation.kind !== 'highlights') return false
+      const item = byAnnotation.get(toText(annotation.payload.id) || annotation.id)
+      return !item || reviewIsDue(item.payload as unknown as ReviewItemPayload)
+    }).length
+  }, [annotations, reviewItems])
+  const readingSessions = useMemo(() => records.filter(record => record.kind === 'reading_sessions' && !record.deleted && Number(record.payload.duration_ms) >= 5000), [records])
+  const totalReadingMinutes = Math.round(readingSessions.reduce((sum, record) => sum + Number(record.payload.duration_ms || 0), 0) / 60000)
+  const readingDayCount = useMemo(() => new Set(readingSessions.map(record => new Date(Number(record.payload.started_at) || 0).toISOString().slice(0, 10))).size, [readingSessions])
 
   async function authenticated(value: Session) {
     if (progressTimer.current) clearTimeout(progressTimer.current)
+    if (preferenceTimer.current) clearTimeout(preferenceTimer.current)
+    if (readerRef.current) await completeReadingSession(readerRef.current, locationRef.current?.progression || 0)
     setReader(null); readerRef.current = null; setRecords([]); setLocalFiles([]); setOfflineIds(new Set())
     saveSession(value); setSession(value); setAuthOpen(false); setPage('home'); setNotice(`Đã đăng nhập ${value.user.email}.`)
   }
 
   async function signOut() {
     if (progressTimer.current) clearTimeout(progressTimer.current)
+    if (preferenceTimer.current) clearTimeout(preferenceTimer.current)
+    if (readerRef.current) await completeReadingSession(readerRef.current, locationRef.current?.progression || 0)
     const oldToken = session?.token
     saveSession(null); setSession(null); setRecords([]); setLocalFiles([]); setOfflineIds(new Set()); setReader(null); readerRef.current = null
     setPage('home'); setNotice('Đã đăng xuất. Dữ liệu tài khoản được giữ riêng và không bị xóa.')
     if (oldToken) void logout(oldToken).catch(() => {})
+  }
+
+  function applyComfort(next: ReaderComfort) {
+    setFontSize(next.fontSize)
+    setFontFamily(next.fontFamily)
+    setLineHeight(next.lineHeight)
+    setTextAlignment(next.textAlignment)
+    setTheme(next.theme)
+  }
+
+  function updateComfort(patch: Partial<ReaderComfort>) {
+    const next: ReaderComfort = { fontSize, fontFamily, lineHeight, textAlignment, theme, ...patch }
+    applyComfort(next)
+    const book = readerRef.current
+    if (!book) return
+    if (preferenceTimer.current) clearTimeout(preferenceTimer.current)
+    const selectedProfile = profileRef.current
+    const activeSession = sessionRef.current
+    preferenceTimer.current = setTimeout(() => {
+      preferenceTimer.current = null
+      const payload = {
+        book_id: book.id,
+        theme: next.theme === 'night' ? 'DARK' : next.theme === 'sepia' ? 'SEPIA' : 'LIGHT',
+        font_family: next.fontFamily === 'sans' ? 'SANS_SERIF' : next.fontFamily === 'mono' ? 'CUSTOM' : 'SERIF',
+        font_size: next.fontSize / 100,
+        line_height: next.lineHeight,
+        text_alignment: next.textAlignment === 'justify' ? 'JUSTIFY' : 'START',
+        scroll_mode: 1,
+        use_book_override: 1,
+        updated_at: ms(),
+      }
+      void mutate(selectedProfile, 'per_book_preferences', androidRecordId('per_book_preferences', book.id), payload, false, book.source === 'local').then(() => {
+        void refreshLocal(selectedProfile)
+        if (activeSession && navigator.onLine && book.source !== 'local') void synchronize(activeSession, true)
+      }).catch(error => setNotice(readableError(error)))
+    }, 350)
   }
 
 async function sha256Hex(file: Blob): Promise<string> {
@@ -313,7 +477,7 @@ async function sha256Hex(file: Blob): Promise<string> {
 
   async function importFile(file: File) {
     const extension = file.name.split('.').pop()?.toLowerCase() || ''
-    if (!['epub', 'pdf', 'txt', 'html', 'htm', 'docx'].includes(extension)) { setNotice('Hỗ trợ EPUB, PDF, TXT, HTML và DOCX.'); return }
+    if (!['epub', 'pdf', 'txt', 'md', 'markdown', 'html', 'htm', 'docx', 'jpg', 'jpeg', 'png', 'webp'].includes(extension)) { setNotice('Hỗ trợ EPUB, PDF, TXT, Markdown, HTML, DOCX, JPG, PNG và WebP.'); return }
     if (!file.size || file.size > 250 * 1024 * 1024) { setNotice('Tệp trống hoặc vượt giới hạn 250 MB.'); return }
     setNotice('Đang tính mã băm và chuẩn bị tài liệu...')
     try {
@@ -341,8 +505,12 @@ async function sha256Hex(file: Blob): Promise<string> {
           await uploadBlob(session.token, hash, file)
           const mediaType = extension === 'pdf' ? 'application/pdf'
             : extension === 'txt' ? 'text/plain'
+            : extension === 'md' || extension === 'markdown' ? 'text/markdown'
             : extension === 'html' || extension === 'htm' ? 'text/html'
             : extension === 'docx' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            : extension === 'png' ? 'image/png'
+            : extension === 'webp' ? 'image/webp'
+            : extension === 'jpg' || extension === 'jpeg' ? 'image/jpeg'
             : 'application/epub+zip'
           const now = ms()
           const payload = {
@@ -395,7 +563,7 @@ async function sha256Hex(file: Blob): Promise<string> {
     }
   }
 
-  async function openBook(book: Book) {
+  async function openBook(book: Book, initialOverride?: string) {
     const targetProfile = profile
     if (progressTimer.current) clearTimeout(progressTimer.current)
     setReaderError(''); setReaderLoading(true); setLocation(null); setSelection(null)
@@ -404,8 +572,11 @@ async function sha256Hex(file: Blob): Promise<string> {
       const bytes = local ? await local.data.arrayBuffer() : offlineCopy ? await offlineCopy.data.arrayBuffer() : await loadBookBytes(book, session?.token)
       if (profileRef.current !== targetProfile) return
       if (!bytes.byteLength) throw new Error('Tệp sách không có nội dung.')
+      const savedComfort = comfortFromRecord(records.find(record => record.kind === 'per_book_preferences' && !record.deleted && record.payload.book_id === book.id))
+      if (savedComfort) applyComfort(savedComfort)
+      beginReadingSession(book, Number(progressFor(records, book.id)?.payload.progression || 0))
       readerRef.current = book
-      setReader({ book, bytes, initial: toText(progressFor(records, book.id)?.payload.locator_json) })
+      setReader({ book, bytes, initial: initialOverride || toText(progressFor(records, book.id)?.payload.locator_json) })
     } catch (error) { if (profileRef.current === targetProfile) setReaderError(readableError(error)) }
     finally { setReaderLoading(false) }
   }
@@ -456,12 +627,14 @@ async function sha256Hex(file: Blob): Promise<string> {
     const loc = locationRef.current || location
     if (reader && loc) {
       const book = reader.book
+      void completeReadingSession(book, loc.progression)
       const payload = { book_id: book.id, locator_json: loc.locatorJson, progression: Math.max(0, Math.min(1, loc.progression)), chapter_title: loc.chapterTitle || null, last_read_at: ms(), sync_version: 1 }
       void mutate(profile, 'reading_progress', androidRecordId('reading_progress', book.id), payload, false, book.source === 'local').then(() => {
         void refreshLocal(profile)
         if (session && book.source !== 'local') void synchronize(session, true)
       })
     }
+    if (reader && !loc) void completeReadingSession(reader.book, 0)
     setReader(null); readerRef.current = null; locationRef.current = null; setSelection(null)
   }
 
@@ -475,17 +648,21 @@ async function sha256Hex(file: Blob): Promise<string> {
   async function toggleBookmark() {
     if (!reader || !location) return
     const existing = records.find(r => r.kind === 'bookmarks' && !r.deleted && r.payload.book_id === reader.book.id && r.payload.locator_json === location.locatorJson)
-    if (existing) await mutate(profile, 'bookmarks', existing.id, {}, true, reader.book.source === 'local')
+    if (existing) {
+      await mutate(profile, 'bookmarks', existing.id, {}, true, reader.book.source === 'local')
+      setNotice('Đã bỏ dấu trang tại vị trí này.')
+    }
     else {
       const id = crypto.randomUUID()
       await mutate(profile, 'bookmarks', androidRecordId('bookmarks', id), { id, book_id: reader.book.id, locator_json: location.locatorJson, chapter_title: location.chapterTitle || '', snippet: null, created_at: ms(), sync_version: 1, is_deleted: 0 }, false, reader.book.source === 'local')
+      setNotice('Đã thêm dấu trang.')
     }
     await refreshLocal(profile)
     if (session && online && reader.book.source !== 'local') void synchronize(session)
   }
 
   async function saveNote() {
-    if (!reader || !location || !noteText.trim()) return
+    if (!reader || !location || (!noteText.trim() && !selection?.text)) return
     setNoteSaving(true)
     try {
       const id = crypto.randomUUID()
@@ -533,31 +710,76 @@ async function sha256Hex(file: Blob): Promise<string> {
     setNotice('Đã xuất toàn bộ ghi chú ra tệp Markdown (.md)!')
   }
 
-  function startFlashcardReview() {
-    const eligible = annotations.filter(r => r.kind === 'highlights' || !!r.payload.text || !!r.payload.note)
+  async function startFlashcardReview() {
+    const eligible = annotations.filter(r => r.kind === 'highlights')
     if (!eligible.length) {
       setNotice('Chưa có trích dẫn hoặc ghi chú nào trong mục Điều đáng nhớ để ôn tập.')
       return
     }
-    const shuffled = [...eligible].sort(() => Math.random() - 0.5)
-    setReviewQueue(shuffled)
-    setReviewIndex(0)
-    setCardFlipped(false)
-    setReviewStats({ mastered: 0, reviewAgain: 0 })
-    setReviewOpen(true)
+    try {
+      const persistedReviewItems = (await localRecords(profile)).filter(item => item.kind === 'review_items' && !item.deleted)
+      const existingByAnnotation = new Map(persistedReviewItems.map(item => [toText(item.payload.annotation_id), item]))
+      const now = ms()
+      const newlyCreated: SyncRecord[] = []
+      for (const highlight of eligible) {
+        const annotationId = toText(highlight.payload.id) || highlight.id
+        if (existingByAnnotation.has(annotationId)) continue
+        const reviewId = crypto.randomUUID()
+        const payload = initialReviewItem(reviewId, annotationId, toText(highlight.payload.book_id), now)
+        await mutate(profile, 'review_items', androidRecordId('review_items', reviewId), payload, false, books.find(book => book.id === highlight.payload.book_id)?.source === 'local')
+        newlyCreated.push({ key: '', profile, kind: 'review_items', id: androidRecordId('review_items', reviewId), version: 0, deleted: false, payload })
+        existingByAnnotation.set(annotationId, newlyCreated[newlyCreated.length - 1])
+      }
+      const dueAnnotations = new Set(
+        [...persistedReviewItems, ...newlyCreated]
+          .filter(item => reviewIsDue(item.payload as unknown as ReviewItemPayload, now))
+          .map(item => toText(item.payload.annotation_id)),
+      )
+      const queue = eligible.filter(item => dueAnnotations.has(toText(item.payload.id) || item.id))
+      await refreshLocal(profile)
+      if (session && online) void synchronize(session, true)
+      if (!queue.length) {
+        setNotice('Hôm nay chưa có thẻ nào đến hạn ôn. Tiến độ đã được giữ cho lần tiếp theo.')
+        return
+      }
+      const shuffled = [...queue].sort(() => Math.random() - 0.5)
+      setReviewQueue(shuffled)
+      setReviewIndex(0)
+      setCardFlipped(false)
+      setReviewStats({ mastered: 0, reviewAgain: 0 })
+      setReviewOpen(true)
+    } catch (error) {
+      setNotice(readableError(error))
+    }
   }
 
-  function handleFlashcardRating(rating: 'again' | 'good') {
+  async function handleFlashcardRating(rating: 'again' | 'good') {
     if (!reviewQueue.length || reviewIndex >= reviewQueue.length) return
     const currentCard = reviewQueue[reviewIndex]
-    setCardFlipped(false)
-    if (rating === 'again') {
-      setReviewStats(prev => ({ ...prev, reviewAgain: prev.reviewAgain + 1 }))
-      setReviewQueue(prev => [...prev, currentCard])
-      setReviewIndex(prev => prev + 1)
-    } else {
-      setReviewStats(prev => ({ ...prev, mastered: prev.mastered + 1 }))
-      setReviewIndex(prev => prev + 1)
+    try {
+      const annotationId = toText(currentCard.payload.id) || currentCard.id
+      const currentRecords = await localRecords(profile)
+      const existing = currentRecords.find(record => record.kind === 'review_items' && !record.deleted && record.payload.annotation_id === annotationId)
+      const reviewId = existing ? toText(existing.payload.id) : crypto.randomUUID()
+      const base = existing
+        ? existing.payload as unknown as ReviewItemPayload
+        : initialReviewItem(reviewId, annotationId, toText(currentCard.payload.book_id))
+      const payload = nextReview(base, rating)
+      const localOnly = books.find(book => book.id === currentCard.payload.book_id)?.source === 'local'
+      await mutate(profile, 'review_items', androidRecordId('review_items', reviewId), payload, false, localOnly)
+      await refreshLocal(profile)
+      if (session && online && !localOnly) void synchronize(session, true)
+      setCardFlipped(false)
+      if (rating === 'again') {
+        setReviewStats(prev => ({ ...prev, reviewAgain: prev.reviewAgain + 1 }))
+        setReviewQueue(prev => [...prev, currentCard])
+        setReviewIndex(prev => prev + 1)
+      } else {
+        setReviewStats(prev => ({ ...prev, mastered: prev.mastered + 1 }))
+        setReviewIndex(prev => prev + 1)
+      }
+    } catch (error) {
+      setNotice(readableError(error))
     }
   }
 
@@ -619,11 +841,11 @@ async function sha256Hex(file: Blob): Promise<string> {
               <button className={`shelf-chip ${shelfFilter === 'local' ? 'active' : ''}`} onClick={() => setShelfFilter('local')}><Layers size={14} /> Tài liệu riêng</button>
             </div>
           )}
-          <div className="filter-bar"><label className="search-field"><Search size={18} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm tên sách hoặc tác giả…" aria-label="Tìm sách" /></label><select value={category} onChange={event => setCategory(event.target.value)} aria-label="Lọc thể loại"><option value="all">Tất cả thể loại</option>{categories.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><select value={sortOrder} onChange={e => setSortOrder(e.target.value as 'recent' | 'title' | 'progress')} aria-label="Sắp xếp sách"><option value="recent">Đọc gần nhất</option><option value="title">Tên sách (A-Z)</option><option value="progress">Tiến độ (%)</option></select><span>{filteredBooks.length} tài liệu</span></div>
-          {filteredBooks.length ? <div className="book-grid">{filteredBooks.map(book => <BookCard key={book.id} book={book} progress={Number(progressFor(records, book.id)?.payload.progression || 0)} onOpen={() => void openBook(book)} onDetails={() => setSelectedBook(book)} onFavorite={book.source === 'local' ? undefined : () => void toggleFavorite(book)} favorite={favorites.has(book.id)} onDelete={book.source === 'local' || book.source === 'cloud' ? () => void deleteBook(book) : undefined} offline={book.source === 'local' || offlineIds.has(book.id)} offlineBusy={offlineBusy === book.id} onOffline={book.source !== 'local' && book.fileUrl ? () => void toggleOffline(book) : undefined} />)}</div> : <div className="empty-state"><Library size={30} /><h3>Chưa có tài liệu phù hợp</h3><p>Thử từ khóa khác hoặc thêm một tài liệu từ máy của bạn.</p><button className="secondary" onClick={() => { setQuery(''); setCategory('all'); setShelfFilter('all') }}>Xóa bộ lọc</button></div>}
+          <div className="filter-bar"><label className="search-field"><Search size={18} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm tên sách hoặc tác giả…" aria-label="Tìm sách" /></label><select value={category} onChange={event => setCategory(event.target.value)} aria-label="Lọc thể loại"><option value="all">Tất cả thể loại</option>{categories.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><select value={sortOrder} onChange={e => setSortOrder(e.target.value as 'recent' | 'title' | 'progress')} aria-label="Sắp xếp sách"><option value="recent">Đọc gần nhất</option><option value="title">Tên sách (A-Z)</option><option value="progress">Tiến độ (%)</option></select>{page === 'library' && (tags.length > 0 || collections.length > 0) && <select value={organizationFilter} onChange={event => setOrganizationFilter(event.target.value)} aria-label="Lọc theo thẻ hoặc bộ sưu tập"><option value="all">Tất cả thẻ & bộ sưu tập</option>{tags.length > 0 && <optgroup label="Thẻ">{tags.map(tag => <option key={`tag:${tag.id}`} value={`tag:${tag.id}`}>{tag.name}</option>)}</optgroup>}{collections.length > 0 && <optgroup label="Bộ sưu tập">{collections.map(collection => <option key={`collection:${collection.id}`} value={`collection:${collection.id}`}>{collection.name}</option>)}</optgroup>}</select>}<span>{filteredBooks.length} tài liệu</span></div>
+          {filteredBooks.length ? <div className="book-grid">{filteredBooks.map(book => <BookCard key={book.id} book={book} progress={Number(progressFor(records, book.id)?.payload.progression || 0)} onOpen={() => void openBook(book)} onDetails={() => setSelectedBook(book)} onFavorite={book.source === 'local' ? undefined : () => void toggleFavorite(book)} favorite={favorites.has(book.id)} onDelete={book.source === 'local' || book.source === 'cloud' ? () => void deleteBook(book) : undefined} offline={book.source === 'local' || offlineIds.has(book.id)} offlineBusy={offlineBusy === book.id} onOffline={book.source !== 'local' && book.fileUrl ? () => void toggleOffline(book) : undefined} />)}</div> : <div className="empty-state"><Library size={30} /><h3>Chưa có tài liệu phù hợp</h3><p>Thử từ khóa khác hoặc thêm một tài liệu từ máy của bạn.</p><button className="secondary" onClick={() => { setQuery(''); setCategory('all'); setShelfFilter('all'); setOrganizationFilter('all') }}>Xóa bộ lọc</button></div>}
         </>}
 
-        {page === 'memory' && <><div className="page-heading"><div><p className="eyebrow">READING MEMORY</p><h1>Điều đáng nhớ</h1><p>Tìm lại ghi chú, đoạn đánh dấu và dấu trang trong một chỗ.</p></div><div className="memory-actions"><div className="count-chip">{annotations.length} mục đã lưu</div>{annotations.length > 0 && <><button className="primary" onClick={startFlashcardReview} title="Bắt đầu phiên ôn tập ghi chú"><Sparkles size={16} /> Ôn tập Flashcards</button><button className="secondary" onClick={exportMarkdown} title="Xuất ghi chú sang file Markdown"><FileDown size={16} /> Xuất (.md)</button></>}</div></div><label className="search-field memory-search"><Search size={18} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm trong ghi chú…" aria-label="Tìm ghi chú" /></label>{annotations.filter(record => `${record.payload.text || ''} ${record.payload.note || ''} ${record.payload.chapter_title || ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())).length ? <div className="memory-list">{annotations.filter(record => `${record.payload.text || ''} ${record.payload.note || ''} ${record.payload.chapter_title || ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())).map(record => { const book = books.find(item => item.id === record.payload.book_id); return <div className="memory-item" key={record.key}><div className="memory-icon">{record.kind === 'highlights' ? <Highlighter size={18} /> : <Bookmark size={18} />}</div><div><div className="memory-book">{book?.title || 'Tài liệu riêng'}</div><blockquote>{toText(record.payload.text) || toText(record.payload.chapter_title) || 'Dấu trang'}</blockquote>{!!record.payload.note && <p>{toText(record.payload.note)}</p>}</div>{book && <button className="text-button" onClick={() => void openBook(book)}>Mở sách <ArrowRight size={15} /></button>}</div> })}</div> : <div className="empty-state"><Highlighter size={30} /><h3>Chưa có điều gì được lưu</h3><p>Khi đọc, chọn đoạn văn để thêm ghi chú hoặc bấm dấu trang.</p><button className="secondary" onClick={() => setPage('catalog')}>Tìm sách để đọc</button></div>}</>}
+        {page === 'memory' && <><div className="page-heading"><div><p className="eyebrow">READING MEMORY</p><h1>Điều đáng nhớ</h1><p>Tìm lại ghi chú, đoạn đánh dấu và dấu trang trong một chỗ.</p></div><div className="memory-actions"><div className="count-chip">{annotations.length} mục đã lưu · {dueReviewCount} cần ôn</div>{annotations.length > 0 && <><button className="primary" onClick={() => void startFlashcardReview()} title="Bắt đầu phiên ôn tập ghi chú"><Sparkles size={16} /> Ôn tập Flashcards</button><button className="secondary" onClick={exportMarkdown} title="Xuất ghi chú sang file Markdown"><FileDown size={16} /> Xuất (.md)</button></>}</div></div><label className="search-field memory-search"><Search size={18} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm trong ghi chú…" aria-label="Tìm ghi chú" /></label>{annotations.filter(record => `${record.payload.text || ''} ${record.payload.note || ''} ${record.payload.chapter_title || ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())).length ? <div className="memory-list">{annotations.filter(record => `${record.payload.text || ''} ${record.payload.note || ''} ${record.payload.chapter_title || ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())).map(record => { const book = books.find(item => item.id === record.payload.book_id); return <div className="memory-item" key={record.key}><div className="memory-icon">{record.kind === 'highlights' ? <Highlighter size={18} /> : <Bookmark size={18} />}</div><div><div className="memory-book">{book?.title || 'Tài liệu riêng'}</div><blockquote>{toText(record.payload.text) || toText(record.payload.chapter_title) || 'Dấu trang'}</blockquote>{!!record.payload.note && <p>{toText(record.payload.note)}</p>}</div>{book && <button className="text-button" onClick={() => void openBook(book, toText(record.payload.locator_json))}>Mở sách <ArrowRight size={15} /></button>}</div> })}</div> : <div className="empty-state"><Highlighter size={30} /><h3>Chưa có điều gì được lưu</h3><p>Khi đọc, chọn đoạn văn để thêm ghi chú hoặc bấm dấu trang.</p><button className="secondary" onClick={() => setPage('catalog')}>Tìm sách để đọc</button></div>}</>}
 
         {page === 'stats' && <>
           <div className="page-heading"><div><p className="eyebrow">READING ANALYTICS</p><h1>Thống kê đọc sách</h1><p>Theo dõi thói quen, tiến trình phát triển và các mục tiêu kiến thức của bạn.</p></div></div>
@@ -631,7 +853,7 @@ async function sha256Hex(file: Blob): Promise<string> {
             <div className="stat-widget"><div className="stat-icon-wrap"><Library size={22} /></div><div className="stat-content"><div className="stat-value">{libraryBooks.length}</div><div className="stat-title">Sách trong tủ</div></div></div>
             <div className="stat-widget"><div className="stat-icon-wrap orange"><BookOpen size={22} /></div><div className="stat-content"><div className="stat-value">{reading.filter(b => (Number(progressFor(records, b.id)?.payload.progression || 0)) < 0.99).length}</div><div className="stat-title">Sách đang đọc</div></div></div>
             <div className="stat-widget"><div className="stat-icon-wrap purple"><Highlighter size={22} /></div><div className="stat-content"><div className="stat-value">{annotations.length}</div><div className="stat-title">Ghi chú & Trích dẫn</div></div></div>
-            <div className="stat-widget"><div className="stat-icon-wrap blue"><Award size={22} /></div><div className="stat-content"><div className="stat-value">{reading.filter(b => (Number(progressFor(records, b.id)?.payload.progression || 0)) >= 0.99).length}</div><div className="stat-title">Đã hoàn thành</div></div></div>
+            <div className="stat-widget"><div className="stat-icon-wrap blue"><Award size={22} /></div><div className="stat-content"><div className="stat-value">{reading.filter(b => (Number(progressFor(records, b.id)?.payload.progression || 0)) >= 0.99).length}</div><div className="stat-title">Đã hoàn thành</div></div></div><div className="stat-widget"><div className="stat-icon-wrap orange"><Flame size={22} /></div><div className="stat-content"><div className="stat-value">{totalReadingMinutes} phút</div><div className="stat-title">Thời gian đọc đã ghi nhận</div></div></div><div className="stat-widget"><div className="stat-icon-wrap blue"><BarChart3 size={22} /></div><div className="stat-content"><div className="stat-value">{readingDayCount}</div><div className="stat-title">Ngày có phiên đọc</div></div></div>
           </div>
           <div className="stats-section-row">
             <div className="stats-panel">
@@ -643,28 +865,28 @@ async function sha256Hex(file: Blob): Promise<string> {
             </div>
             <div className="streak-box">
               <div className="streak-flame"><Flame size={28} /></div>
-              <div className="streak-num">{reading.length > 0 ? 'Hằng ngày' : 'Bắt đầu ngay'}</div>
+              <div className="streak-num">{readingDayCount > 0 ? `${readingDayCount} ngày` : 'Bắt đầu ngay'}</div>
               <p className="eyebrow" style={{ color: '#ffbe76', margin: '8px 0 4px' }}>THÓI QUEN ĐỌC BỀN BỈ</p>
               <div className="streak-desc">{reading.length > 0 ? `Bạn đang duy trì tiến độ đọc cùng ${reading.length} cuốn sách và ${annotations.length} mục ghi nhớ kiến thức.` : 'Đọc ít nhất 15 phút mỗi ngày giúp tăng cường khả năng ghi nhớ và tập trung sâu.'}</div>
-              {annotations.length > 0 && <button className="light-button" style={{ marginTop: '16px' }} onClick={startFlashcardReview}><Sparkles size={16} /> Ôn tập ngay hôm nay</button>}
+              {annotations.length > 0 && <button className="light-button" style={{ marginTop: '16px' }} onClick={() => void startFlashcardReview()}><Sparkles size={16} /> Ôn tập ngay hôm nay</button>}
             </div>
           </div>
         </>}
 
-        {page === 'account' && <><div className="page-heading"><div><p className="eyebrow">TÀI KHOẢN & ĐỒNG BỘ</p><h1>{session ? 'Không gian của bạn' : 'Đọc như khách'}</h1><p>{session ? 'Sách và ghi chú của tài khoản này được tách riêng.' : 'Bạn vẫn có thể đọc và thêm tài liệu trên trình duyệt này.'}</p></div></div><div className="settings-grid"><section className="settings-card"><h2>Tài khoản</h2>{session ? <><p className="account-email">{session.user.displayName || session.user.email}</p><p className="muted">{session.user.email}</p>{!session.user.emailVerified && <p className="warning-text">Email chưa xác minh. Một số thao tác cloud cần xác minh email.</p>}<button className="secondary" onClick={() => void signOut()}><LogOut size={17} /> Đăng xuất</button></> : <><p className="muted">Đăng nhập để tiếp tục trên Android và các thiết bị khác.</p><button className="primary" onClick={() => setAuthOpen(true)}>Đăng nhập / Đăng ký</button></>}</section><section className="settings-card"><h2>Tự động đồng bộ</h2><p>{online ? 'Đang kết nối Cloud • Tự động đồng bộ đa thiết bị' : 'Đang ngoại tuyến'}</p><p className="muted">{session ? (pendingCount ? `${pendingCount} thay đổi đang chờ tự động đồng bộ.` : 'Tiến độ đọc và ghi chú được tự động đồng bộ giữa Web và Android khi bạn đọc.') : 'Dữ liệu khách được lưu riêng trên trình duyệt hiện tại.'}</p>{session && <button className="secondary" onClick={() => void synchronize(session)} disabled={syncing}><RotateCw size={17} className={syncing ? 'spin' : ''} /> {syncing ? 'Đang đồng bộ…' : 'Đồng bộ ngay'}</button>}</section><section className="settings-card"><h2>Đọc thoải mái</h2><label className="range-label">Cỡ chữ <strong>{fontSize}%</strong><input type="range" min="80" max="170" step="10" value={fontSize} onChange={event => setFontSize(Number(event.target.value))} /></label><div className="setting-group" style={{ margin: '14px 0 10px' }}><span className="setting-label">Kiểu chữ</span><div className="toggle-row"><button className={`choice-chip ${fontFamily === 'serif' ? 'active' : ''}`} onClick={() => setFontFamily('serif')}>Có chân</button><button className={`choice-chip ${fontFamily === 'sans' ? 'active' : ''}`} onClick={() => setFontFamily('sans')}>Không chân</button><button className={`choice-chip ${fontFamily === 'mono' ? 'active' : ''}`} onClick={() => setFontFamily('mono')}>Đơn cách</button></div></div><div className="setting-group" style={{ margin: '14px 0 10px' }}><span className="setting-label">Căn lề</span><div className="toggle-row"><button className={`choice-chip ${textAlignment === 'left' ? 'active' : ''}`} onClick={() => setTextAlignment('left')}><AlignLeft size={14} /> Căn trái</button><button className={`choice-chip ${textAlignment === 'justify' ? 'active' : ''}`} onClick={() => setTextAlignment('justify')}><AlignJustify size={14} /> Căn đều</button></div></div><div className="setting-group" style={{ margin: '14px 0 10px' }}><span className="setting-label">Màu nền</span><div className="theme-row">{(['paper', 'sepia', 'night'] as const).map(value => <button key={value} className={`theme-chip ${value} ${theme === value ? 'chosen' : ''}`} onClick={() => setTheme(value)}>{value === 'paper' ? 'Giấy sáng' : value === 'sepia' ? 'Vàng dịu' : 'Ban đêm'}</button>)}</div></div></section></div></>}
+        {page === 'account' && <><div className="page-heading"><div><p className="eyebrow">TÀI KHOẢN & ĐỒNG BỘ</p><h1>{session ? 'Không gian của bạn' : 'Đọc như khách'}</h1><p>{session ? 'Sách và ghi chú của tài khoản này được tách riêng.' : 'Bạn vẫn có thể đọc và thêm tài liệu trên trình duyệt này.'}</p></div></div><div className="settings-grid"><section className="settings-card"><h2>Tài khoản</h2>{session ? <><p className="account-email">{session.user.displayName || session.user.email}</p><p className="muted">{session.user.email}</p>{!session.user.emailVerified && <p className="warning-text">Email chưa xác minh. Một số thao tác cloud cần xác minh email.</p>}<p className="muted">Gói hiện tại: <strong>{entitlement?.plan || 'FREE'}</strong>{entitlement?.plan === 'PRO' && entitlement.expiresAt ? ` · đến ${new Date(entitlement.expiresAt).toLocaleDateString('vi-VN')}` : ''}</p><button className="secondary" onClick={() => void signOut()}><LogOut size={17} /> Đăng xuất</button></> : <><p className="muted">Đăng nhập để tiếp tục trên Android và các thiết bị khác.</p><button className="primary" onClick={() => setAuthOpen(true)}>Đăng nhập / Đăng ký</button></>}</section><section className="settings-card"><h2>Tự động đồng bộ</h2><p>{online ? 'Đang kết nối Cloud • Tự động đồng bộ đa thiết bị' : 'Đang ngoại tuyến'}</p><p className="muted">{session ? (pendingCount ? `${pendingCount} thay đổi đang chờ tự động đồng bộ.` : 'Tiến độ đọc và ghi chú được tự động đồng bộ giữa Web và Android khi bạn đọc.') : 'Dữ liệu khách được lưu riêng trên trình duyệt hiện tại.'}</p>{session && <button className="secondary" onClick={() => void synchronize(session)} disabled={syncing}><RotateCw size={17} className={syncing ? 'spin' : ''} /> {syncing ? 'Đang đồng bộ…' : 'Đồng bộ ngay'}</button>}</section><section className="settings-card"><h2>Đọc thoải mái</h2><label className="range-label">Cỡ chữ <strong>{fontSize}%</strong><input type="range" min="80" max="170" step="10" value={fontSize} onChange={event => updateComfort({ fontSize: Number(event.target.value) })} /></label><div className="setting-group" style={{ margin: '14px 0 10px' }}><span className="setting-label">Kiểu chữ</span><div className="toggle-row"><button className={`choice-chip ${fontFamily === 'serif' ? 'active' : ''}`} onClick={() => updateComfort({ fontFamily: 'serif' })}>Có chân</button><button className={`choice-chip ${fontFamily === 'sans' ? 'active' : ''}`} onClick={() => updateComfort({ fontFamily: 'sans' })}>Không chân</button><button className={`choice-chip ${fontFamily === 'mono' ? 'active' : ''}`} onClick={() => updateComfort({ fontFamily: 'mono' })}>Đơn cách</button></div></div><div className="setting-group" style={{ margin: '14px 0 10px' }}><span className="setting-label">Căn lề</span><div className="toggle-row"><button className={`choice-chip ${textAlignment === 'left' ? 'active' : ''}`} onClick={() => updateComfort({ textAlignment: 'left' })}><AlignLeft size={14} /> Căn trái</button><button className={`choice-chip ${textAlignment === 'justify' ? 'active' : ''}`} onClick={() => updateComfort({ textAlignment: 'justify' })}><AlignJustify size={14} /> Căn đều</button></div></div><div className="setting-group" style={{ margin: '14px 0 10px' }}><span className="setting-label">Màu nền</span><div className="theme-row">{(['paper', 'sepia', 'night'] as const).map(value => <button key={value} className={`theme-chip ${value} ${theme === value ? 'chosen' : ''}`} onClick={() => updateComfort({ theme: value })}>{value === 'paper' ? 'Giấy sáng' : value === 'sepia' ? 'Vàng dịu' : 'Ban đêm'}</button>)}</div></div></section></div></>}
       </div>
-      <input ref={fileInput} type="file" accept=".epub,.pdf,.txt,.html,.htm,.docx" hidden onChange={event => { const file = event.target.files?.[0]; if (file) void importFile(file); event.target.value = '' }} />
+      <input ref={fileInput} type="file" accept=".epub,.pdf,.txt,.md,.markdown,.html,.htm,.docx,.jpg,.jpeg,.png,.webp" hidden onChange={event => { const file = event.target.files?.[0]; if (file) void importFile(file); event.target.value = '' }} />
     </main>
 
     {(readerLoading || readerError) && <div className="overlay"><div className="loading-card"><button className="icon-button close-floating" onClick={() => { setReaderLoading(false); setReaderError('') }} aria-label="Đóng"><X size={20} /></button>{readerLoading ? <><div className="loader" /><h2>Đang mở sách…</h2><p>Đang chuẩn bị nội dung để đọc.</p></> : <><FileText size={32} /><h2>Chưa mở được tài liệu</h2><p>{readerError}</p><button className="primary" onClick={() => setReaderError('')}>Thử lại sau</button></>}</div></div>}
 
-    {reader && <div className={`reader-shell ${theme}`}><div className="reader-topbar"><button className="reader-back" onClick={closeReader} aria-label="Quay lại tủ sách"><ArrowLeft size={19} /> <span>Tủ sách</span></button><div className="reader-title"><strong>{reader.book.title}</strong><small>{bookLabel(reader.book)}</small></div><div className="reader-actions"><button className="icon-button" title="Mục lục sách" aria-label="Mục lục" onClick={() => setTocOpen(true)}><List size={20} /></button><button className="icon-button" title="Tùy chỉnh đọc & font" aria-label="Tùy chỉnh" onClick={() => setSettingsOpen(true)}><Type size={20} /></button><button className="icon-button" title="Dấu trang" aria-label="Đánh dấu vị trí" onClick={() => void toggleBookmark()}><Bookmark size={20} /></button><button className="icon-button" title="Ghi chú" aria-label="Thêm ghi chú" onClick={() => { setNoteText(''); setNoteOpen(true) }}><Highlighter size={20} /></button></div></div><div className="reader-body"><ReaderPane book={reader.book} bytes={reader.bytes} initial={reader.initial} fontSize={fontSize} fontFamily={fontFamily} lineHeight={lineHeight} textAlignment={textAlignment} theme={theme} onLocation={onLocation} onSelection={(text, locator) => setSelection({ text, locator })} onControls={setControls} onToc={setToc} navigateTarget={navigateTarget} /></div><div className="reader-footer"><button onClick={() => controls?.previous()} disabled={!controls} aria-label="Trang trước"><ChevronLeft size={21} /> Trước</button><span>{Math.round((location?.progression || 0) * 100)}% · {location?.chapterTitle || 'Đang đọc'}</span><button onClick={() => controls?.next()} disabled={!controls} aria-label="Trang sau">Sau <ChevronRight size={21} /></button></div></div>}
+    {reader && <div className={`reader-shell ${theme}`}><div className="reader-topbar"><button className="reader-back" onClick={closeReader} aria-label="Quay lại tủ sách"><ArrowLeft size={19} /> <span>Tủ sách</span></button><div className="reader-title"><strong>{reader.book.title}</strong><small>{bookLabel(reader.book)}</small></div><div className="reader-actions"><button className="icon-button" title="Mục lục sách" aria-label="Mục lục" onClick={() => setTocOpen(true)}><List size={20} /></button><button className="icon-button" title="Tùy chỉnh đọc & font" aria-label="Tùy chỉnh" onClick={() => setSettingsOpen(true)}><Type size={20} /></button><button className={`icon-button ${currentBookmarked ? 'active' : ''}`} title={currentBookmarked ? 'Bỏ dấu trang' : 'Thêm dấu trang'} aria-label={currentBookmarked ? 'Bỏ dấu trang' : 'Đánh dấu vị trí'} aria-pressed={currentBookmarked} onClick={() => void toggleBookmark()}><Bookmark size={20} fill={currentBookmarked ? 'currentColor' : 'none'} /></button><button className="icon-button" title="Ghi chú" aria-label="Thêm ghi chú" onClick={() => { setNoteText(''); setNoteOpen(true) }}><Highlighter size={20} /></button></div></div><div className="reader-body"><ReaderPane book={reader.book} bytes={reader.bytes} initial={reader.initial} fontSize={fontSize} fontFamily={fontFamily} lineHeight={lineHeight} textAlignment={textAlignment} theme={theme} onLocation={onLocation} onSelection={(text, locator) => setSelection({ text, locator })} onControls={setControls} onToc={setToc} navigateTarget={navigateTarget} annotations={readerAnnotations} /></div><div className="reader-footer"><button onClick={() => controls?.previous()} disabled={!controls} aria-label="Trang trước"><ChevronLeft size={21} /> Trước</button><span>{Math.round((location?.progression || 0) * 100)}% · {location?.chapterTitle || 'Đang đọc'}</span><button onClick={() => controls?.next()} disabled={!controls} aria-label="Trang sau">Sau <ChevronRight size={21} /></button></div></div>}
 
     {tocOpen && reader && <div className="modal-shade" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setTocOpen(false) }}><aside className="toc-drawer" role="dialog" aria-modal="true" aria-label="Mục lục sách"><div className="toc-header"><div><p className="eyebrow">MỤC LỤC SÁCH</p><h2>{reader.book.title}</h2></div><button className="icon-button" onClick={() => setTocOpen(false)} aria-label="Đóng mục lục"><X size={19} /></button></div><div className="toc-list">{toc.length ? <TocTree items={toc} onSelect={target => { setNavigateTarget(target); setTocOpen(false) }} /> : <p className="muted" style={{ padding: '20px', textAlign: 'center', fontSize: '13px' }}>Tài liệu không có cấu trúc mục lục sẵn.</p>}</div></aside></div>}
 
-    {settingsOpen && reader && <div className="modal-shade" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setSettingsOpen(false) }}><div className="dialog settings-popup" role="dialog" aria-modal="true" aria-label="Tùy chỉnh đọc"><div className="dialog-header"><h2>Tùy chỉnh đọc</h2><button className="icon-button" onClick={() => setSettingsOpen(false)} aria-label="Đóng"><X size={18} /></button></div><label className="range-label">Cỡ chữ <strong>{fontSize}%</strong><input type="range" min="80" max="170" step="10" value={fontSize} onChange={event => setFontSize(Number(event.target.value))} /></label><div className="setting-group"><span className="setting-label">Kiểu chữ</span><div className="toggle-row"><button className={`choice-chip ${fontFamily === 'serif' ? 'active' : ''}`} onClick={() => setFontFamily('serif')}>Có chân (Serif)</button><button className={`choice-chip ${fontFamily === 'sans' ? 'active' : ''}`} onClick={() => setFontFamily('sans')}>Không chân (Sans)</button><button className={`choice-chip ${fontFamily === 'mono' ? 'active' : ''}`} onClick={() => setFontFamily('mono')}>Đơn cách (Mono)</button></div></div><div className="setting-group"><span className="setting-label">Căn lề</span><div className="toggle-row"><button className={`choice-chip ${textAlignment === 'left' ? 'active' : ''}`} onClick={() => setTextAlignment('left')}><AlignLeft size={15} /> Trái</button><button className={`choice-chip ${textAlignment === 'justify' ? 'active' : ''}`} onClick={() => setTextAlignment('justify')}><AlignJustify size={15} /> Căn đều 2 bên</button></div></div><div className="setting-group"><span className="setting-label">Khoảng cách dòng</span><div className="toggle-row"><button className={`choice-chip ${lineHeight === 1.4 ? 'active' : ''}`} onClick={() => setLineHeight(1.4)}>Gọn (1.4)</button><button className={`choice-chip ${lineHeight === 1.65 ? 'active' : ''}`} onClick={() => setLineHeight(1.65)}>Vừa (1.65)</button><button className={`choice-chip ${lineHeight === 1.9 ? 'active' : ''}`} onClick={() => setLineHeight(1.9)}>Thoáng (1.9)</button></div></div><div className="setting-group"><span className="setting-label">Màu nền</span><div className="theme-row">{(['paper', 'sepia', 'night'] as const).map(value => <button key={value} className={`theme-chip ${value} ${theme === value ? 'chosen' : ''}`} onClick={() => setTheme(value)}>{value === 'paper' ? 'Giấy sáng' : value === 'sepia' ? 'Vàng dịu' : 'Ban đêm'}</button>)}</div></div></div></div>}
+    {settingsOpen && reader && <div className="modal-shade" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setSettingsOpen(false) }}><div className="dialog settings-popup" role="dialog" aria-modal="true" aria-label="Tùy chỉnh đọc"><div className="dialog-header"><h2>Tùy chỉnh đọc</h2><button className="icon-button" onClick={() => setSettingsOpen(false)} aria-label="Đóng"><X size={18} /></button></div><label className="range-label">Cỡ chữ <strong>{fontSize}%</strong><input type="range" min="80" max="170" step="10" value={fontSize} onChange={event => updateComfort({ fontSize: Number(event.target.value) })} /></label><div className="setting-group"><span className="setting-label">Kiểu chữ</span><div className="toggle-row"><button className={`choice-chip ${fontFamily === 'serif' ? 'active' : ''}`} onClick={() => updateComfort({ fontFamily: 'serif' })}>Có chân (Serif)</button><button className={`choice-chip ${fontFamily === 'sans' ? 'active' : ''}`} onClick={() => updateComfort({ fontFamily: 'sans' })}>Không chân (Sans)</button><button className={`choice-chip ${fontFamily === 'mono' ? 'active' : ''}`} onClick={() => updateComfort({ fontFamily: 'mono' })}>Đơn cách (Mono)</button></div></div><div className="setting-group"><span className="setting-label">Căn lề</span><div className="toggle-row"><button className={`choice-chip ${textAlignment === 'left' ? 'active' : ''}`} onClick={() => updateComfort({ textAlignment: 'left' })}><AlignLeft size={15} /> Trái</button><button className={`choice-chip ${textAlignment === 'justify' ? 'active' : ''}`} onClick={() => updateComfort({ textAlignment: 'justify' })}><AlignJustify size={15} /> Căn đều 2 bên</button></div></div><div className="setting-group"><span className="setting-label">Khoảng cách dòng</span><div className="toggle-row"><button className={`choice-chip ${lineHeight === 1.4 ? 'active' : ''}`} onClick={() => updateComfort({ lineHeight: 1.4 })}>Gọn (1.4)</button><button className={`choice-chip ${lineHeight === 1.65 ? 'active' : ''}`} onClick={() => updateComfort({ lineHeight: 1.65 })}>Vừa (1.65)</button><button className={`choice-chip ${lineHeight === 1.9 ? 'active' : ''}`} onClick={() => updateComfort({ lineHeight: 1.9 })}>Thoáng (1.9)</button></div></div><div className="setting-group"><span className="setting-label">Màu nền</span><div className="theme-row">{(['paper', 'sepia', 'night'] as const).map(value => <button key={value} className={`theme-chip ${value} ${theme === value ? 'chosen' : ''}`} onClick={() => updateComfort({ theme: value })}>{value === 'paper' ? 'Giấy sáng' : value === 'sepia' ? 'Vàng dịu' : 'Ban đêm'}</button>)}</div></div></div></div>}
 
-    {noteOpen && reader && <div className="modal-shade" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setNoteOpen(false) }}><div className="dialog" role="dialog" aria-modal="true" aria-labelledby="note-title"><button className="icon-button dialog-close" onClick={() => setNoteOpen(false)} aria-label="Đóng"><X size={19} /></button><p className="eyebrow">READING MEMORY</p><h2 id="note-title">Lưu điều đáng nhớ</h2>{selection?.text && <blockquote className="selection-preview">“{selection.text.slice(0, 300)}{selection.text.length > 300 ? '…' : ''}”</blockquote>}<div className="color-selector"><span>Màu highlight:</span>{(['YELLOW', 'GREEN', 'BLUE', 'PINK', 'PURPLE'] as const).map(c => <button key={c} type="button" className={`color-dot ${c.toLowerCase()} ${noteColor === c ? 'active' : ''}`} onClick={() => setNoteColor(c)} aria-label={`Màu ${c}`} />)}</div><label htmlFor="note-input">Ghi chú của bạn</label><textarea id="note-input" value={noteText} onChange={event => setNoteText(event.target.value)} maxLength={10000} rows={5} placeholder="Điều gì khiến bạn muốn giữ đoạn này?" autoFocus /><div className="dialog-actions"><button className="secondary" onClick={() => setNoteOpen(false)}>Hủy</button><button className="primary" onClick={() => void saveNote()} disabled={!noteText.trim() || noteSaving}><Check size={17} /> {noteSaving ? 'Đang lưu…' : 'Lưu ghi chú'}</button></div></div></div>}
+    {noteOpen && reader && <div className="modal-shade" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setNoteOpen(false) }}><div className="dialog" role="dialog" aria-modal="true" aria-labelledby="note-title"><button className="icon-button dialog-close" onClick={() => setNoteOpen(false)} aria-label="Đóng"><X size={19} /></button><p className="eyebrow">READING MEMORY</p><h2 id="note-title">Lưu điều đáng nhớ</h2>{selection?.text && <blockquote className="selection-preview">“{selection.text.slice(0, 300)}{selection.text.length > 300 ? '…' : ''}”</blockquote>}<div className="color-selector"><span>Màu highlight:</span>{(['YELLOW', 'GREEN', 'BLUE', 'PINK', 'PURPLE'] as const).map(c => <button key={c} type="button" className={`color-dot ${c.toLowerCase()} ${noteColor === c ? 'active' : ''}`} onClick={() => setNoteColor(c)} aria-label={`Màu ${c}`} />)}</div><label htmlFor="note-input">Ghi chú của bạn</label><textarea id="note-input" value={noteText} onChange={event => setNoteText(event.target.value)} maxLength={10000} rows={5} placeholder="Điều gì khiến bạn muốn giữ đoạn này?" autoFocus /><div className="dialog-actions"><button className="secondary" onClick={() => setNoteOpen(false)}>Hủy</button><button className="primary" onClick={() => void saveNote()} disabled={(!noteText.trim() && !selection?.text) || noteSaving}><Check size={17} /> {noteSaving ? 'Đang lưu…' : noteText.trim() ? 'Lưu ghi chú' : 'Lưu đoạn trích'}</button></div></div></div>}
 
     {reviewOpen && <div className="modal-shade" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setReviewOpen(false) }}><div className="flashcard-modal" role="dialog" aria-modal="true" aria-label="Ôn tập ghi chú Flashcards"><button className="icon-button dialog-close" onClick={() => setReviewOpen(false)} aria-label="Đóng"><X size={19} /></button>{reviewIndex < reviewQueue.length ? (() => {
       const card = reviewQueue[reviewIndex]
@@ -693,8 +915,8 @@ async function sha256Hex(file: Blob): Promise<string> {
         </div>
         <button className="flip-card-btn" onClick={() => setCardFlipped(!cardFlipped)}><RotateCcw size={15} style={{ display: 'inline', marginRight: '6px' }} /> {cardFlipped ? 'Xem lại mặt trước' : 'Lật thẻ xem ghi chú'}</button>
         <div className="flashcard-actions">
-          <button className="rating-btn again" onClick={() => handleFlashcardRating('again')}>🔴 Cần ôn lại</button>
-          <button className="rating-btn good" onClick={() => handleFlashcardRating('good')}>🟢 Đã nhớ rõ</button>
+          <button className="rating-btn again" onClick={() => void handleFlashcardRating('again')}>🔴 Cần ôn lại</button>
+          <button className="rating-btn good" onClick={() => void handleFlashcardRating('good')}>🟢 Đã nhớ rõ</button>
         </div>
       </>
     })() : <div className="review-complete">
@@ -706,7 +928,7 @@ async function sha256Hex(file: Blob): Promise<string> {
         <div className="review-stat-pill" style={{ color: '#991b1b', background: '#fee2e2' }}>↺ Ôn lại: {reviewStats.reviewAgain} lần</div>
       </div>
       <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginTop: '16px' }}>
-        <button className="secondary" onClick={() => startFlashcardReview()}>Ôn tập lại</button>
+        <button className="secondary" onClick={() => void startFlashcardReview()}>Ôn tập lại</button>
         <button className="primary" onClick={() => setReviewOpen(false)}>Hoàn tất</button>
       </div>
     </div>}</div></div>}

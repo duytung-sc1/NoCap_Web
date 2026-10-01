@@ -3,13 +3,14 @@ import type { Book, Category, LocalFile, PendingOperation, SyncRecord } from './
 
 export type OfflineBook = { key: string; profile: string; bookId: string; data: Blob; savedAt: number }
 type CachedCatalog = { key: 'public-catalog'; books: Book[]; categories: Category[]; savedAt: number }
+type SyncCursor = { key: string; cursor: number }
 
 interface NoCapDB extends DBSchema {
   files: { key: string; value: LocalFile }
   records: { key: string; value: SyncRecord }
   pending: { key: string; value: PendingOperation }
   offlineBooks: { key: string; value: OfflineBook }
-  metadata: { key: string; value: CachedCatalog }
+  metadata: { key: string; value: CachedCatalog | SyncCursor }
 }
 
 let connection: ReturnType<typeof openDB<NoCapDB>> | null = null
@@ -42,9 +43,21 @@ export async function saveOfflineBook(profile: string, bookId: string, data: Blo
   await (await db()).put('offlineBooks', { key: keyFor(profile, bookId), profile, bookId, data, savedAt: Date.now() })
 }
 export async function removeOfflineBook(profile: string, bookId: string) { await (await db()).delete('offlineBooks', keyFor(profile, bookId)) }
-export async function getCachedCatalog() { return (await db()).get('metadata', 'public-catalog') }
+export async function getCachedCatalog(): Promise<CachedCatalog | undefined> {
+  const value = await (await db()).get('metadata', 'public-catalog')
+  return value && 'books' in value ? value : undefined
+}
 export async function saveCachedCatalog(books: Book[], categories: Category[]) {
   await (await db()).put('metadata', { key: 'public-catalog', books, categories, savedAt: Date.now() })
+}
+export async function getSyncCursor(profile: string): Promise<number> {
+  const value = await (await db()).get('metadata', `sync-cursor:${profile}`)
+  const cursor = value && 'cursor' in value ? Number(value.cursor) : 0
+  return Number.isSafeInteger(cursor) && cursor >= 0 ? cursor : 0
+}
+export async function saveSyncCursor(profile: string, cursor: number) {
+  if (!Number.isSafeInteger(cursor) || cursor < 0) throw new Error('Invalid sync cursor')
+  await (await db()).put('metadata', { key: `sync-cursor:${profile}`, cursor })
 }
 export async function removeLocalDocument(profile: string, id: string) {
   const database = await db()

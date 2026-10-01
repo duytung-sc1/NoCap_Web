@@ -107,6 +107,9 @@
 .book-details-desc{border-top:1px solid #e7ecea;padding-top:20px}
 .book-details-desc h3{font-family:'Literata',serif;font-size:16px;color:#1c2940;margin:0 0 10px}
 .book-details-desc p{font-size:14px;line-height:1.7;color:#4b5c6d;white-space:pre-line;margin:0}
+.image-host{width:100%;height:100%;overflow:auto;display:grid;place-items:center;padding:24px;background:#f3f5f7}
+.image-host img{display:block;max-width:100%;max-height:100%;object-fit:contain;box-shadow:0 10px 30px #0002}
+.image-host.sepia{background:#f3e9d3}.image-host.night{background:#111b2b}
 @media(max-width:600px){
   .book-details-top{flex-direction:column;align-items:center;text-align:center}
   .book-details-cover{width:120px;height:175px}

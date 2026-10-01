@@ -47,6 +47,17 @@ export async function logout(token: string) {
   return api('/api/v1/auth/logout', { method: 'POST', body: '{}' }, token)
 }
 
+export type Entitlement = {
+  plan: 'FREE' | 'PRO'
+  status?: string
+  expiresAt?: number | null
+  purchaseSource?: string | null
+}
+
+export async function getEntitlement(token: string) {
+  return api<Entitlement>('/api/v1/entitlement', {}, token)
+}
+
 export async function getChanges(token: string, cursor: number) {
   return api<{ changes: Array<{ seq: number; kind: string; id: string; version: number; deleted: number; payload: Record<string, unknown> }>; cursor: number; hasMore: boolean }>(`/api/v1/sync/changes?cursor=${cursor}&limit=100`, {}, token)
 }

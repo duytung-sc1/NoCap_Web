@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import DOMPurify from 'dompurify'
 import { getDocument, GlobalWorkerOptions, type PDFDocumentProxy, type RenderTask } from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
-import type { Book, FontFamily, ReaderLocation, TextAlignment, TocItem } from './types'
+import type { Book, FontFamily, ReaderAnnotation, ReaderLocation, TextAlignment, TocItem } from './types'
 import type Rendition from 'epubjs/types/rendition'
 
 GlobalWorkerOptions.workerSrc = workerUrl
@@ -21,14 +21,16 @@ type Props = {
   onControls: (controls: { previous: () => void; next: () => void }) => void
   onToc?: (toc: TocItem[]) => void
   navigateTarget?: string | null
+  annotations?: ReaderAnnotation[]
 }
 
-function formatOf(book: Book): 'epub' | 'pdf' | 'text' | 'html' | 'docx' {
+function formatOf(book: Book): 'epub' | 'pdf' | 'text' | 'html' | 'docx' | 'image' {
   const source = `${book.format || ''} ${book.fileUrl || ''} ${book.title}`.toLowerCase()
   if (source.includes('.pdf') || source.includes('pdf')) return 'pdf'
   if (source.includes('.docx') || source.includes('docx')) return 'docx'
   if (source.includes('.html') || source.includes('.htm') || source.includes('html')) return 'html'
-  if (source.includes('.txt') || source.includes('text/plain') || source.includes('txt')) return 'text'
+  if (/\.(png|jpe?g|webp)(?:\?|$)/.test(source) || /\b(png|jpe?g|webp|image)\b/.test(source)) return 'image'
+  if (source.includes('.txt') || source.includes('.md') || source.includes('markdown') || source.includes('text/plain') || source.includes('txt')) return 'text'
   return 'epub'
 }
 
@@ -36,6 +38,7 @@ export function ReaderPane(props: Props) {
   const format = formatOf(props.book)
   if (format === 'pdf') return <PdfPane {...props} />
   if (format === 'epub') return <EpubPane {...props} />
+  if (format === 'image') return <ImagePane {...props} />
   return <TextPane {...props} format={format} />
 }
 
@@ -60,7 +63,7 @@ function fontStack(family?: FontFamily): string {
   return 'Merriweather, Georgia, "Times New Roman", serif'
 }
 
-function EpubPane({ bytes, initial, fontSize, fontFamily, lineHeight, textAlignment, theme, onLocation, onSelection, onControls, onToc, navigateTarget }: Props) {
+function EpubPane({ bytes, initial, fontSize, fontFamily, lineHeight, textAlignment, theme, onLocation, onSelection, onControls, onToc, navigateTarget, annotations = [] }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const rendition = useRef<Rendition | null>(null)
   const bookRef = useRef<import('epubjs/types/book').default | null>(null)
@@ -68,6 +71,8 @@ function EpubPane({ bytes, initial, fontSize, fontFamily, lineHeight, textAlignm
   const selectionRef = useRef(onSelection)
   const controlsRef = useRef(onControls)
   const onTocRef = useRef(onToc)
+  const renderedAnnotations = useRef<string[]>([])
+  const [renditionVersion, setRenditionVersion] = useState(0)
   const [error, setError] = useState('')
   useEffect(() => {
     locationRef.current = onLocation
@@ -108,17 +113,6 @@ function EpubPane({ bytes, initial, fontSize, fontFamily, lineHeight, textAlignm
         }).catch(() => {})
         view = book.renderTo(host.current, { width: '100%', height: '100%', flow: 'scrolled-doc', manager: 'continuous', allowScriptedContent: false })
         rendition.current = view
-        view.themes.fontSize(`${fontSize}%`)
-        const palette = theme === 'night' ? { color: '#e8edf7', background: '#111b2b' } : theme === 'sepia' ? { color: '#443627', background: '#f3e9d3' } : { color: '#172033', background: '#fffdf8' }
-        view.themes.default({
-          body: {
-            color: `${palette.color} !important`,
-            background: `${palette.background} !important`,
-            'font-family': `${fontStack(fontFamily)} !important`,
-            'line-height': `${lineHeight || 1.65} !important`,
-            'text-align': `${textAlignment || 'left'} !important`,
-          },
-        })
         view.on('relocated', (location: { start?: { cfi?: string; href?: string; percentage?: number; index?: number }; end?: unknown }) => {
           const start = location.start
           if (!start?.cfi) return
@@ -180,6 +174,7 @@ function EpubPane({ bytes, initial, fontSize, fontFamily, lineHeight, textAlignm
         } else {
           await view.display()
         }
+        if (alive) setRenditionVersion(value => value + 1)
       } catch { if (alive) setError('Không mở được EPUB này. Tệp có thể bị hỏng hoặc không đúng định dạng.') }
     }
     void open()
@@ -200,7 +195,41 @@ function EpubPane({ bytes, initial, fontSize, fontFamily, lineHeight, textAlignm
         'text-align': `${textAlignment || 'left'} !important`,
       },
     })
-  }, [fontSize, theme, fontFamily, lineHeight, textAlignment])
+  }, [fontSize, theme, fontFamily, lineHeight, textAlignment, renditionVersion])
+
+  useEffect(() => {
+    const view = rendition.current
+    if (!view) return
+    type AnnotationApi = {
+      add: (type: string, cfi: string, data?: object, callback?: unknown, className?: string, styles?: object) => unknown
+      remove: (cfi: string, type: string) => void
+    }
+    const annotationApi = (view as unknown as { annotations?: AnnotationApi }).annotations
+    if (!annotationApi) return
+    for (const cfi of renderedAnnotations.current) {
+      try { annotationApi.remove(cfi, 'highlight') } catch { /* stale decoration is harmless */ }
+    }
+    renderedAnnotations.current = []
+    const colors: Record<string, string> = {
+      YELLOW: '#facc15', GREEN: '#4ade80', BLUE: '#60a5fa', PINK: '#f472b6', PURPLE: '#c084fc',
+    }
+    for (const annotation of annotations) {
+      const locator = parseInitial(annotation.locatorJson)
+      const locations = locator?.locations as { cfi?: string } | undefined
+      if (!locations?.cfi) continue
+      try {
+        annotationApi.add(
+          'highlight',
+          locations.cfi,
+          { id: annotation.id },
+          undefined,
+          `nocap-highlight-${annotation.id}`,
+          { fill: colors[annotation.color.toUpperCase()] || colors.YELLOW, 'fill-opacity': '0.36', 'mix-blend-mode': 'multiply' },
+        )
+        renderedAnnotations.current.push(locations.cfi)
+      } catch { /* an invalid locator must not prevent the book from opening */ }
+    }
+  }, [annotations, renditionVersion])
 
   return error ? <div className="reader-error">{error}</div> : <div ref={host} className="epub-host" aria-label="Nội dung EPUB" />
 }
@@ -220,7 +249,7 @@ function PdfPane({ bytes, initial, onLocation, onControls, onToc, navigateTarget
     if (!navigateTarget) return
     if (navigateTarget.startsWith('page:')) {
       const p = parseInt(navigateTarget.replace('page:', ''), 10)
-      if (p >= 1 && (!document || p <= document.numPages)) setPage(p)
+      if (p >= 1 && (!document || p <= document.numPages)) queueMicrotask(() => setPage(p))
     }
   }, [navigateTarget, document])
 
@@ -272,7 +301,25 @@ function PdfPane({ bytes, initial, onLocation, onControls, onToc, navigateTarget
   return error ? <div className="reader-error">{error}</div> : <div className="pdf-host"><canvas ref={canvas} /><p>Trang {page} / {document?.numPages || '…'}</p></div>
 }
 
-function TextPane({ bytes, initial, fontSize, fontFamily, lineHeight, textAlignment, theme, onLocation, onSelection, onControls, onToc, navigateTarget, format }: Props & { format: 'text' | 'html' | 'docx' }) {
+function ImagePane({ book, bytes, onLocation, onControls, theme }: Props) {
+  const [error, setError] = useState('')
+  const url = useMemo(() => {
+    const type = String(book.format || '').toLowerCase().includes('png') ? 'image/png'
+      : String(book.format || '').toLowerCase().includes('webp') ? 'image/webp'
+        : 'image/jpeg'
+    return URL.createObjectURL(new Blob([bytes], { type }))
+  }, [book.format, bytes])
+  useEffect(() => () => URL.revokeObjectURL(url), [url])
+  useEffect(() => {
+    onLocation({ locatorJson: JSON.stringify({ type: 'IMAGE', version: 1, progression: 1 }), progression: 1, chapterTitle: book.title })
+    onControls({ previous: () => {}, next: () => {} })
+  }, [book.title, onControls, onLocation])
+  return error ? <div className="reader-error">{error}</div> : <div className={`image-host ${theme}`}>
+    {url && <img src={url} alt={book.title} onError={() => setError('Không hiển thị được ảnh này. Tệp có thể bị hỏng hoặc không đúng định dạng.')} />}
+  </div>
+}
+
+function TextPane({ bytes, initial, fontSize, fontFamily, lineHeight, textAlignment, theme, onLocation, onSelection, onControls, onToc, navigateTarget, annotations = [], format }: Props & { format: 'text' | 'html' | 'docx' }) {
   const host = useRef<HTMLDivElement>(null)
   const [content, setContent] = useState('')
   const [error, setError] = useState('')
@@ -300,17 +347,30 @@ function TextPane({ bytes, initial, fontSize, fontFamily, lineHeight, textAlignm
           const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes)
           html = format === 'html' ? text : text.split(/\n\s*\n/).map(paragraph => `<p>${paragraph.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('\n', '<br>')}</p>`).join('')
         }
-        const clean = DOMPurify.sanitize(html, { ALLOWED_TAGS: ['p', 'br', 'h1', 'h2', 'h3', 'h4', 'strong', 'em', 'b', 'i', 'ul', 'ol', 'li', 'blockquote', 'hr', 'table', 'thead', 'tbody', 'tr', 'td', 'th'], ALLOWED_ATTR: ['id'] })
+        const clean = DOMPurify.sanitize(html, { ALLOWED_TAGS: ['p', 'br', 'h1', 'h2', 'h3', 'h4', 'strong', 'em', 'b', 'i', 'ul', 'ol', 'li', 'blockquote', 'hr', 'table', 'thead', 'tbody', 'tr', 'td', 'th', 'a', 'img'], ALLOWED_ATTR: ['id', 'href', 'src', 'alt', 'title'] })
         if (active) {
-          setContent(clean)
           const parser = new DOMParser()
           const doc = parser.parseFromString(clean, 'text/html')
           const headings = Array.from(doc.querySelectorAll('h1, h2, h3'))
+          headings.forEach((heading, index) => { heading.id ||= `heading-${index}` })
+          Array.from(doc.body.querySelectorAll('p, h1, h2, h3, h4, li, blockquote, td, th')).forEach((block, index) => {
+            block.setAttribute('data-nocap-block', String(index))
+          })
+          Array.from(doc.body.querySelectorAll('a')).forEach(link => {
+            const href = link.getAttribute('href') || ''
+            if (/^(https?:|mailto:)/i.test(href)) {
+              link.setAttribute('target', '_blank')
+              link.setAttribute('rel', 'noopener noreferrer')
+            } else if (!href.startsWith('#')) {
+              link.removeAttribute('href')
+            }
+          })
+          setContent(doc.body.innerHTML)
           if (headings.length && onTocRef.current) {
             onTocRef.current(headings.map((h, idx) => ({
-              id: `heading-${idx}`,
+              id: h.id,
               label: h.textContent?.trim() || `Phần ${idx + 1}`,
-              href: `#heading-${idx}`,
+              href: `#${h.id}`,
             })))
           }
         }
@@ -330,6 +390,42 @@ function TextPane({ bytes, initial, fontSize, fontFamily, lineHeight, textAlignm
     })
     return () => cancelAnimationFrame(frame)
   }, [content, initial, onLocation])
+  useEffect(() => {
+    const article = host.current?.querySelector('article')
+    if (!article) return
+    for (const mark of Array.from(article.querySelectorAll('mark[data-nocap-highlight]'))) {
+      mark.replaceWith(document.createTextNode(mark.textContent || ''))
+    }
+    article.normalize()
+    const colors: Record<string, string> = {
+      YELLOW: '#fde68a', GREEN: '#86efac', BLUE: '#93c5fd', PINK: '#f9a8d4', PURPLE: '#d8b4fe',
+    }
+    for (const annotation of annotations) {
+      const locator = parseInitial(annotation.locatorJson)
+      if (locator?.type !== 'TEXT' || typeof locator.blockIndex !== 'number') continue
+      const block = article.querySelector(`[data-nocap-block="${locator.blockIndex}"]`)
+      if (!block) continue
+      const fullText = block.textContent || ''
+      const requestedOffset = Math.max(0, Number(locator.characterOffset) || 0)
+      const matchedOffset = annotation.text ? fullText.indexOf(annotation.text, requestedOffset) : requestedOffset
+      const startOffset = matchedOffset >= 0 ? matchedOffset : requestedOffset
+      const endOffset = Math.min(fullText.length, startOffset + Math.max(1, annotation.text.length))
+      const start = pointAtTextOffset(block, startOffset)
+      const end = pointAtTextOffset(block, endOffset)
+      if (!start || !end) continue
+      try {
+        const range = document.createRange()
+        range.setStart(start.node, start.offset)
+        range.setEnd(end.node, end.offset)
+        const mark = document.createElement('mark')
+        mark.dataset.nocapHighlight = annotation.id
+        mark.style.backgroundColor = colors[annotation.color.toUpperCase()] || colors.YELLOW
+        mark.style.color = 'inherit'
+        mark.appendChild(range.extractContents())
+        range.insertNode(mark)
+      } catch { /* a locator can become stale after the source document changes */ }
+    }
+  }, [annotations, content])
   useEffect(() => { onControls({ previous: () => host.current?.scrollBy({ top: -500, behavior: 'smooth' }), next: () => host.current?.scrollBy({ top: 500, behavior: 'smooth' }) }) }, [onControls])
   function update() {
     const element = host.current
@@ -339,8 +435,19 @@ function TextPane({ bytes, initial, fontSize, fontFamily, lineHeight, textAlignm
     onLocation({ locatorJson, progression, chapterTitle: '' })
   }
   function selected() {
-    const text = window.getSelection()?.toString().trim()
-    if (text) onSelection(text.slice(0, 5000), JSON.stringify({ type: 'TEXT', version: 1, blockIndex: 0, characterOffset: 0, scrollOffsetPx: Math.floor(host.current?.scrollTop || 0), progression: 0 }))
+    const selection = window.getSelection()
+    const text = selection?.toString().trim()
+    const range = selection?.rangeCount ? selection.getRangeAt(0) : null
+    const element = range?.startContainer.nodeType === Node.ELEMENT_NODE ? range.startContainer as Element : range?.startContainer.parentElement
+    const block = element?.closest('[data-nocap-block]')
+    if (!text || !range || !block || !host.current) return
+    const offsetRange = document.createRange()
+    offsetRange.selectNodeContents(block)
+    offsetRange.setEnd(range.startContainer, range.startOffset)
+    const characterOffset = offsetRange.toString().length
+    const maxScroll = host.current.scrollHeight - host.current.clientHeight
+    const progression = maxScroll > 0 ? host.current.scrollTop / maxScroll : 0
+    onSelection(text.slice(0, 5000), JSON.stringify({ type: 'TEXT', version: 1, blockIndex: Number(block.getAttribute('data-nocap-block')) || 0, characterOffset, scrollOffsetPx: Math.floor(host.current.scrollTop), progression }))
   }
   return error ? <div className="reader-error">{error}</div> : (
     <div ref={host} className={`text-host ${theme}`} onScroll={update} onMouseUp={selected} onTouchEnd={selected}>
@@ -355,5 +462,19 @@ function TextPane({ bytes, initial, fontSize, fontFamily, lineHeight, textAlignm
       />
     </div>
   )
+}
+
+function pointAtTextOffset(root: Element, requestedOffset: number): { node: Text; offset: number } | null {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  let remaining = Math.max(0, requestedOffset)
+  let last: Text | null = null
+  while (walker.nextNode()) {
+    const node = walker.currentNode as Text
+    last = node
+    const length = node.data.length
+    if (remaining <= length) return { node, offset: remaining }
+    remaining -= length
+  }
+  return last ? { node: last, offset: last.data.length } : null
 }
 

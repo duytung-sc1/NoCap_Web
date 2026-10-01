@@ -1,7 +1,7 @@
 import { md5 } from '@noble/hashes/legacy.js'
 import { getChanges, getUser, pushOperation, ApiError } from './api'
-import { getPending, getRecords, keyFor, removePending, savePending, saveRecord } from './store'
-import type { Session, SyncKind, SyncOperation, SyncRecord } from './types'
+import { getPending, getRecords, getSyncCursor, keyFor, removePending, savePending, saveRecord, saveSyncCursor } from './store'
+import { SYNC_KINDS, type Session, type SyncKind, type SyncOperation, type SyncRecord } from './types'
 
 const encoder = new TextEncoder()
 const hex = (text: string) => Array.from(encoder.encode(text), byte => byte.toString(16).padStart(2, '0')).join('').toUpperCase()
@@ -9,7 +9,13 @@ const hex = (text: string) => Array.from(encoder.encode(text), byte => byte.toSt
 // Android uses UUID.nameUUIDFromBytes("nocap-sync-v1:<kind>:<hex local key>").
 // Keep this exact so web and Android update one record rather than duplicating it.
 export function androidRecordId(kind: SyncKind, localId: string): string {
-  const bytes = md5(encoder.encode(`nocap-sync-v1:${kind}:${hex(localId)}`))
+  return androidCompositeRecordId(kind, [localId])
+}
+
+/** Android hex-encodes every component before joining composite Room keys. */
+export function androidCompositeRecordId(kind: SyncKind, localIds: string[]): string {
+  const localKey = localIds.map(hex).join(':')
+  const bytes = md5(encoder.encode(`nocap-sync-v1:${kind}:${localKey}`))
   bytes[6] = (bytes[6] & 0x0f) | 0x30
   bytes[8] = (bytes[8] & 0x3f) | 0x80
   const value = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('')
@@ -67,13 +73,13 @@ export async function syncNow(session: Session): Promise<{ conflicts: number; ch
       await savePending({ ...item, attempted: true, conflicted: true })
     }
   }
-  let cursor = 0
+  let cursor = await getSyncCursor(profile)
   let count = 0
   for (let page = 0; page < 100; page++) {
     const result = await getChanges(session.token, cursor)
     const pending = new Set((await getPending(profile)).map(item => item.key))
     for (const change of result.changes) {
-      if (!['catalog_books', 'reading_progress', 'bookmarks', 'highlights', 'favorites'].includes(change.kind)) continue
+      if (!(SYNC_KINDS as readonly string[]).includes(change.kind)) continue
       const kind = change.kind as SyncKind
       const key = recordKey(profile, kind, change.id)
       if (pending.has(key)) continue
@@ -81,6 +87,7 @@ export async function syncNow(session: Session): Promise<{ conflicts: number; ch
       count++
     }
     cursor = result.cursor
+    await saveSyncCursor(profile, cursor)
     if (!result.hasMore) return { conflicts, changes: count }
   }
   throw new Error('Có quá nhiều thay đổi để tải một lần. Vui lòng đồng bộ lại.')
