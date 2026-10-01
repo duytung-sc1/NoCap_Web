@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlignJustify, AlignLeft, ArrowLeft, ArrowRight, BookMarked, BookOpen, Bookmark, Check, ChevronLeft, ChevronRight, Cloud, CloudOff, Download, FileDown, FileText, Highlighter, Library, List, LogIn, LogOut, Menu, Plus, RotateCw, Search, Settings2, Trash2, Type, X } from 'lucide-react'
+import { AlignJustify, AlignLeft, ArrowLeft, ArrowRight, Award, BarChart3, BookMarked, BookOpen, Bookmark, Check, CheckCircle2, ChevronLeft, ChevronRight, Cloud, CloudOff, Download, FileDown, FileText, Flame, Highlighter, Layers, Library, List, LogIn, LogOut, Menu, Plus, RotateCcw, RotateCw, Search, Settings2, Sparkles, Trash2, Type, X } from 'lucide-react'
 import { forgotPassword, getCatalog, getUser, loadBookBytes, login, logout, register, uploadBlob } from './api'
 import { ReaderPane } from './Reader'
 import { getCachedCatalog, getFile, getFiles, getOfflineBook, getOfflineBooks, getPending, readSession, removeLocalDocument, removeOfflineBook, saveCachedCatalog, saveFile, saveOfflineBook, saveSession } from './store'
@@ -7,7 +7,8 @@ import { androidRecordId, localRecords, mutate, profileFor, readableError, syncN
 import type { Book, Category, FontFamily, LocalFile, ReaderLocation, Session, SyncRecord, TextAlignment, TocItem } from './types'
 import './App.css'
 
-type Page = 'home' | 'catalog' | 'library' | 'memory' | 'account'
+type Page = 'home' | 'catalog' | 'library' | 'memory' | 'stats' | 'account'
+type ShelfFilter = 'all' | 'reading' | 'favorites' | 'completed' | 'offline' | 'local'
 type AuthMode = 'login' | 'register' | 'forgot'
 type Theme = 'paper' | 'sepia' | 'night'
 
@@ -70,6 +71,12 @@ function App() {
   const [noteColor, setNoteColor] = useState<'YELLOW' | 'GREEN' | 'BLUE' | 'PINK' | 'PURPLE'>('YELLOW')
   const [noteSaving, setNoteSaving] = useState(false)
   const [sortOrder, setSortOrder] = useState<'recent' | 'title' | 'progress'>('recent')
+  const [shelfFilter, setShelfFilter] = useState<ShelfFilter>('all')
+  const [reviewOpen, setReviewOpen] = useState(false)
+  const [reviewIndex, setReviewIndex] = useState(0)
+  const [cardFlipped, setCardFlipped] = useState(false)
+  const [reviewQueue, setReviewQueue] = useState<SyncRecord[]>([])
+  const [reviewStats, setReviewStats] = useState({ mastered: 0, reviewAgain: 0 })
   const [controls, setControls] = useState<{ previous: () => void; next: () => void } | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const progressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -251,7 +258,23 @@ function App() {
   const reading = useMemo(() => books.filter(book => !!progressFor(records, book.id)).sort((a, b) => Number(progressFor(records, b.id)?.payload.last_read_at || 0) - Number(progressFor(records, a.id)?.payload.last_read_at || 0)), [books, records])
   const libraryBooks = useMemo(() => books.filter(book => book.source === 'local' || book.source === 'cloud' || offlineIds.has(book.id) || favorites.has(book.id) || !!progressFor(records, book.id)), [books, offlineIds, favorites, records])
   const filteredBooks = useMemo(() => {
-    const list = page === 'library' ? libraryBooks : catalog
+    let list = page === 'library' ? libraryBooks : catalog
+    if (page === 'library') {
+      if (shelfFilter === 'reading') {
+        list = list.filter(b => {
+          const prog = Number(progressFor(records, b.id)?.payload.progression || 0)
+          return prog > 0 && prog < 0.99
+        })
+      } else if (shelfFilter === 'favorites') {
+        list = list.filter(b => favorites.has(b.id))
+      } else if (shelfFilter === 'completed') {
+        list = list.filter(b => Number(progressFor(records, b.id)?.payload.progression || 0) >= 0.99)
+      } else if (shelfFilter === 'offline') {
+        list = list.filter(b => b.source === 'local' || offlineIds.has(b.id))
+      } else if (shelfFilter === 'local') {
+        list = list.filter(b => b.source === 'local' || b.source === 'cloud')
+      }
+    }
     const filtered = list.filter(book => (category === 'all' || book.categoryId === category) && `${book.title} ${book.author}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
     return [...filtered].sort((a, b) => {
       if (sortOrder === 'title') return a.title.localeCompare(b.title, 'vi')
@@ -264,7 +287,7 @@ function App() {
       const timeB = Number(progressFor(records, b.id)?.payload.last_read_at || 0)
       return timeB - timeA
     })
-  }, [page, libraryBooks, catalog, category, query, sortOrder, records])
+  }, [page, libraryBooks, catalog, category, query, sortOrder, records, shelfFilter, favorites, offlineIds])
   const annotations = useMemo(() => records.filter(r => !r.deleted && (r.kind === 'highlights' || r.kind === 'bookmarks')).sort((a, b) => Number(b.payload.created_at || 0) - Number(a.payload.created_at || 0)), [records])
 
   async function authenticated(value: Session) {
@@ -509,6 +532,34 @@ async function sha256Hex(file: Blob): Promise<string> {
     setNotice('Đã xuất toàn bộ ghi chú ra tệp Markdown (.md)!')
   }
 
+  function startFlashcardReview() {
+    const eligible = annotations.filter(r => r.kind === 'highlights' || !!r.payload.text || !!r.payload.note)
+    if (!eligible.length) {
+      setNotice('Chưa có trích dẫn hoặc ghi chú nào trong mục Điều đáng nhớ để ôn tập.')
+      return
+    }
+    const shuffled = [...eligible].sort(() => Math.random() - 0.5)
+    setReviewQueue(shuffled)
+    setReviewIndex(0)
+    setCardFlipped(false)
+    setReviewStats({ mastered: 0, reviewAgain: 0 })
+    setReviewOpen(true)
+  }
+
+  function handleFlashcardRating(rating: 'again' | 'good') {
+    if (!reviewQueue.length || reviewIndex >= reviewQueue.length) return
+    const currentCard = reviewQueue[reviewIndex]
+    setCardFlipped(false)
+    if (rating === 'again') {
+      setReviewStats(prev => ({ ...prev, reviewAgain: prev.reviewAgain + 1 }))
+      setReviewQueue(prev => [...prev, currentCard])
+      setReviewIndex(prev => prev + 1)
+    } else {
+      setReviewStats(prev => ({ ...prev, mastered: prev.mastered + 1 }))
+      setReviewIndex(prev => prev + 1)
+    }
+  }
+
   async function deleteBook(book: Book) {
     if (!window.confirm(`Xóa “${book.title}” khỏi thư viện?`)) return
     if (book.source === 'local') {
@@ -523,8 +574,11 @@ async function sha256Hex(file: Blob): Promise<string> {
   }
 
   const nav: Array<{ id: Page; label: string; icon: typeof BookOpen }> = [
-    { id: 'home', label: 'Trang chủ', icon: BookOpen }, { id: 'catalog', label: 'Khám phá sách', icon: Search },
-    { id: 'library', label: 'Tủ sách', icon: Library }, { id: 'memory', label: 'Ghi chú & dấu trang', icon: Highlighter },
+    { id: 'home', label: 'Trang chủ', icon: BookOpen },
+    { id: 'catalog', label: 'Khám phá sách', icon: Search },
+    { id: 'library', label: 'Tủ sách', icon: Library },
+    { id: 'memory', label: 'Ghi chú & dấu trang', icon: Highlighter },
+    { id: 'stats', label: 'Thống kê đọc', icon: BarChart3 },
     { id: 'account', label: 'Tài khoản', icon: Settings2 },
   ]
 
@@ -554,11 +608,47 @@ async function sha256Hex(file: Blob): Promise<string> {
 
         {(page === 'catalog' || page === 'library') && <>
           <div className="page-heading"><div><p className="eyebrow">{page === 'catalog' ? 'THƯ VIỆN MỞ' : 'KHÔNG GIAN CÁ NHÂN'}</p><h1>{page === 'catalog' ? 'Khám phá sách' : 'Tủ sách của bạn'}</h1><p>{page === 'catalog' ? 'Những cuốn sách để đọc, tìm hiểu và ghi nhớ.' : 'Sách đã lưu, đang đọc và tài liệu thêm từ trình duyệt.'}</p></div><button className="primary" onClick={() => fileInput.current?.click()}><Plus size={17} /> Thêm tài liệu</button></div>
+          {page === 'library' && (
+            <div className="shelf-chips" role="tablist" aria-label="Bộ lọc tủ sách">
+              <button className={`shelf-chip ${shelfFilter === 'all' ? 'active' : ''}`} onClick={() => setShelfFilter('all')}>Tất cả ({libraryBooks.length})</button>
+              <button className={`shelf-chip ${shelfFilter === 'reading' ? 'active' : ''}`} onClick={() => setShelfFilter('reading')}><BookOpen size={14} /> Đang đọc</button>
+              <button className={`shelf-chip ${shelfFilter === 'favorites' ? 'active' : ''}`} onClick={() => setShelfFilter('favorites')}><BookMarked size={14} /> Yêu thích ({favorites.size})</button>
+              <button className={`shelf-chip ${shelfFilter === 'completed' ? 'active' : ''}`} onClick={() => setShelfFilter('completed')}><CheckCircle2 size={14} /> Đã xong</button>
+              <button className={`shelf-chip ${shelfFilter === 'offline' ? 'active' : ''}`} onClick={() => setShelfFilter('offline')}><Download size={14} /> Offline ({offlineIds.size})</button>
+              <button className={`shelf-chip ${shelfFilter === 'local' ? 'active' : ''}`} onClick={() => setShelfFilter('local')}><Layers size={14} /> Tài liệu riêng</button>
+            </div>
+          )}
           <div className="filter-bar"><label className="search-field"><Search size={18} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm tên sách hoặc tác giả…" aria-label="Tìm sách" /></label><select value={category} onChange={event => setCategory(event.target.value)} aria-label="Lọc thể loại"><option value="all">Tất cả thể loại</option>{categories.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><select value={sortOrder} onChange={e => setSortOrder(e.target.value as 'recent' | 'title' | 'progress')} aria-label="Sắp xếp sách"><option value="recent">Đọc gần nhất</option><option value="title">Tên sách (A-Z)</option><option value="progress">Tiến độ (%)</option></select><span>{filteredBooks.length} tài liệu</span></div>
-          {filteredBooks.length ? <div className="book-grid">{filteredBooks.map(book => <BookCard key={book.id} book={book} progress={Number(progressFor(records, book.id)?.payload.progression || 0)} onOpen={() => void openBook(book)} onFavorite={book.source === 'local' ? undefined : () => void toggleFavorite(book)} favorite={favorites.has(book.id)} onDelete={book.source === 'local' || book.source === 'cloud' ? () => void deleteBook(book) : undefined} offline={book.source === 'local' || offlineIds.has(book.id)} offlineBusy={offlineBusy === book.id} onOffline={book.source !== 'local' && book.fileUrl ? () => void toggleOffline(book) : undefined} />)}</div> : <div className="empty-state"><Library size={30} /><h3>Chưa có tài liệu phù hợp</h3><p>Thử từ khóa khác hoặc thêm một tài liệu từ máy của bạn.</p><button className="secondary" onClick={() => { setQuery(''); setCategory('all') }}>Xóa bộ lọc</button></div>}
+          {filteredBooks.length ? <div className="book-grid">{filteredBooks.map(book => <BookCard key={book.id} book={book} progress={Number(progressFor(records, book.id)?.payload.progression || 0)} onOpen={() => void openBook(book)} onFavorite={book.source === 'local' ? undefined : () => void toggleFavorite(book)} favorite={favorites.has(book.id)} onDelete={book.source === 'local' || book.source === 'cloud' ? () => void deleteBook(book) : undefined} offline={book.source === 'local' || offlineIds.has(book.id)} offlineBusy={offlineBusy === book.id} onOffline={book.source !== 'local' && book.fileUrl ? () => void toggleOffline(book) : undefined} />)}</div> : <div className="empty-state"><Library size={30} /><h3>Chưa có tài liệu phù hợp</h3><p>Thử từ khóa khác hoặc thêm một tài liệu từ máy của bạn.</p><button className="secondary" onClick={() => { setQuery(''); setCategory('all'); setShelfFilter('all') }}>Xóa bộ lọc</button></div>}
         </>}
 
-        {page === 'memory' && <><div className="page-heading"><div><p className="eyebrow">READING MEMORY</p><h1>Điều đáng nhớ</h1><p>Tìm lại ghi chú, đoạn đánh dấu và dấu trang trong một chỗ.</p></div><div className="memory-actions"><div className="count-chip">{annotations.length} mục đã lưu</div>{annotations.length > 0 && <button className="secondary" onClick={exportMarkdown} title="Xuất ghi chú sang file Markdown"><FileDown size={16} /> Xuất ghi chú (.md)</button>}</div></div><label className="search-field memory-search"><Search size={18} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm trong ghi chú…" aria-label="Tìm ghi chú" /></label>{annotations.filter(record => `${record.payload.text || ''} ${record.payload.note || ''} ${record.payload.chapter_title || ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())).length ? <div className="memory-list">{annotations.filter(record => `${record.payload.text || ''} ${record.payload.note || ''} ${record.payload.chapter_title || ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())).map(record => { const book = books.find(item => item.id === record.payload.book_id); return <div className="memory-item" key={record.key}><div className="memory-icon">{record.kind === 'highlights' ? <Highlighter size={18} /> : <Bookmark size={18} />}</div><div><div className="memory-book">{book?.title || 'Tài liệu riêng'}</div><blockquote>{toText(record.payload.text) || toText(record.payload.chapter_title) || 'Dấu trang'}</blockquote>{!!record.payload.note && <p>{toText(record.payload.note)}</p>}</div>{book && <button className="text-button" onClick={() => void openBook(book)}>Mở sách <ArrowRight size={15} /></button>}</div> })}</div> : <div className="empty-state"><Highlighter size={30} /><h3>Chưa có điều gì được lưu</h3><p>Khi đọc, chọn đoạn văn để thêm ghi chú hoặc bấm dấu trang.</p><button className="secondary" onClick={() => setPage('catalog')}>Tìm sách để đọc</button></div>}</>}
+        {page === 'memory' && <><div className="page-heading"><div><p className="eyebrow">READING MEMORY</p><h1>Điều đáng nhớ</h1><p>Tìm lại ghi chú, đoạn đánh dấu và dấu trang trong một chỗ.</p></div><div className="memory-actions"><div className="count-chip">{annotations.length} mục đã lưu</div>{annotations.length > 0 && <><button className="primary" onClick={startFlashcardReview} title="Bắt đầu phiên ôn tập ghi chú"><Sparkles size={16} /> Ôn tập Flashcards</button><button className="secondary" onClick={exportMarkdown} title="Xuất ghi chú sang file Markdown"><FileDown size={16} /> Xuất (.md)</button></>}</div></div><label className="search-field memory-search"><Search size={18} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm trong ghi chú…" aria-label="Tìm ghi chú" /></label>{annotations.filter(record => `${record.payload.text || ''} ${record.payload.note || ''} ${record.payload.chapter_title || ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())).length ? <div className="memory-list">{annotations.filter(record => `${record.payload.text || ''} ${record.payload.note || ''} ${record.payload.chapter_title || ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())).map(record => { const book = books.find(item => item.id === record.payload.book_id); return <div className="memory-item" key={record.key}><div className="memory-icon">{record.kind === 'highlights' ? <Highlighter size={18} /> : <Bookmark size={18} />}</div><div><div className="memory-book">{book?.title || 'Tài liệu riêng'}</div><blockquote>{toText(record.payload.text) || toText(record.payload.chapter_title) || 'Dấu trang'}</blockquote>{!!record.payload.note && <p>{toText(record.payload.note)}</p>}</div>{book && <button className="text-button" onClick={() => void openBook(book)}>Mở sách <ArrowRight size={15} /></button>}</div> })}</div> : <div className="empty-state"><Highlighter size={30} /><h3>Chưa có điều gì được lưu</h3><p>Khi đọc, chọn đoạn văn để thêm ghi chú hoặc bấm dấu trang.</p><button className="secondary" onClick={() => setPage('catalog')}>Tìm sách để đọc</button></div>}</>}
+
+        {page === 'stats' && <>
+          <div className="page-heading"><div><p className="eyebrow">READING ANALYTICS</p><h1>Thống kê đọc sách</h1><p>Theo dõi thói quen, tiến trình phát triển và các mục tiêu kiến thức của bạn.</p></div></div>
+          <div className="stats-summary-grid">
+            <div className="stat-widget"><div className="stat-icon-wrap"><Library size={22} /></div><div className="stat-content"><div className="stat-value">{libraryBooks.length}</div><div className="stat-title">Sách trong tủ</div></div></div>
+            <div className="stat-widget"><div className="stat-icon-wrap orange"><BookOpen size={22} /></div><div className="stat-content"><div className="stat-value">{reading.filter(b => (Number(progressFor(records, b.id)?.payload.progression || 0)) < 0.99).length}</div><div className="stat-title">Sách đang đọc</div></div></div>
+            <div className="stat-widget"><div className="stat-icon-wrap purple"><Highlighter size={22} /></div><div className="stat-content"><div className="stat-value">{annotations.length}</div><div className="stat-title">Ghi chú & Trích dẫn</div></div></div>
+            <div className="stat-widget"><div className="stat-icon-wrap blue"><Award size={22} /></div><div className="stat-content"><div className="stat-value">{reading.filter(b => (Number(progressFor(records, b.id)?.payload.progression || 0)) >= 0.99).length}</div><div className="stat-title">Đã hoàn thành</div></div></div>
+          </div>
+          <div className="stats-section-row">
+            <div className="stats-panel">
+              <h2>Hành trình đọc đang diễn ra</h2>
+              {reading.length ? <div className="active-reading-list">{reading.map(book => {
+                const prog = Math.round((Number(progressFor(records, book.id)?.payload.progression || 0)) * 100)
+                return <div className="active-reading-item" key={book.id}><button className="cover-button" onClick={() => void openBook(book)} aria-label={`Mở ${book.title}`}><div className="book-cover">{book.coverUrl ? <img src={book.coverUrl} alt="" loading="lazy" onError={e => { e.currentTarget.style.display = 'none' }} /> : null}<div className="cover-fallback"><BookOpen size={20} /></div></div></button><div className="active-reading-details"><div className="active-reading-title">{book.title}</div><div className="active-reading-author">{book.author || 'Tác giả chưa rõ'} · {prog}% hoàn thành</div><div className="progress-bar"><span style={{ width: `${Math.max(4, prog)}%` }} /></div></div><button className="secondary" onClick={() => void openBook(book)}>Đọc tiếp <ArrowRight size={14} /></button></div>
+              })}</div> : <p className="muted">Bạn chưa mở cuốn sách nào. Khám phá thư viện để bắt đầu hành trình!</p>}
+            </div>
+            <div className="streak-box">
+              <div className="streak-flame"><Flame size={28} /></div>
+              <div className="streak-num">{reading.length > 0 ? 'Hằng ngày' : 'Bắt đầu ngay'}</div>
+              <p className="eyebrow" style={{ color: '#ffbe76', margin: '8px 0 4px' }}>THÓI QUEN ĐỌC BỀN BỈ</p>
+              <div className="streak-desc">{reading.length > 0 ? `Bạn đang duy trì tiến độ đọc cùng ${reading.length} cuốn sách và ${annotations.length} mục ghi nhớ kiến thức.` : 'Đọc ít nhất 15 phút mỗi ngày giúp tăng cường khả năng ghi nhớ và tập trung sâu.'}</div>
+              {annotations.length > 0 && <button className="light-button" style={{ marginTop: '16px' }} onClick={startFlashcardReview}><Sparkles size={16} /> Ôn tập ngay hôm nay</button>}
+            </div>
+          </div>
+        </>}
 
         {page === 'account' && <><div className="page-heading"><div><p className="eyebrow">TÀI KHOẢN & ĐỒNG BỘ</p><h1>{session ? 'Không gian của bạn' : 'Đọc như khách'}</h1><p>{session ? 'Sách và ghi chú của tài khoản này được tách riêng.' : 'Bạn vẫn có thể đọc và thêm tài liệu trên trình duyệt này.'}</p></div></div><div className="settings-grid"><section className="settings-card"><h2>Tài khoản</h2>{session ? <><p className="account-email">{session.user.displayName || session.user.email}</p><p className="muted">{session.user.email}</p>{!session.user.emailVerified && <p className="warning-text">Email chưa xác minh. Một số thao tác cloud cần xác minh email.</p>}<button className="secondary" onClick={() => void signOut()}><LogOut size={17} /> Đăng xuất</button></> : <><p className="muted">Đăng nhập để tiếp tục trên Android và các thiết bị khác.</p><button className="primary" onClick={() => setAuthOpen(true)}>Đăng nhập / Đăng ký</button></>}</section><section className="settings-card"><h2>Tự động đồng bộ</h2><p>{online ? 'Đang kết nối Cloud • Tự động đồng bộ đa thiết bị' : 'Đang ngoại tuyến'}</p><p className="muted">{session ? (pendingCount ? `${pendingCount} thay đổi đang chờ tự động đồng bộ.` : 'Tiến độ đọc và ghi chú được tự động đồng bộ giữa Web và Android khi bạn đọc.') : 'Dữ liệu khách được lưu riêng trên trình duyệt hiện tại.'}</p>{session && <button className="secondary" onClick={() => void synchronize(session)} disabled={syncing}><RotateCw size={17} className={syncing ? 'spin' : ''} /> {syncing ? 'Đang đồng bộ…' : 'Đồng bộ ngay'}</button>}</section><section className="settings-card"><h2>Đọc thoải mái</h2><label className="range-label">Cỡ chữ <strong>{fontSize}%</strong><input type="range" min="80" max="170" step="10" value={fontSize} onChange={event => setFontSize(Number(event.target.value))} /></label><div className="theme-row">{(['paper', 'sepia', 'night'] as const).map(value => <button key={value} className={`theme-chip ${value} ${theme === value ? 'chosen' : ''}`} onClick={() => setTheme(value)}>{value === 'paper' ? 'Giấy sáng' : value === 'sepia' ? 'Vàng dịu' : 'Ban đêm'}</button>)}</div></section></div></>}
       </div>
@@ -574,6 +664,51 @@ async function sha256Hex(file: Blob): Promise<string> {
     {settingsOpen && reader && <div className="modal-shade" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setSettingsOpen(false) }}><div className="dialog settings-popup" role="dialog" aria-modal="true" aria-label="Tùy chỉnh đọc"><div className="dialog-header"><h2>Tùy chỉnh đọc</h2><button className="icon-button" onClick={() => setSettingsOpen(false)} aria-label="Đóng"><X size={18} /></button></div><label className="range-label">Cỡ chữ <strong>{fontSize}%</strong><input type="range" min="80" max="170" step="10" value={fontSize} onChange={event => setFontSize(Number(event.target.value))} /></label><div className="setting-group"><span className="setting-label">Kiểu chữ</span><div className="toggle-row"><button className={`choice-chip ${fontFamily === 'serif' ? 'active' : ''}`} onClick={() => setFontFamily('serif')}>Có chân (Serif)</button><button className={`choice-chip ${fontFamily === 'sans' ? 'active' : ''}`} onClick={() => setFontFamily('sans')}>Không chân (Sans)</button><button className={`choice-chip ${fontFamily === 'mono' ? 'active' : ''}`} onClick={() => setFontFamily('mono')}>Đơn cách (Mono)</button></div></div><div className="setting-group"><span className="setting-label">Căn lề</span><div className="toggle-row"><button className={`choice-chip ${textAlignment === 'left' ? 'active' : ''}`} onClick={() => setTextAlignment('left')}><AlignLeft size={15} /> Trái</button><button className={`choice-chip ${textAlignment === 'justify' ? 'active' : ''}`} onClick={() => setTextAlignment('justify')}><AlignJustify size={15} /> Căn đều 2 bên</button></div></div><div className="setting-group"><span className="setting-label">Khoảng cách dòng</span><div className="toggle-row"><button className={`choice-chip ${lineHeight === 1.4 ? 'active' : ''}`} onClick={() => setLineHeight(1.4)}>Gọn (1.4)</button><button className={`choice-chip ${lineHeight === 1.65 ? 'active' : ''}`} onClick={() => setLineHeight(1.65)}>Vừa (1.65)</button><button className={`choice-chip ${lineHeight === 1.9 ? 'active' : ''}`} onClick={() => setLineHeight(1.9)}>Thoáng (1.9)</button></div></div><div className="setting-group"><span className="setting-label">Màu nền</span><div className="theme-row">{(['paper', 'sepia', 'night'] as const).map(value => <button key={value} className={`theme-chip ${value} ${theme === value ? 'chosen' : ''}`} onClick={() => setTheme(value)}>{value === 'paper' ? 'Giấy sáng' : value === 'sepia' ? 'Vàng dịu' : 'Ban đêm'}</button>)}</div></div></div></div>}
 
     {noteOpen && reader && <div className="modal-shade" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setNoteOpen(false) }}><div className="dialog" role="dialog" aria-modal="true" aria-labelledby="note-title"><button className="icon-button dialog-close" onClick={() => setNoteOpen(false)} aria-label="Đóng"><X size={19} /></button><p className="eyebrow">READING MEMORY</p><h2 id="note-title">Lưu điều đáng nhớ</h2>{selection?.text && <blockquote className="selection-preview">“{selection.text.slice(0, 300)}{selection.text.length > 300 ? '…' : ''}”</blockquote>}<div className="color-selector"><span>Màu highlight:</span>{(['YELLOW', 'GREEN', 'BLUE', 'PINK', 'PURPLE'] as const).map(c => <button key={c} type="button" className={`color-dot ${c.toLowerCase()} ${noteColor === c ? 'active' : ''}`} onClick={() => setNoteColor(c)} aria-label={`Màu ${c}`} />)}</div><label htmlFor="note-input">Ghi chú của bạn</label><textarea id="note-input" value={noteText} onChange={event => setNoteText(event.target.value)} maxLength={10000} rows={5} placeholder="Điều gì khiến bạn muốn giữ đoạn này?" autoFocus /><div className="dialog-actions"><button className="secondary" onClick={() => setNoteOpen(false)}>Hủy</button><button className="primary" onClick={() => void saveNote()} disabled={!noteText.trim() || noteSaving}><Check size={17} /> {noteSaving ? 'Đang lưu…' : 'Lưu ghi chú'}</button></div></div></div>}
+
+    {reviewOpen && <div className="modal-shade" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setReviewOpen(false) }}><div className="flashcard-modal" role="dialog" aria-modal="true" aria-label="Ôn tập ghi chú Flashcards"><button className="icon-button dialog-close" onClick={() => setReviewOpen(false)} aria-label="Đóng"><X size={19} /></button>{reviewIndex < reviewQueue.length ? (() => {
+      const card = reviewQueue[reviewIndex]
+      const book = books.find(b => b.id === card.payload.book_id)
+      const quote = toText(card.payload.text)
+      const note = toText(card.payload.note)
+      const chapter = toText(card.payload.chapter_title)
+      const progressPct = Math.round((reviewIndex / reviewQueue.length) * 100)
+      return <>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><p className="eyebrow" style={{ margin: 0 }}>FLASHCARD REVIEW · THẺ {reviewIndex + 1}/{reviewQueue.length}</p><span style={{ fontSize: '11px', fontWeight: 700, color: '#167e70' }}>{reviewStats.mastered} đã thuộc</span></div>
+        <div className="flashcard-progress-bar"><span style={{ width: `${progressPct}%` }} /></div>
+        <div className={`flashcard ${cardFlipped ? 'flipped' : ''}`} onClick={() => setCardFlipped(!cardFlipped)}>
+          <div className="flashcard-inner">
+            <div className="flashcard-front">
+              <div className="flashcard-book">📚 {book?.title || 'Tài liệu'} {chapter ? `· ${chapter}` : ''}</div>
+              <div className="flashcard-quote">“{quote || note || 'Ghi nhớ quan trọng'}”</div>
+              <div className="flashcard-hint">💡 Bấm thẻ để lật xem ghi chú suy ngẫm</div>
+            </div>
+            <div className="flashcard-back">
+              <div className="flashcard-book" style={{ opacity: 0.7 }}>GHI CHÚ & SUY NGẪM</div>
+              <div className="flashcard-note-title">Nội dung ghi chú của bạn:</div>
+              <div className="flashcard-note">{note || 'Không có ghi chú riêng; hãy ghi nhớ lại đoạn trích trên.'}</div>
+              <div className="flashcard-hint" style={{ marginTop: '14px' }}>Đánh giá khả năng ghi nhớ bên dưới:</div>
+            </div>
+          </div>
+        </div>
+        <button className="flip-card-btn" onClick={() => setCardFlipped(!cardFlipped)}><RotateCcw size={15} style={{ display: 'inline', marginRight: '6px' }} /> {cardFlipped ? 'Xem lại mặt trước' : 'Lật thẻ xem ghi chú'}</button>
+        <div className="flashcard-actions">
+          <button className="rating-btn again" onClick={() => handleFlashcardRating('again')}>🔴 Cần ôn lại</button>
+          <button className="rating-btn good" onClick={() => handleFlashcardRating('good')}>🟢 Đã nhớ rõ</button>
+        </div>
+      </>
+    })() : <div className="review-complete">
+      <CheckCircle2 size={54} color="#167e70" style={{ margin: '0 auto' }} />
+      <h2>Hoàn thành phiên ôn tập!</h2>
+      <p className="muted">Tuyệt vời! Bạn đã xem lại toàn bộ các thẻ ghi chú trong phiên này.</p>
+      <div className="review-stats-row">
+        <div className="review-stat-pill" style={{ color: '#166534', background: '#dcfce7' }}>✓ Đã nhớ: {reviewStats.mastered} thẻ</div>
+        <div className="review-stat-pill" style={{ color: '#991b1b', background: '#fee2e2' }}>↺ Ôn lại: {reviewStats.reviewAgain} lần</div>
+      </div>
+      <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginTop: '16px' }}>
+        <button className="secondary" onClick={() => startFlashcardReview()}>Ôn tập lại</button>
+        <button className="primary" onClick={() => setReviewOpen(false)}>Hoàn tất</button>
+      </div>
+    </div>}</div></div>}
 
     {authOpen && <AuthDialog onClose={() => setAuthOpen(false)} onSuccess={value => void authenticated(value)} />}
   </div>
