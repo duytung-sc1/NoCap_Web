@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlignJustify, AlignLeft, ArrowLeft, ArrowRight, Award, BarChart3, BookMarked, BookOpen, Bookmark, Check, CheckCircle2, ChevronLeft, ChevronRight, Cloud, CloudOff, Download, FileDown, FileText, Flame, Highlighter, Layers, Library, List, LogIn, LogOut, Menu, Plus, RotateCcw, RotateCw, Search, Settings2, Sparkles, Trash2, Type, X } from 'lucide-react'
+import { AlignJustify, AlignLeft, ArrowLeft, ArrowRight, Award, BarChart3, BookMarked, BookOpen, Bookmark, Check, CheckCircle2, ChevronLeft, ChevronRight, Cloud, CloudOff, Download, FileDown, FileText, Flame, Highlighter, Layers, Library, List, LogIn, LogOut, Menu, Plus, RotateCcw, RotateCw, Search, Settings2, Sparkles, Star, Trash2, Type, X } from 'lucide-react'
 import { forgotPassword, getCatalog, getUser, loadBookBytes, login, logout, register, uploadBlob } from './api'
 import { ReaderPane } from './Reader'
 import { getCachedCatalog, getFile, getFiles, getOfflineBook, getOfflineBooks, getPending, readSession, removeLocalDocument, removeOfflineBook, saveCachedCatalog, saveFile, saveOfflineBook, saveSession } from './store'
@@ -78,6 +78,7 @@ function App() {
   const [reviewQueue, setReviewQueue] = useState<SyncRecord[]>([])
   const [reviewStats, setReviewStats] = useState({ mastered: 0, reviewAgain: 0 })
   const [controls, setControls] = useState<{ previous: () => void; next: () => void } | null>(null)
+  const [selectedBook, setSelectedBook] = useState<Book | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const progressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const syncFlight = useRef<{ profile: string; promise: Promise<void> } | null>(null)
@@ -601,9 +602,9 @@ async function sha256Hex(file: Blob): Promise<string> {
         {page === 'home' && <>
           <div className="hero"><div><p className="eyebrow">KHÔNG GIAN KIẾN THỨC CỦA BẠN</p><h1>Đọc chậm lại.<br /><em>Nhớ lâu hơn.</em></h1><p>Mọi cuốn sách, ghi chú và ý tưởng của bạn ở một nơi yên tĩnh.</p><div className="hero-actions"><button className="primary" onClick={() => setPage('catalog')}>Khám phá sách <ArrowRight size={17} /></button><button className="light-button" onClick={() => fileInput.current?.click()}><Plus size={17} /> Thêm tài liệu</button></div></div><div className="hero-art" aria-hidden="true"><div className="orbit one" /><div className="orbit two" /><BookOpen size={92} strokeWidth={1.2} /></div></div>
           <SectionHeader title="Đọc tiếp" action="Xem tủ sách" onAction={() => setPage('library')} />
-          {reading.length ? <div className="book-grid">{reading.slice(0, 4).map(book => <BookCard key={book.id} book={book} progress={Number(progressFor(records, book.id)?.payload.progression || 0)} onOpen={() => void openBook(book)} onFavorite={() => void toggleFavorite(book)} favorite={favorites.has(book.id)} offline={book.source === 'local' || offlineIds.has(book.id)} offlineBusy={offlineBusy === book.id} onOffline={book.source !== 'local' && book.fileUrl ? () => void toggleOffline(book) : undefined} />)}</div> : <div className="empty-state"><BookOpen size={30} /><h3>Hành trình đọc bắt đầu ở đây</h3><p>Chọn một cuốn sách hoặc thêm tài liệu của bạn để bắt đầu.</p><button className="secondary" onClick={() => setPage('catalog')}>Xem thư viện sách</button></div>}
+          {reading.length ? <div className="book-grid">{reading.slice(0, 4).map(book => <BookCard key={book.id} book={book} progress={Number(progressFor(records, book.id)?.payload.progression || 0)} onOpen={() => void openBook(book)} onDetails={() => setSelectedBook(book)} onFavorite={() => void toggleFavorite(book)} favorite={favorites.has(book.id)} offline={book.source === 'local' || offlineIds.has(book.id)} offlineBusy={offlineBusy === book.id} onOffline={book.source !== 'local' && book.fileUrl ? () => void toggleOffline(book) : undefined} />)}</div> : <div className="empty-state"><BookOpen size={30} /><h3>Hành trình đọc bắt đầu ở đây</h3><p>Chọn một cuốn sách hoặc thêm tài liệu của bạn để bắt đầu.</p><button className="secondary" onClick={() => setPage('catalog')}>Xem thư viện sách</button></div>}
           <SectionHeader title="Gợi ý cho bạn" action="Xem tất cả" onAction={() => setPage('catalog')} />
-          <div className="book-grid">{catalog.filter(book => book.fileUrl).slice(0, 4).map(book => <BookCard key={book.id} book={book} onOpen={() => void openBook(book)} onFavorite={() => void toggleFavorite(book)} favorite={favorites.has(book.id)} offline={offlineIds.has(book.id)} offlineBusy={offlineBusy === book.id} onOffline={() => void toggleOffline(book)} />)}</div>
+          <div className="book-grid">{catalog.filter(book => book.fileUrl).slice(0, 4).map(book => <BookCard key={book.id} book={book} onOpen={() => void openBook(book)} onDetails={() => setSelectedBook(book)} onFavorite={() => void toggleFavorite(book)} favorite={favorites.has(book.id)} offline={offlineIds.has(book.id)} offlineBusy={offlineBusy === book.id} onOffline={() => void toggleOffline(book)} />)}</div>
         </>}
 
         {(page === 'catalog' || page === 'library') && <>
@@ -619,7 +620,7 @@ async function sha256Hex(file: Blob): Promise<string> {
             </div>
           )}
           <div className="filter-bar"><label className="search-field"><Search size={18} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm tên sách hoặc tác giả…" aria-label="Tìm sách" /></label><select value={category} onChange={event => setCategory(event.target.value)} aria-label="Lọc thể loại"><option value="all">Tất cả thể loại</option>{categories.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><select value={sortOrder} onChange={e => setSortOrder(e.target.value as 'recent' | 'title' | 'progress')} aria-label="Sắp xếp sách"><option value="recent">Đọc gần nhất</option><option value="title">Tên sách (A-Z)</option><option value="progress">Tiến độ (%)</option></select><span>{filteredBooks.length} tài liệu</span></div>
-          {filteredBooks.length ? <div className="book-grid">{filteredBooks.map(book => <BookCard key={book.id} book={book} progress={Number(progressFor(records, book.id)?.payload.progression || 0)} onOpen={() => void openBook(book)} onFavorite={book.source === 'local' ? undefined : () => void toggleFavorite(book)} favorite={favorites.has(book.id)} onDelete={book.source === 'local' || book.source === 'cloud' ? () => void deleteBook(book) : undefined} offline={book.source === 'local' || offlineIds.has(book.id)} offlineBusy={offlineBusy === book.id} onOffline={book.source !== 'local' && book.fileUrl ? () => void toggleOffline(book) : undefined} />)}</div> : <div className="empty-state"><Library size={30} /><h3>Chưa có tài liệu phù hợp</h3><p>Thử từ khóa khác hoặc thêm một tài liệu từ máy của bạn.</p><button className="secondary" onClick={() => { setQuery(''); setCategory('all'); setShelfFilter('all') }}>Xóa bộ lọc</button></div>}
+          {filteredBooks.length ? <div className="book-grid">{filteredBooks.map(book => <BookCard key={book.id} book={book} progress={Number(progressFor(records, book.id)?.payload.progression || 0)} onOpen={() => void openBook(book)} onDetails={() => setSelectedBook(book)} onFavorite={book.source === 'local' ? undefined : () => void toggleFavorite(book)} favorite={favorites.has(book.id)} onDelete={book.source === 'local' || book.source === 'cloud' ? () => void deleteBook(book) : undefined} offline={book.source === 'local' || offlineIds.has(book.id)} offlineBusy={offlineBusy === book.id} onOffline={book.source !== 'local' && book.fileUrl ? () => void toggleOffline(book) : undefined} />)}</div> : <div className="empty-state"><Library size={30} /><h3>Chưa có tài liệu phù hợp</h3><p>Thử từ khóa khác hoặc thêm một tài liệu từ máy của bạn.</p><button className="secondary" onClick={() => { setQuery(''); setCategory('all'); setShelfFilter('all') }}>Xóa bộ lọc</button></div>}
         </>}
 
         {page === 'memory' && <><div className="page-heading"><div><p className="eyebrow">READING MEMORY</p><h1>Điều đáng nhớ</h1><p>Tìm lại ghi chú, đoạn đánh dấu và dấu trang trong một chỗ.</p></div><div className="memory-actions"><div className="count-chip">{annotations.length} mục đã lưu</div>{annotations.length > 0 && <><button className="primary" onClick={startFlashcardReview} title="Bắt đầu phiên ôn tập ghi chú"><Sparkles size={16} /> Ôn tập Flashcards</button><button className="secondary" onClick={exportMarkdown} title="Xuất ghi chú sang file Markdown"><FileDown size={16} /> Xuất (.md)</button></>}</div></div><label className="search-field memory-search"><Search size={18} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm trong ghi chú…" aria-label="Tìm ghi chú" /></label>{annotations.filter(record => `${record.payload.text || ''} ${record.payload.note || ''} ${record.payload.chapter_title || ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())).length ? <div className="memory-list">{annotations.filter(record => `${record.payload.text || ''} ${record.payload.note || ''} ${record.payload.chapter_title || ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())).map(record => { const book = books.find(item => item.id === record.payload.book_id); return <div className="memory-item" key={record.key}><div className="memory-icon">{record.kind === 'highlights' ? <Highlighter size={18} /> : <Bookmark size={18} />}</div><div><div className="memory-book">{book?.title || 'Tài liệu riêng'}</div><blockquote>{toText(record.payload.text) || toText(record.payload.chapter_title) || 'Dấu trang'}</blockquote>{!!record.payload.note && <p>{toText(record.payload.note)}</p>}</div>{book && <button className="text-button" onClick={() => void openBook(book)}>Mở sách <ArrowRight size={15} /></button>}</div> })}</div> : <div className="empty-state"><Highlighter size={30} /><h3>Chưa có điều gì được lưu</h3><p>Khi đọc, chọn đoạn văn để thêm ghi chú hoặc bấm dấu trang.</p><button className="secondary" onClick={() => setPage('catalog')}>Tìm sách để đọc</button></div>}</>}
@@ -650,7 +651,7 @@ async function sha256Hex(file: Blob): Promise<string> {
           </div>
         </>}
 
-        {page === 'account' && <><div className="page-heading"><div><p className="eyebrow">TÀI KHOẢN & ĐỒNG BỘ</p><h1>{session ? 'Không gian của bạn' : 'Đọc như khách'}</h1><p>{session ? 'Sách và ghi chú của tài khoản này được tách riêng.' : 'Bạn vẫn có thể đọc và thêm tài liệu trên trình duyệt này.'}</p></div></div><div className="settings-grid"><section className="settings-card"><h2>Tài khoản</h2>{session ? <><p className="account-email">{session.user.displayName || session.user.email}</p><p className="muted">{session.user.email}</p>{!session.user.emailVerified && <p className="warning-text">Email chưa xác minh. Một số thao tác cloud cần xác minh email.</p>}<button className="secondary" onClick={() => void signOut()}><LogOut size={17} /> Đăng xuất</button></> : <><p className="muted">Đăng nhập để tiếp tục trên Android và các thiết bị khác.</p><button className="primary" onClick={() => setAuthOpen(true)}>Đăng nhập / Đăng ký</button></>}</section><section className="settings-card"><h2>Tự động đồng bộ</h2><p>{online ? 'Đang kết nối Cloud • Tự động đồng bộ đa thiết bị' : 'Đang ngoại tuyến'}</p><p className="muted">{session ? (pendingCount ? `${pendingCount} thay đổi đang chờ tự động đồng bộ.` : 'Tiến độ đọc và ghi chú được tự động đồng bộ giữa Web và Android khi bạn đọc.') : 'Dữ liệu khách được lưu riêng trên trình duyệt hiện tại.'}</p>{session && <button className="secondary" onClick={() => void synchronize(session)} disabled={syncing}><RotateCw size={17} className={syncing ? 'spin' : ''} /> {syncing ? 'Đang đồng bộ…' : 'Đồng bộ ngay'}</button>}</section><section className="settings-card"><h2>Đọc thoải mái</h2><label className="range-label">Cỡ chữ <strong>{fontSize}%</strong><input type="range" min="80" max="170" step="10" value={fontSize} onChange={event => setFontSize(Number(event.target.value))} /></label><div className="theme-row">{(['paper', 'sepia', 'night'] as const).map(value => <button key={value} className={`theme-chip ${value} ${theme === value ? 'chosen' : ''}`} onClick={() => setTheme(value)}>{value === 'paper' ? 'Giấy sáng' : value === 'sepia' ? 'Vàng dịu' : 'Ban đêm'}</button>)}</div></section></div></>}
+        {page === 'account' && <><div className="page-heading"><div><p className="eyebrow">TÀI KHOẢN & ĐỒNG BỘ</p><h1>{session ? 'Không gian của bạn' : 'Đọc như khách'}</h1><p>{session ? 'Sách và ghi chú của tài khoản này được tách riêng.' : 'Bạn vẫn có thể đọc và thêm tài liệu trên trình duyệt này.'}</p></div></div><div className="settings-grid"><section className="settings-card"><h2>Tài khoản</h2>{session ? <><p className="account-email">{session.user.displayName || session.user.email}</p><p className="muted">{session.user.email}</p>{!session.user.emailVerified && <p className="warning-text">Email chưa xác minh. Một số thao tác cloud cần xác minh email.</p>}<button className="secondary" onClick={() => void signOut()}><LogOut size={17} /> Đăng xuất</button></> : <><p className="muted">Đăng nhập để tiếp tục trên Android và các thiết bị khác.</p><button className="primary" onClick={() => setAuthOpen(true)}>Đăng nhập / Đăng ký</button></>}</section><section className="settings-card"><h2>Tự động đồng bộ</h2><p>{online ? 'Đang kết nối Cloud • Tự động đồng bộ đa thiết bị' : 'Đang ngoại tuyến'}</p><p className="muted">{session ? (pendingCount ? `${pendingCount} thay đổi đang chờ tự động đồng bộ.` : 'Tiến độ đọc và ghi chú được tự động đồng bộ giữa Web và Android khi bạn đọc.') : 'Dữ liệu khách được lưu riêng trên trình duyệt hiện tại.'}</p>{session && <button className="secondary" onClick={() => void synchronize(session)} disabled={syncing}><RotateCw size={17} className={syncing ? 'spin' : ''} /> {syncing ? 'Đang đồng bộ…' : 'Đồng bộ ngay'}</button>}</section><section className="settings-card"><h2>Đọc thoải mái</h2><label className="range-label">Cỡ chữ <strong>{fontSize}%</strong><input type="range" min="80" max="170" step="10" value={fontSize} onChange={event => setFontSize(Number(event.target.value))} /></label><div className="setting-group" style={{ margin: '14px 0 10px' }}><span className="setting-label">Kiểu chữ</span><div className="toggle-row"><button className={`choice-chip ${fontFamily === 'serif' ? 'active' : ''}`} onClick={() => setFontFamily('serif')}>Có chân</button><button className={`choice-chip ${fontFamily === 'sans' ? 'active' : ''}`} onClick={() => setFontFamily('sans')}>Không chân</button><button className={`choice-chip ${fontFamily === 'mono' ? 'active' : ''}`} onClick={() => setFontFamily('mono')}>Đơn cách</button></div></div><div className="setting-group" style={{ margin: '14px 0 10px' }}><span className="setting-label">Căn lề</span><div className="toggle-row"><button className={`choice-chip ${textAlignment === 'left' ? 'active' : ''}`} onClick={() => setTextAlignment('left')}><AlignLeft size={14} /> Căn trái</button><button className={`choice-chip ${textAlignment === 'justify' ? 'active' : ''}`} onClick={() => setTextAlignment('justify')}><AlignJustify size={14} /> Căn đều</button></div></div><div className="setting-group" style={{ margin: '14px 0 10px' }}><span className="setting-label">Màu nền</span><div className="theme-row">{(['paper', 'sepia', 'night'] as const).map(value => <button key={value} className={`theme-chip ${value} ${theme === value ? 'chosen' : ''}`} onClick={() => setTheme(value)}>{value === 'paper' ? 'Giấy sáng' : value === 'sepia' ? 'Vàng dịu' : 'Ban đêm'}</button>)}</div></div></section></div></>}
       </div>
       <input ref={fileInput} type="file" accept=".epub,.pdf,.txt,.html,.htm,.docx" hidden onChange={event => { const file = event.target.files?.[0]; if (file) void importFile(file); event.target.value = '' }} />
     </main>
@@ -711,6 +712,7 @@ async function sha256Hex(file: Blob): Promise<string> {
     </div>}</div></div>}
 
     {authOpen && <AuthDialog onClose={() => setAuthOpen(false)} onSuccess={value => void authenticated(value)} />}
+    {selectedBook && <BookDetailsModal book={selectedBook} categories={categories} progress={Number(progressFor(records, selectedBook.id)?.payload.progression || 0)} isFavorite={favorites.has(selectedBook.id)} isOffline={selectedBook.source === 'local' || offlineIds.has(selectedBook.id)} offlineBusy={offlineBusy === selectedBook.id} onClose={() => setSelectedBook(null)} onRead={() => { const b = selectedBook; setSelectedBook(null); void openBook(b) }} onFavorite={selectedBook.source === 'local' ? undefined : () => void toggleFavorite(selectedBook)} onOffline={selectedBook.source !== 'local' && selectedBook.fileUrl ? () => void toggleOffline(selectedBook) : undefined} onDelete={selectedBook.source === 'local' || selectedBook.source === 'cloud' ? () => { const b = selectedBook; setSelectedBook(null); void deleteBook(b) } : undefined} />}
   </div>
 }
 
@@ -723,8 +725,91 @@ function SectionHeader({ title, action, onAction }: { title: string; action: str
   return <div className="section-header"><h2>{title}</h2><button onClick={onAction}>{action} <ArrowRight size={16} /></button></div>
 }
 
-function BookCard({ book, progress, onOpen, favorite, onFavorite, onDelete, offline, offlineBusy, onOffline }: { book: Book; progress?: number; onOpen: () => void; favorite: boolean; onFavorite?: () => void; onDelete?: () => void; offline?: boolean; offlineBusy?: boolean; onOffline?: () => void }) {
-  return <article className="book-card"><button className="cover-button" onClick={onOpen} aria-label={`Mở ${book.title}`}><div className="book-cover">{book.coverUrl ? <img src={book.coverUrl} alt="" loading="lazy" onError={event => { event.currentTarget.style.display = 'none' }} /> : null}<div className="cover-fallback"><BookOpen size={34} /><small>NoCap</small></div></div></button><div className="book-info"><div className="book-meta">{offline ? 'ĐÃ LƯU OFFLINE' : book.source === 'cloud' ? 'CLOUD CỦA BẠN' : book.language === 'vi' ? 'TIẾNG VIỆT' : 'SÁCH ĐIỆN TỬ'}</div><button className="book-title" onClick={onOpen}>{book.title}</button><p>{bookLabel(book)}</p>{!!progress && <div className="progress-bar" aria-label={`Đã đọc ${Math.round(progress * 100)} phần trăm`}><span style={{ width: `${Math.max(2, progress * 100)}%` }} /></div>}<div className="card-actions"><button className="read-link" onClick={onOpen}>{progress ? 'Đọc tiếp' : 'Bắt đầu đọc'} <ArrowRight size={15} /></button>{onOffline && <button className="icon-button" title={offline ? 'Bỏ bản tải offline' : 'Tải để đọc offline'} aria-label={offline ? `Bỏ bản tải offline của ${book.title}` : `Tải ${book.title} để đọc offline`} onClick={onOffline} disabled={offlineBusy}>{offline ? <Check size={17} /> : <Download size={17} />}</button>}{onFavorite && <button className="icon-button" title={favorite ? 'Bỏ lưu' : 'Lưu vào tủ sách'} aria-label={favorite ? 'Bỏ lưu' : 'Lưu vào tủ sách'} onClick={onFavorite}><BookMarked size={17} fill={favorite ? 'currentColor' : 'none'} /></button>}{onDelete && <button className="icon-button" title="Xóa tệp trên trình duyệt" aria-label="Xóa tệp" onClick={onDelete}><Trash2 size={17} /></button>}</div></div></article>
+function BookCard({ book, progress, onOpen, onDetails, favorite, onFavorite, onDelete, offline, offlineBusy, onOffline }: { book: Book; progress?: number; onOpen: () => void; onDetails?: () => void; favorite: boolean; onFavorite?: () => void; onDelete?: () => void; offline?: boolean; offlineBusy?: boolean; onOffline?: () => void }) {
+  const handleDetails = onDetails || onOpen
+  return <article className="book-card"><button className="cover-button" onClick={handleDetails} aria-label={`Xem chi tiết ${book.title}`}><div className="book-cover">{book.coverUrl ? <img src={book.coverUrl} alt="" loading="lazy" onError={event => { event.currentTarget.style.display = 'none' }} /> : null}<div className="cover-fallback"><BookOpen size={34} /><small>NoCap</small></div></div></button><div className="book-info"><div className="book-meta">{offline ? 'ĐÃ LƯU OFFLINE' : book.source === 'cloud' ? 'CLOUD CỦA BẠN' : book.language === 'vi' ? 'TIẾNG VIỆT' : 'SÁCH ĐIỆN TỬ'}</div><button className="book-title" onClick={handleDetails}>{book.title}</button><p>{bookLabel(book)}</p>{!!progress && <div className="progress-bar" aria-label={`Đã đọc ${Math.round(progress * 100)} phần trăm`}><span style={{ width: `${Math.max(2, progress * 100)}%` }} /></div>}<div className="card-actions"><button className="read-link" onClick={onOpen}>{progress ? 'Đọc tiếp' : 'Bắt đầu đọc'} <ArrowRight size={15} /></button>{onOffline && <button className="icon-button" title={offline ? 'Bỏ bản tải offline' : 'Tải để đọc offline'} aria-label={offline ? `Bỏ bản tải offline của ${book.title}` : `Tải ${book.title} để đọc offline`} onClick={onOffline} disabled={offlineBusy}>{offline ? <Check size={17} /> : <Download size={17} />}</button>}{onFavorite && <button className="icon-button" title={favorite ? 'Bỏ lưu' : 'Lưu vào tủ sách'} aria-label={favorite ? 'Bỏ lưu' : 'Lưu vào tủ sách'} onClick={onFavorite}><BookMarked size={17} fill={favorite ? 'currentColor' : 'none'} /></button>}{onDelete && <button className="icon-button" title="Xóa tệp trên trình duyệt" aria-label="Xóa tệp" onClick={onDelete}><Trash2 size={17} /></button>}</div></div></article>
+}
+
+function BookDetailsModal({
+  book,
+  categories,
+  progress,
+  isFavorite,
+  isOffline,
+  offlineBusy,
+  onClose,
+  onRead,
+  onFavorite,
+  onOffline,
+  onDelete
+}: {
+  book: Book
+  categories: Category[]
+  progress?: number
+  isFavorite: boolean
+  isOffline: boolean
+  offlineBusy?: boolean
+  onClose: () => void
+  onRead: () => void
+  onFavorite?: () => void
+  onOffline?: () => void
+  onDelete?: () => void
+}) {
+  const categoryName = categories.find(c => c.id === book.categoryId)?.name || (book.source === 'local' ? 'Tài liệu riêng' : 'Tổng hợp')
+  const progressPct = progress ? Math.round(progress * 100) : 0
+  const sizeFormatted = book.fileSizeBytes ? `${(book.fileSizeBytes / (1024 * 1024)).toFixed(1)} MB` : undefined
+
+  return (
+    <div className="modal-shade" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="book-details-modal" role="dialog" aria-modal="true" aria-labelledby="book-detail-title">
+        <button className="icon-button dialog-close" onClick={onClose} aria-label="Đóng"><X size={20} /></button>
+        <div className="book-details-top">
+          <div className="book-details-cover">
+            {book.coverUrl ? (
+              <img src={book.coverUrl} alt={book.title} loading="lazy" onError={e => { e.currentTarget.style.display = 'none' }} />
+            ) : (
+              <div className="cover-fallback" style={{ height: '100%' }}><BookOpen size={40} /><small>NoCap</small></div>
+            )}
+          </div>
+          <div className="book-details-info">
+            <h2 id="book-detail-title" className="book-details-title">{book.title}</h2>
+            <div className="book-details-author">Tác giả: <strong>{book.author || 'Chưa rõ'}</strong></div>
+            <div className="book-details-badges">
+              <span className="book-badge rating"><Star size={13} fill="currentColor" /> 4.8</span>
+              <span className="book-badge">{categoryName}</span>
+              <span className="book-badge format">{book.format?.toUpperCase() || 'EPUB'}</span>
+              {sizeFormatted && <span className="book-badge format">{sizeFormatted}</span>}
+              {progressPct > 0 && <span className="book-badge progress">Đã đọc {progressPct}%</span>}
+            </div>
+            <div className="book-details-actions">
+              <button className="primary" onClick={onRead}>
+                <BookOpen size={16} /> {progressPct > 0 ? 'Đọc tiếp' : 'Đọc sách'}
+              </button>
+              {onOffline && (
+                <button className="secondary" onClick={onOffline} disabled={offlineBusy}>
+                  {isOffline ? <><Check size={16} /> Đã lưu offline</> : <><Download size={16} /> Tải offline</>}
+                </button>
+              )}
+              {onFavorite && (
+                <button className="secondary" onClick={onFavorite}>
+                  <BookMarked size={16} fill={isFavorite ? 'currentColor' : 'none'} /> {isFavorite ? 'Đã yêu thích' : 'Yêu thích'}
+                </button>
+              )}
+              {onDelete && (
+                <button className="secondary" style={{ color: '#b91c1c' }} onClick={onDelete}>
+                  <Trash2 size={16} /> Xóa sách
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+        <div className="book-details-desc">
+          <h3>Giới thiệu</h3>
+          <p>{book.description || 'Chưa có phần giới thiệu chi tiết cho tác phẩm này. Bạn có thể mở đọc sách ngay để khám phá toàn bộ nội dung.'}</p>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function AuthDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess: (session: Session) => void }) {
