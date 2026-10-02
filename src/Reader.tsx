@@ -2,8 +2,21 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import DOMPurify from 'dompurify'
 import { getDocument, GlobalWorkerOptions, type PDFDocumentProxy, type RenderTask } from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
-import type { Book, FontFamily, ReaderAnnotation, ReaderLocation, TextAlignment, TocItem } from './types'
+import literataVietnamese from '@fontsource-variable/literata/files/literata-vietnamese-wght-normal.woff2?url'
+import literataLatinExt from '@fontsource-variable/literata/files/literata-latin-ext-wght-normal.woff2?url'
+import literataLatin from '@fontsource-variable/literata/files/literata-latin-wght-normal.woff2?url'
+import literataVietnameseItalic from '@fontsource-variable/literata/files/literata-vietnamese-wght-italic.woff2?url'
+import literataLatinExtItalic from '@fontsource-variable/literata/files/literata-latin-ext-wght-italic.woff2?url'
+import literataLatinItalic from '@fontsource-variable/literata/files/literata-latin-wght-italic.woff2?url'
+import atkinsonLatinExt from '@fontsource/atkinson-hyperlegible/files/atkinson-hyperlegible-latin-ext-400-normal.woff2?url'
+import atkinsonLatin from '@fontsource/atkinson-hyperlegible/files/atkinson-hyperlegible-latin-400-normal.woff2?url'
+import atkinsonLatinExtItalic from '@fontsource/atkinson-hyperlegible/files/atkinson-hyperlegible-latin-ext-400-italic.woff2?url'
+import atkinsonLatinItalic from '@fontsource/atkinson-hyperlegible/files/atkinson-hyperlegible-latin-400-italic.woff2?url'
+import atkinsonLatinExtBold from '@fontsource/atkinson-hyperlegible/files/atkinson-hyperlegible-latin-ext-700-normal.woff2?url'
+import atkinsonLatinBold from '@fontsource/atkinson-hyperlegible/files/atkinson-hyperlegible-latin-700-normal.woff2?url'
+import type { Book, FontFamily, ReaderAnnotation, ReaderLocation, ReaderWidth, TextAlignment, TocItem } from './types'
 import type Rendition from 'epubjs/types/rendition'
+import type Contents from 'epubjs/types/contents'
 
 GlobalWorkerOptions.workerSrc = workerUrl
 
@@ -15,6 +28,7 @@ type Props = {
   fontFamily?: FontFamily
   lineHeight?: number
   textAlignment?: TextAlignment
+  readerWidth?: ReaderWidth
   theme: 'paper' | 'sepia' | 'night'
   onLocation: (location: ReaderLocation) => void
   onSelection: (text: string, locator: string) => void
@@ -58,12 +72,37 @@ function findSpineHref(spine: unknown, targetHref?: string): string | undefined 
 }
 
 function fontStack(family?: FontFamily): string {
-  if (family === 'sans') return 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+  if (family === 'sans') return '"Atkinson Hyperlegible", "DM Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
   if (family === 'mono') return 'ui-monospace, "SF Mono", Menlo, Consolas, monospace'
-  return 'Merriweather, Georgia, "Times New Roman", serif'
+  return '"Literata Variable", Literata, Georgia, "Times New Roman", serif'
 }
 
-function EpubPane({ bytes, initial, fontSize, fontFamily, lineHeight, textAlignment, theme, onLocation, onSelection, onControls, onToc, navigateTarget, annotations = [] }: Props) {
+function readingMeasure(width?: ReaderWidth): string {
+  if (width === 'narrow') return '58ch'
+  if (width === 'wide') return '78ch'
+  return '68ch'
+}
+
+const vietnameseRange = 'U+0102-0103,U+0110-0111,U+0128-0129,U+0168-0169,U+01A0-01A1,U+01AF-01B0,U+0300-0301,U+0303-0304,U+0308-0309,U+0323,U+0329,U+1EA0-1EF9,U+20AB'
+const latinExtRange = 'U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF'
+const latinRange = 'U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD'
+
+const epubFontFaces = [
+  ['Literata Variable', 'normal', '200 900', literataVietnamese, vietnameseRange],
+  ['Literata Variable', 'normal', '200 900', literataLatinExt, latinExtRange],
+  ['Literata Variable', 'normal', '200 900', literataLatin, latinRange],
+  ['Literata Variable', 'italic', '200 900', literataVietnameseItalic, vietnameseRange],
+  ['Literata Variable', 'italic', '200 900', literataLatinExtItalic, latinExtRange],
+  ['Literata Variable', 'italic', '200 900', literataLatinItalic, latinRange],
+  ['Atkinson Hyperlegible', 'normal', '400', atkinsonLatinExt, latinExtRange],
+  ['Atkinson Hyperlegible', 'normal', '400', atkinsonLatin, latinRange],
+  ['Atkinson Hyperlegible', 'italic', '400', atkinsonLatinExtItalic, latinExtRange],
+  ['Atkinson Hyperlegible', 'italic', '400', atkinsonLatinItalic, latinRange],
+  ['Atkinson Hyperlegible', 'normal', '700', atkinsonLatinExtBold, latinExtRange],
+  ['Atkinson Hyperlegible', 'normal', '700', atkinsonLatinBold, latinRange],
+].map(([family, style, weight, url, range]) => `@font-face{font-family:"${family}";font-style:${style};font-display:swap;font-weight:${weight};src:url("${url}") format("woff2");unicode-range:${range};}`).join('')
+
+function EpubPane({ bytes, initial, fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme, onLocation, onSelection, onControls, onToc, navigateTarget, annotations = [] }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const rendition = useRef<Rendition | null>(null)
   const bookRef = useRef<import('epubjs/types/book').default | null>(null)
@@ -113,6 +152,14 @@ function EpubPane({ bytes, initial, fontSize, fontFamily, lineHeight, textAlignm
         }).catch(() => {})
         view = book.renderTo(host.current, { width: '100%', height: '100%', flow: 'scrolled-doc', manager: 'continuous', allowScriptedContent: false })
         rendition.current = view
+        view.hooks.content.register((contents: Contents) => {
+          const document = contents.document
+          if (!document?.head || document.getElementById('nocap-reader-fonts')) return
+          const style = document.createElement('style')
+          style.id = 'nocap-reader-fonts'
+          style.textContent = epubFontFaces
+          document.head.appendChild(style)
+        })
         view.on('relocated', (location: { start?: { cfi?: string; href?: string; percentage?: number; index?: number }; end?: unknown }) => {
           const start = location.start
           if (!start?.cfi) return
@@ -184,7 +231,7 @@ function EpubPane({ bytes, initial, fontSize, fontFamily, lineHeight, textAlignm
   useEffect(() => {
     const view = rendition.current
     if (!view) return
-    view.themes.fontSize(`${fontSize}%`)
+    view.themes.fontSize(`${fontSize * 0.18}px`)
     const palette = theme === 'night' ? { color: '#e8edf7', background: '#111b2b' } : theme === 'sepia' ? { color: '#443627', background: '#f3e9d3' } : { color: '#172033', background: '#fffdf8' }
     view.themes.default({
       body: {
@@ -193,9 +240,12 @@ function EpubPane({ bytes, initial, fontSize, fontFamily, lineHeight, textAlignm
         'font-family': `${fontStack(fontFamily)} !important`,
         'line-height': `${lineHeight || 1.65} !important`,
         'text-align': `${textAlignment || 'left'} !important`,
+        'max-width': `${readingMeasure(readerWidth)} !important`,
+        'margin-left': 'auto !important',
+        'margin-right': 'auto !important',
       },
     })
-  }, [fontSize, theme, fontFamily, lineHeight, textAlignment, renditionVersion])
+  }, [fontSize, theme, fontFamily, lineHeight, textAlignment, readerWidth, renditionVersion])
 
   useEffect(() => {
     const view = rendition.current
@@ -319,7 +369,7 @@ function ImagePane({ book, bytes, onLocation, onControls, theme }: Props) {
   </div>
 }
 
-function TextPane({ bytes, initial, fontSize, fontFamily, lineHeight, textAlignment, theme, onLocation, onSelection, onControls, onToc, navigateTarget, annotations = [], format }: Props & { format: 'text' | 'html' | 'docx' }) {
+function TextPane({ bytes, initial, fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme, onLocation, onSelection, onControls, onToc, navigateTarget, annotations = [], format }: Props & { format: 'text' | 'html' | 'docx' }) {
   const host = useRef<HTMLDivElement>(null)
   const [content, setContent] = useState('')
   const [error, setError] = useState('')
@@ -453,10 +503,11 @@ function TextPane({ bytes, initial, fontSize, fontFamily, lineHeight, textAlignm
     <div ref={host} className={`text-host ${theme}`} onScroll={update} onMouseUp={selected} onTouchEnd={selected}>
       <article
         style={{
-          fontSize: `${fontSize}%`,
+          fontSize: `${fontSize * 0.18}px`,
           fontFamily: fontStack(fontFamily),
           lineHeight: lineHeight || 1.65,
           textAlign: textAlignment || 'left',
+          maxWidth: readingMeasure(readerWidth),
         }}
         dangerouslySetInnerHTML={{ __html: content }}
       />

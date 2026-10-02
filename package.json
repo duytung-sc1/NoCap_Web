@@ -11,6 +11,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@fontsource-variable/literata": "^5.3.0",
+    "@fontsource/atkinson-hyperlegible": "^5.3.0",
+    "@fontsource/dm-sans": "^5.3.0",
     "@noble/hashes": "^2.4.0",
     "dompurify": "^3.4.15",
     "epubjs": "^0.3.93",

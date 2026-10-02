@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b172d">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="Privacy Policy for the NoCap reading app and connected services.">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>Privacy Policy · NoCap</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --navy: #0b172d;
+      --navy-soft: #172942;
+      --paper: #f5f7f6;
+      --surface: #ffffff;
+      --text: #1b2b3f;
+      --muted: #607184;
+      --line: #dce5e3;
+      --accent: #159681;
+      --accent-soft: #e4f5f0;
+      --focus: #0d7666;
+      --warning: #9b5c25;
+      font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      font-synthesis: none;
+      text-rendering: optimizeLegibility;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { margin: 0; background: var(--paper); color: var(--text); font-size: 16px; line-height: 1.7; }
+    a { color: var(--focus); text-underline-offset: .18em; }
+    a:hover { text-decoration-thickness: 2px; }
+    a:focus-visible { outline: 3px solid #4bc4ae; outline-offset: 4px; border-radius: 4px; }
+    p, li { color: var(--muted); }
+    strong { color: var(--text); }
+    h1, h2, h3 { color: var(--text); line-height: 1.2; text-wrap: balance; }
+    h1 { margin: .45rem 0 1rem; font: 650 clamp(2.35rem, 7vw, 4.4rem)/1.04 Georgia, "Times New Roman", serif; letter-spacing: -.045em; }
+    h2 { margin: 2.8rem 0 .75rem; font: 650 clamp(1.35rem, 3vw, 1.7rem)/1.25 Georgia, "Times New Roman", serif; }
+    h3 { margin: 1.7rem 0 .4rem; font-size: 1.05rem; }
+    ul { padding-left: 1.3rem; }
+    li + li { margin-top: .5rem; }
+
+    .wrap { width: min(100% - 32px, 940px); margin-inline: auto; }
+    .topbar { position: sticky; top: 0; z-index: 10; border-bottom: 1px solid #263950; background: rgba(11, 23, 45, .96); backdrop-filter: blur(14px); }
+    .topbar .wrap { min-height: 68px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+    .brand { display: inline-flex; align-items: center; gap: 11px; color: white; text-decoration: none; font-weight: 800; letter-spacing: -.02em; }
+    .brand img { width: 36px; height: 36px; border-radius: 10px; }
+    .topnav { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+    .topnav a { min-height: 40px; display: inline-flex; align-items: center; padding: 8px 12px; border-radius: 999px; color: #c9d8e7; text-decoration: none; font-size: .86rem; font-weight: 700; }
+    .topnav a:hover { background: #20344d; color: white; }
+
+    .hero { padding: clamp(52px, 9vw, 96px) 0 48px; background: radial-gradient(circle at 82% 25%, #1e4b55 0, #122d43 28%, var(--navy) 68%); color: white; }
+    .hero .wrap { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 36px; }
+    .hero h1, .hero strong { color: white; }
+    .eyebrow { margin: 0 0 .6rem; color: #66d6c1; font-size: .78rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+    .lede { max-width: 720px; margin: 0; color: #c0cfdd; font-size: clamp(1.02rem, 2vw, 1.15rem); }
+    .meta { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 24px; }
+    .pill { padding: 7px 12px; border: 1px solid #496179; border-radius: 999px; color: #d6e1eb; font-size: .82rem; }
+    .hero-mark { width: 150px; height: 150px; display: grid; place-items: center; border: 1px solid #ffffff2b; border-radius: 36px; background: #ffffff0e; box-shadow: 0 24px 60px #0004; }
+    .hero-mark img { width: 94px; height: 94px; }
+
+    .layout { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: clamp(32px, 6vw, 74px); padding-block: 42px 80px; }
+    .toc { position: sticky; top: 94px; align-self: start; }
+    .toc strong { display: block; margin-bottom: 11px; font-size: .78rem; letter-spacing: .12em; text-transform: uppercase; }
+    .toc a { display: block; padding: 6px 0; color: var(--muted); text-decoration: none; font-size: .88rem; }
+    .toc a:hover { color: var(--accent); }
+    .content { min-width: 0; }
+    .summary, .callout { padding: clamp(20px, 4vw, 30px); border: 1px solid var(--line); border-radius: 18px; background: var(--surface); }
+    .summary { margin-bottom: 30px; border-left: 5px solid var(--accent); }
+    .summary p:last-child, .callout p:last-child { margin-bottom: 0; }
+    .callout { margin: 24px 0; background: var(--accent-soft); }
+    .callout.warning { border-left: 5px solid #d89b55; background: #fff8ef; }
+    .data-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 18px 0 8px; }
+    .data-card { padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+    .data-card h3 { margin-top: 0; }
+    .data-card p { margin-bottom: 0; font-size: .94rem; }
+    .language-divider { margin: 70px 0 0; padding-top: 52px; border-top: 2px solid var(--line); }
+    .language-label { display: inline-flex; padding: 6px 11px; border-radius: 999px; background: var(--accent-soft); color: #0d6f60; font-size: .8rem; font-weight: 800; }
+    .contact-link { display: inline-flex; align-items: center; min-height: 46px; margin-top: 8px; padding: 10px 16px; border-radius: 10px; background: var(--accent); color: white; text-decoration: none; font-weight: 800; }
+    footer { border-top: 1px solid var(--line); background: #eef3f1; }
+    footer .wrap { display: flex; justify-content: space-between; gap: 20px; padding-block: 28px 42px; color: var(--muted); font-size: .88rem; }
+
+    @media (max-width: 760px) {
+      .topbar .wrap { align-items: flex-start; flex-direction: column; padding-block: 13px; }
+      .topnav { width: 100%; }
+      .topnav a { padding-left: 0; margin-right: 10px; }
+      .hero .wrap { grid-template-columns: 1fr; }
+      .hero-mark { display: none; }
+      .layout { grid-template-columns: 1fr; }
+      .toc { position: static; padding: 16px 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); columns: 2; }
+      .toc strong { column-span: all; }
+      .data-grid { grid-template-columns: 1fr; }
+      footer .wrap { flex-direction: column; }
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root { color-scheme: dark; --paper: #07111f; --surface: #101e31; --text: #f1f5f8; --muted: #b3c1ce; --line: #2a3c50; --accent-soft: #112f32; --focus: #67d8c3; }
+      .callout.warning { background: #2c2118; }
+      footer { background: #091523; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="wrap">
+      <a class="brand" href="/" aria-label="NoCap home"><img src="/nocap-192.png" alt="">NoCap</a>
+      <nav class="topnav" aria-label="Language navigation">
+        <a href="#english">English</a>
+        <a href="#tieng-viet" lang="vi">Tiếng Việt</a>
+        <a href="mailto:dp1.1a9.tung@gmail.com">Privacy contact</a>
+      </nav>
+    </div>
+  </header>
+
+  <section class="hero" id="english">
+    <div class="wrap">
+      <div>
+        <p class="eyebrow">NoCap · tung.nocap</p>
+        <h1>Privacy Policy</h1>
+        <p class="lede">How NoCap handles information when you read locally or use an account, synchronization, private cloud storage, backup, and payment services.</p>
+        <div class="meta"><span class="pill">Effective September 24, 2026</span><span class="pill">Last updated October 2, 2026</span></div>
+      </div>
+      <div class="hero-mark" aria-hidden="true"><img src="/nocap.svg" alt=""></div>
+    </div>
+  </section>
+
+  <main class="wrap layout">
+    <nav class="toc" aria-label="Policy contents">
+      <strong>On this page</strong>
+      <a href="#overview">Overview</a>
+      <a href="#local-data">Local data</a>
+      <a href="#account-data">Account data</a>
+      <a href="#payments">Payments</a>
+      <a href="#use">How data is used</a>
+      <a href="#providers">Service providers</a>
+      <a href="#retention">Retention</a>
+      <a href="#choices">Your choices</a>
+      <a href="#security">Security and children</a>
+      <a href="#contact">Contact</a>
+      <a href="#tieng-viet">Bản tiếng Việt</a>
+    </nav>
+
+    <article class="content">
+      <section class="summary" id="overview">
+        <strong>Plain-language summary</strong>
+        <p>NoCap can be used as a local reader without an account. NoCap sends account or reading data to its servers only when you sign in and use eligible account, synchronization, private-document, backup, or payment features. NoCap does not sell personal information and the current app contains no advertising or third-party analytics SDK.</p>
+      </section>
+
+      <h2>1. Scope of this policy</h2>
+      <p>This policy applies to the NoCap Android application, NoCap Web, and the connected NoCap API and cloud services. NoCap lets you import and read documents, save reading progress and annotations, organize knowledge, and optionally continue across devices.</p>
+
+      <h2 id="local-data">2. Information stored on your device</h2>
+      <p>When you import or open a document, NoCap reads only the file you selected and may store a copy inside the app or browser storage. Local information can include:</p>
+      <div class="data-grid">
+        <section class="data-card"><h3>Documents</h3><p>Downloaded books and files you explicitly import or open with NoCap.</p></section>
+        <section class="data-card"><h3>Reading activity</h3><p>Reading position, bookmarks, highlights, notes, review items, and reading sessions.</p></section>
+        <section class="data-card"><h3>Organization</h3><p>Tags, collections, favorites, and user-edited document metadata.</p></section>
+        <section class="data-card"><h3>Preferences</h3><p>Language, theme, font, text size, spacing, alignment, and other reader settings.</p></section>
+      </div>
+      <p>Using a file picker or Android “Open with” does not give NoCap access to every file on your device. Local data is not automatically public. Android system backup may copy some local app data under your device and Google-account settings. NoCap excludes saved sign-in sessions and cached entitlement status from Android system backup.</p>
+
+      <h2 id="account-data">3. Information processed when you use an account</h2>
+      <ul>
+        <li><strong>Identity and profile:</strong> email address, display name, optional profile-photo URL, email-verification state, account status, and relevant timestamps.</li>
+        <li><strong>Authentication:</strong> Google identity assertions used for verification or a salted password hash for password accounts. Plaintext passwords are not stored.</li>
+        <li><strong>Sessions and security:</strong> hashed session identifiers, expiry time, rate-limit records, request time, IP address supplied to the service, and limited technical logs needed to prevent abuse and diagnose failures.</li>
+        <li><strong>Device information:</strong> installation identifier, platform, device model, app version, registration time, and recent contact time.</li>
+        <li><strong>Cloud reading data:</strong> eligible synchronization records, reading progress, annotations, tags, collections, review items, reading sessions, private documents, and backups associated with your account.</li>
+        <li><strong>Plan information:</strong> Free or Pro status, entitlement source, status, expiry, payment-order metadata, and authorized temporary test access where applicable.</li>
+      </ul>
+      <div class="callout"><strong>Data NoCap does not require for reading</strong><p>NoCap does not require your contacts, precise location, microphone, camera, banking password, or payment-card number for its current reading features.</p></div>
+
+      <h2 id="payments">4. Payments and Pro access</h2>
+      <p>For a bank-transfer Pro order, NoCap may store the order code, amount, currency, duration, status, timestamps, and account owner. SePay can send a signed transaction notification containing limited transaction identifiers, amount, time, and reference information. NoCap retains only the metadata needed to reconcile the order, prevent duplicate processing, investigate fraud, and satisfy legal obligations.</p>
+      <p>If Google Play Billing is enabled in a future release, Google processes the purchase. NoCap may receive a purchase token and product or subscription state for server-side verification. NoCap does not receive your full card details from Google Play. Pro is never granted solely from information supplied by the app without valid server-side proof.</p>
+
+      <h2 id="use">5. How NoCap uses information</h2>
+      <ul>
+        <li>Authenticate accounts, verify email addresses, and respond to password-reset requests.</li>
+        <li>Provide local reading, eligible synchronization, private storage, backup, and knowledge features.</li>
+        <li>Restore reading state across devices and keep account profiles isolated.</li>
+        <li>Verify payments and determine Free or Pro entitlement on the server.</li>
+        <li>Protect the service, enforce rate limits, investigate errors, and prevent fraud or abuse.</li>
+        <li>Respond to support, privacy, access, correction, export, or deletion requests.</li>
+      </ul>
+      <p>NoCap does not sell or rent personal information. Private documents, notes, and backups are not used for advertising.</p>
+
+      <h2 id="providers">6. Service providers and external sources</h2>
+      <ul>
+        <li><strong>Cloudflare</strong> provides the API, database, private object storage, and network infrastructure.</li>
+        <li><strong>Google</strong> provides Google Sign-In and, when enabled by you, Android backup or device transfer. Google Play may process future in-app purchases.</li>
+        <li><strong>SePay and your bank</strong> process bank-transfer notifications and the underlying financial transaction.</li>
+        <li><strong>Email service providers</strong> deliver verification, password-reset, and service messages.</li>
+        <li><strong>External book and cover providers</strong> receive ordinary request information when their public files are loaded.</li>
+      </ul>
+      <p>These providers process information under their own terms and may operate in other countries. NoCap shares only what is needed to provide the relevant service.</p>
+
+      <h2 id="retention">7. Data retention</h2>
+      <ul>
+        <li><strong>Local data</strong> remains until you delete it, clear app or browser storage, or uninstall, subject to device backups.</li>
+        <li><strong>Account and cloud data</strong> remains while the account exists or until you delete individual content. Pro expiry or revocation does not delete local documents or annotations.</li>
+        <li><strong>Sessions and temporary security records</strong> expire and are periodically removed. Sessions normally expire within 30 days.</li>
+        <li><strong>Payment metadata</strong> linked to an account is removed where appropriate when the account is deleted. Minimal transaction-event metadata may remain for reconciliation, duplicate prevention, fraud investigation, or legal obligations.</li>
+        <li><strong>Third-party copies</strong> are retained under each provider’s policy.</li>
+      </ul>
+
+      <h2 id="choices">8. Your choices and deletion rights</h2>
+      <p>You may read as a guest, choose whether to sign in, delete local documents and annotations, remove cloud backups where offered, sign out, or request account deletion.</p>
+      <p>To delete an account in the app, open <strong>Settings → Delete account</strong> and confirm. A recent login may be required. Successful account deletion removes linked server records and private cloud objects. It does not automatically erase files still stored locally, Android system backups, or limited transaction-event metadata that must be retained for the purposes described above.</p>
+      <p>If you cannot access the app, email the privacy contact from the address associated with the account whenever possible. NoCap may verify account ownership and will never ask you to send a password or session token.</p>
+
+      <h2 id="security">9. Security, children, and policy updates</h2>
+      <p>NoCap uses HTTPS, password and session-token hashing, account-scoped authorization, input validation, and private object authorization. No internet service can guarantee absolute security.</p>
+      <p>NoCap is a general reading application and is not specifically directed to children. If you believe a child has provided personal information without appropriate permission, contact us so the situation can be reviewed.</p>
+      <p>This policy may be updated when NoCap’s features, providers, or legal obligations change. The revision date at the top will identify the current version.</p>
+
+      <h2 id="contact">10. Privacy contact</h2>
+      <p>For privacy questions or requests to access, correct, export, or delete account data, contact:</p>
+      <a class="contact-link" href="mailto:dp1.1a9.tung@gmail.com">dp1.1a9.tung@gmail.com</a>
+      <div class="callout warning"><strong>Please do not email secrets</strong><p>Never send passwords, bank credentials, session tokens, purchase tokens, payment-card numbers, or private book files by email.</p></div>
+
+      <section class="language-divider" id="tieng-viet" lang="vi">
+        <span class="language-label">Bản tiếng Việt</span>
+        <h1>Chính sách quyền riêng tư</h1>
+        <p class="lede">Cách NoCap xử lý thông tin khi bạn đọc cục bộ hoặc sử dụng tài khoản, đồng bộ, lưu trữ cloud riêng, sao lưu và thanh toán.</p>
+        <div class="meta"><span class="pill">Hiệu lực từ 24/09/2026</span><span class="pill">Cập nhật 02/10/2026</span></div>
+
+        <section class="summary">
+          <strong>Tóm tắt dễ hiểu</strong>
+          <p>Bạn có thể dùng NoCap để đọc cục bộ mà không cần tài khoản. NoCap chỉ gửi dữ liệu tài khoản hoặc dữ liệu đọc đến máy chủ khi bạn đăng nhập và sử dụng các tính năng đủ điều kiện như đồng bộ, tài liệu riêng, sao lưu hoặc thanh toán. NoCap không bán dữ liệu cá nhân; ứng dụng hiện không có quảng cáo hoặc SDK phân tích bên thứ ba.</p>
+        </section>
+
+        <h2>1. Phạm vi áp dụng</h2>
+        <p>Chính sách này áp dụng cho ứng dụng NoCap trên Android, NoCap Web và API/dịch vụ cloud liên quan. NoCap hỗ trợ nhập và đọc tài liệu, lưu tiến độ và ghi chú, tổ chức kiến thức và tùy chọn tiếp tục trên nhiều thiết bị.</p>
+
+        <h2>2. Thông tin lưu trên thiết bị</h2>
+        <p>Khi bạn nhập hoặc mở tài liệu, NoCap chỉ đọc tệp bạn đã chọn và có thể lưu một bản sao trong vùng dữ liệu của ứng dụng hoặc trình duyệt. Dữ liệu cục bộ có thể gồm sách, tài liệu, vị trí đọc, dấu trang, highlight, ghi chú, tag, bộ sưu tập, mục ôn tập, phiên đọc và cài đặt trình đọc.</p>
+        <p>Dùng trình chọn tệp hoặc “Mở bằng” không cấp cho NoCap quyền đọc mọi tệp trên thiết bị. Dữ liệu cục bộ không tự động công khai. Sao lưu hệ thống Android có thể sao chép một phần dữ liệu ứng dụng theo cài đặt của thiết bị và tài khoản Google; NoCap loại trừ phiên đăng nhập đã lưu và trạng thái gói được lưu đệm khỏi sao lưu hệ thống.</p>
+
+        <h2>3. Thông tin khi sử dụng tài khoản</h2>
+        <ul>
+          <li><strong>Danh tính và hồ sơ:</strong> email, tên hiển thị, URL ảnh nếu có, trạng thái xác minh, trạng thái tài khoản và thời gian liên quan.</li>
+          <li><strong>Xác thực:</strong> thông tin nhận dạng Google dùng để xác minh hoặc giá trị băm mật khẩu có muối. NoCap không lưu mật khẩu dạng rõ.</li>
+          <li><strong>Phiên và bảo mật:</strong> mã phiên đã băm, thời hạn, giới hạn tần suất, thời gian yêu cầu, địa chỉ IP dịch vụ nhận được và log kỹ thuật giới hạn.</li>
+          <li><strong>Thiết bị:</strong> mã cài đặt, nền tảng, mẫu máy, phiên bản ứng dụng, thời gian đăng ký và liên hệ gần nhất.</li>
+          <li><strong>Dữ liệu đọc trên cloud:</strong> bản ghi đồng bộ đủ điều kiện, tiến độ, ghi chú, tag, bộ sưu tập, mục ôn tập, phiên đọc, tài liệu riêng và bản sao lưu.</li>
+          <li><strong>Thông tin gói:</strong> Free/Pro, nguồn quyền lợi, trạng thái, ngày hết hạn, metadata đơn thanh toán và quyền thử nghiệm được cấp hợp lệ nếu có.</li>
+        </ul>
+        <div class="callout"><strong>Dữ liệu NoCap không cần cho việc đọc</strong><p>NoCap không yêu cầu danh bạ, vị trí chính xác, micro, camera, mật khẩu ngân hàng hoặc số thẻ thanh toán cho các chức năng đọc hiện tại.</p></div>
+
+        <h2>4. Thanh toán và quyền Pro</h2>
+        <p>Đối với đơn Pro qua chuyển khoản, NoCap có thể lưu mã đơn, số tiền, loại tiền, thời hạn, trạng thái, thời gian và chủ tài khoản. SePay có thể gửi thông báo giao dịch đã ký với mã giao dịch, số tiền, thời gian và nội dung đối chiếu giới hạn. NoCap chỉ giữ metadata cần để đối soát, chống xử lý trùng, điều tra gian lận và đáp ứng nghĩa vụ pháp lý.</p>
+        <p>Nếu Google Play Billing được bật trong bản phát hành tương lai, Google xử lý giao dịch. NoCap có thể nhận purchase token và trạng thái sản phẩm/gói để xác minh phía máy chủ, nhưng không nhận toàn bộ thông tin thẻ. Pro không được cấp chỉ dựa trên dữ liệu do ứng dụng tự khai khi chưa có bằng chứng máy chủ hợp lệ.</p>
+
+        <h2>5. Mục đích sử dụng dữ liệu</h2>
+        <ul>
+          <li>Đăng nhập, xác minh email và xử lý yêu cầu đặt lại mật khẩu.</li>
+          <li>Cung cấp chức năng đọc, đồng bộ đủ điều kiện, lưu trữ riêng, sao lưu và quản lý kiến thức.</li>
+          <li>Khôi phục trạng thái đọc giữa các thiết bị và giữ dữ liệu từng tài khoản tách biệt.</li>
+          <li>Xác minh thanh toán và xác định quyền Free/Pro trên máy chủ.</li>
+          <li>Bảo vệ dịch vụ, giới hạn tần suất, điều tra lỗi và ngăn gian lận/lạm dụng.</li>
+          <li>Xử lý yêu cầu hỗ trợ, truy cập, sửa, xuất hoặc xóa dữ liệu.</li>
+        </ul>
+        <p>NoCap không bán hoặc cho thuê dữ liệu cá nhân. Tài liệu, ghi chú và bản sao lưu riêng không được dùng cho quảng cáo.</p>
+
+        <h2>6. Nhà cung cấp dịch vụ</h2>
+        <ul>
+          <li><strong>Cloudflare:</strong> API, cơ sở dữ liệu, lưu trữ đối tượng riêng và hạ tầng mạng.</li>
+          <li><strong>Google:</strong> Google Sign-In, sao lưu/chuyển thiết bị Android nếu bạn bật và giao dịch Google Play trong tương lai nếu được cấu hình.</li>
+          <li><strong>SePay và ngân hàng:</strong> thông báo và xử lý giao dịch chuyển khoản.</li>
+          <li><strong>Dịch vụ email:</strong> gửi thư xác minh, đặt lại mật khẩu và thông báo dịch vụ.</li>
+          <li><strong>Nguồn sách/ảnh bìa bên ngoài:</strong> nhận thông tin yêu cầu mạng thông thường khi tải tệp công khai.</li>
+        </ul>
+        <p>Các nhà cung cấp áp dụng điều khoản riêng và có thể xử lý dữ liệu ở quốc gia khác. NoCap chỉ chia sẻ thông tin cần thiết cho dịch vụ tương ứng.</p>
+
+        <h2>7. Thời gian lưu dữ liệu</h2>
+        <ul>
+          <li><strong>Dữ liệu cục bộ:</strong> đến khi bạn xóa, xóa dữ liệu ứng dụng/trình duyệt hoặc gỡ ứng dụng, có tính đến bản sao lưu thiết bị.</li>
+          <li><strong>Tài khoản và cloud:</strong> trong khi tài khoản tồn tại hoặc đến khi nội dung riêng bị xóa. Pro hết hạn hoặc bị thu hồi không xóa tệp và ghi chú cục bộ.</li>
+          <li><strong>Phiên và bản ghi bảo mật tạm:</strong> tự hết hạn và được dọn định kỳ. Phiên thường hết hạn trong vòng 30 ngày.</li>
+          <li><strong>Metadata thanh toán:</strong> dữ liệu gắn với tài khoản được xóa khi phù hợp; metadata giao dịch tối thiểu có thể được giữ để đối soát, chống trùng, điều tra gian lận hoặc tuân thủ pháp luật.</li>
+          <li><strong>Bản sao bên thứ ba:</strong> được lưu theo chính sách của từng nhà cung cấp.</li>
+        </ul>
+
+        <h2>8. Lựa chọn và quyền xóa dữ liệu</h2>
+        <p>Bạn có thể đọc ở chế độ khách, tự quyết định đăng nhập, xóa tài liệu/ghi chú cục bộ, xóa bản sao lưu cloud nơi được hỗ trợ, đăng xuất hoặc yêu cầu xóa tài khoản.</p>
+        <p>Để xóa tài khoản trong ứng dụng, vào <strong>Cài đặt → Xóa tài khoản</strong> và xác nhận. Hệ thống có thể yêu cầu phiên đăng nhập gần đây. Xóa thành công sẽ xóa các bản ghi máy chủ liên kết và đối tượng cloud riêng. Thao tác này không tự xóa tệp còn lưu trên máy, sao lưu hệ thống Android hoặc metadata giao dịch tối thiểu phải giữ cho các mục đích đã nêu.</p>
+        <p>Nếu không truy cập được ứng dụng, hãy gửi email từ địa chỉ gắn với tài khoản nếu có thể. NoCap có thể xác minh quyền sở hữu và sẽ không yêu cầu bạn gửi mật khẩu hoặc mã phiên.</p>
+
+        <h2>9. Bảo mật, trẻ em và cập nhật</h2>
+        <p>NoCap sử dụng HTTPS, băm mật khẩu/mã phiên, phân quyền theo tài khoản, kiểm tra đầu vào và xác thực quyền truy cập đối tượng riêng. Không dịch vụ Internet nào bảo đảm an toàn tuyệt đối.</p>
+        <p>NoCap là ứng dụng đọc phổ thông và không dành riêng cho trẻ em. Nếu bạn cho rằng trẻ em đã cung cấp dữ liệu cá nhân mà chưa có sự cho phép phù hợp, hãy liên hệ để NoCap xem xét.</p>
+        <p>Chính sách có thể được cập nhật khi chức năng, nhà cung cấp hoặc nghĩa vụ pháp lý thay đổi. Ngày cập nhật ở đầu trang cho biết phiên bản hiện hành.</p>
+
+        <h2>10. Liên hệ về quyền riêng tư</h2>
+        <p>Để hỏi về quyền riêng tư hoặc yêu cầu truy cập, sửa, xuất hay xóa dữ liệu tài khoản, liên hệ:</p>
+        <a class="contact-link" href="mailto:dp1.1a9.tung@gmail.com">dp1.1a9.tung@gmail.com</a>
+        <div class="callout warning"><strong>Không gửi thông tin bí mật qua email</strong><p>Không gửi mật khẩu, thông tin ngân hàng, mã phiên, purchase token, số thẻ hoặc tệp sách riêng.</p></div>
+      </section>
+    </article>
+  </main>
+
+  <footer>
+    <div class="wrap"><span>© 2026 NoCap</span><span>Privacy contact: <a href="mailto:dp1.1a9.tung@gmail.com">dp1.1a9.tung@gmail.com</a></span></div>
+  </footer>
+</body>
+</html>

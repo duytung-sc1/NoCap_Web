@@ -64,6 +64,7 @@ export type TocItem = {
 
 export type FontFamily = 'serif' | 'sans' | 'mono'
 export type TextAlignment = 'justify' | 'left'
+export type ReaderWidth = 'narrow' | 'standard' | 'wide'
 
 export type ReaderAnnotation = {
   id: string
