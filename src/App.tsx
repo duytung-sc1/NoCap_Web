@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlignJustify, AlignLeft, ArrowLeft, ArrowRight, Award, BarChart3, BookMarked, BookOpen, Bookmark, Check, CheckCircle2, ChevronLeft, ChevronRight, Cloud, CloudOff, Download, FileDown, FileText, Flame, Highlighter, Layers, Library, List, LogIn, LogOut, Menu, Plus, RotateCcw, RotateCw, Search, Settings2, Sparkles, Star, Trash2, Type, X } from 'lucide-react'
+import { AlignJustify, AlignLeft, ArrowLeft, ArrowRight, Award, BarChart3, BookMarked, BookOpen, Bookmark, Briefcase, Check, CheckCircle2, ChevronLeft, ChevronRight, Cloud, CloudOff, Download, FileDown, FileText, Flame, Globe, Highlighter, Home, Layers, Library, List, LogIn, LogOut, Menu, Plus, RotateCcw, RotateCw, Search, Settings2, Sparkles, Star, Trash2, Type, X } from 'lucide-react'
 import { forgotPassword, getCatalog, getEntitlement, getUser, loadBookBytes, login, logout, register, uploadBlob, type Entitlement } from './api'
 import { ReaderPane } from './Reader'
+import { StealthReader } from './stealth/StealthReader'
 import { getCachedCatalog, getFile, getFiles, getOfflineBook, getOfflineBooks, getPending, readSession, removeLocalDocument, removeOfflineBook, saveCachedCatalog, saveFile, saveOfflineBook, saveSession } from './store'
 import { androidRecordId, localRecords, mutate, profileFor, readableError, syncNow } from './sync'
 import { initialReviewItem, nextReview, reviewIsDue, type ReviewItemPayload } from './review'
 import type { Book, Category, FontFamily, LocalFile, ReaderLocation, ReaderWidth, Session, SyncRecord, TextAlignment, TocItem } from './types'
+import { OceanWaves } from './OceanWaves'
+import { getStoredLang, setStoredLang, t, type Lang } from './i18n'
 import './App.css'
 
 type Page = 'home' | 'catalog' | 'library' | 'memory' | 'stats' | 'account'
@@ -65,10 +68,17 @@ function progressFor(records: SyncRecord[], bookId: string) {
   return records.find(r => r.kind === 'reading_progress' && !r.deleted && r.payload.book_id === bookId)
 }
 
-function bookLabel(book: Book) { return book.author || (book.source === 'local' ? 'Tài liệu trên trình duyệt' : 'NoCap Library') }
+function bookLabel(book: Book, lang: Lang = 'vi') { return book.author || (book.source === 'local' ? t[lang].bookCard.browserDoc : t[lang].bookCard.libraryDefault) }
 
 function App() {
   const initialComfort = useMemo(storedComfort, [])
+  const [lang, setLang] = useState<Lang>(getStoredLang)
+  const toggleLang = () => {
+    const next: Lang = lang === 'vi' ? 'en' : 'vi'
+    setLang(next)
+    setStoredLang(next)
+  }
+  const curT = t[lang]
   const [page, setPage] = useState<Page>('home')
   const [session, setSession] = useState<Session | null>(() => readSession())
   const sessionToken = session?.token
@@ -117,6 +127,7 @@ function App() {
   const [entitlement, setEntitlement] = useState<Entitlement | null>(null)
   const [controls, setControls] = useState<{ previous: () => void; next: () => void } | null>(null)
   const [selectedBook, setSelectedBook] = useState<Book | null>(null)
+  const [stealthActive, setStealthActive] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
   const progressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const preferenceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -145,6 +156,33 @@ function App() {
       document.body.classList.remove('reader-open')
     }
   }, [reader])
+
+  useEffect(() => {
+    const onGlobalKey = (e: KeyboardEvent) => {
+      if (e.key === 'F2') {
+        if (reader) {
+          e.preventDefault()
+          setStealthActive(prev => !prev)
+        }
+      }
+      if (e.key === 'Escape') {
+        if (tocOpen) { setTocOpen(false); return }
+        if (settingsOpen) { setSettingsOpen(false); return }
+        if (noteOpen) { setNoteOpen(false); return }
+        if (reviewOpen) { setReviewOpen(false); return }
+        if (authOpen) { setAuthOpen(false); return }
+        if (selectedBook) { setSelectedBook(null); return }
+        if (reader) {
+          e.preventDefault()
+          closeReader()
+          setPage('home')
+          window.scrollTo({ top: 0, behavior: 'smooth' })
+        }
+      }
+    }
+    window.addEventListener('keydown', onGlobalKey)
+    return () => window.removeEventListener('keydown', onGlobalKey)
+  }, [reader, tocOpen, settingsOpen, noteOpen, reviewOpen, authOpen, selectedBook])
 
   const refreshLocal = useCallback(async (selectedProfile: string) => {
     const [nextRecords, nextFiles, nextPending, nextOffline, publicOffline] = await Promise.all([localRecords(selectedProfile), getFiles(selectedProfile), getPending(selectedProfile), getOfflineBooks(selectedProfile), getOfflineBooks('PUBLIC_OFFLINE')])
@@ -577,21 +615,29 @@ async function sha256Hex(file: Blob): Promise<string> {
     }
   }
 
-  async function openBook(book: Book, initialOverride?: string) {
+  async function openBook(book: Book, initialOverride?: string): Promise<boolean> {
     const targetProfile = profile
     if (progressTimer.current) clearTimeout(progressTimer.current)
     setReaderError(''); setReaderLoading(true); setLocation(null); setSelection(null)
     try {
       const [local, offlineCopy] = await Promise.all([getFile(profile, book.id), getOfflineBook(offlineProfileFor(book, profile), book.id)])
       const bytes = local ? await local.data.arrayBuffer() : offlineCopy ? await offlineCopy.data.arrayBuffer() : await loadBookBytes(book, session?.token)
-      if (profileRef.current !== targetProfile) return
+      if (profileRef.current !== targetProfile) return false
       if (!bytes.byteLength) throw new Error('Tệp sách không có nội dung.')
       const savedComfort = comfortFromRecord(records.find(record => record.kind === 'per_book_preferences' && !record.deleted && record.payload.book_id === book.id), readerWidth)
       if (savedComfort) applyComfort(savedComfort)
-      beginReadingSession(book, Number(progressFor(records, book.id)?.payload.progression || 0))
+      const initialProgress = Number(progressFor(records, book.id)?.payload.progression || 0)
+      beginReadingSession(book, initialProgress)
       readerRef.current = book
-      setReader({ book, bytes, initial: initialOverride || toText(progressFor(records, book.id)?.payload.locator_json) })
-    } catch (error) { if (profileRef.current === targetProfile) setReaderError(readableError(error)) }
+      const initialLoc = initialOverride || toText(progressFor(records, book.id)?.payload.locator_json)
+      locationRef.current = { locatorJson: initialLoc, progression: initialProgress, chapterTitle: '' }
+      setLocation(locationRef.current)
+      setReader({ book, bytes, initial: initialLoc })
+      return true
+    } catch (error) {
+      if (profileRef.current === targetProfile) setReaderError(readableError(error))
+      return false
+    }
     finally { setReaderLoading(false) }
   }
 
@@ -649,7 +695,7 @@ async function sha256Hex(file: Blob): Promise<string> {
       })
     }
     if (reader && !loc) void completeReadingSession(reader.book, 0)
-    setReader(null); readerRef.current = null; locationRef.current = null; setSelection(null)
+    setReader(null); readerRef.current = null; locationRef.current = null; setSelection(null); setStealthActive(false)
   }
 
   async function toggleFavorite(book: Book) {
@@ -811,94 +857,392 @@ async function sha256Hex(file: Blob): Promise<string> {
   }
 
   const nav: Array<{ id: Page; label: string; icon: typeof BookOpen }> = [
-    { id: 'home', label: 'Trang chủ', icon: BookOpen },
-    { id: 'catalog', label: 'Khám phá sách', icon: Search },
-    { id: 'library', label: 'Tủ sách', icon: Library },
-    { id: 'memory', label: 'Ghi chú & dấu trang', icon: Highlighter },
-    { id: 'stats', label: 'Thống kê đọc', icon: BarChart3 },
-    { id: 'account', label: 'Tài khoản', icon: Settings2 },
+    { id: 'home', label: curT.nav.home, icon: BookOpen },
+    { id: 'catalog', label: curT.nav.catalog, icon: Search },
+    { id: 'library', label: curT.nav.library, icon: Library },
+    { id: 'memory', label: curT.nav.memory, icon: Highlighter },
+    { id: 'stats', label: curT.nav.stats, icon: BarChart3 },
+    { id: 'account', label: curT.nav.account, icon: Settings2 },
   ]
 
   return <div className="app-shell">
+    <div className="analog-grain-overlay" aria-hidden="true" />
+    <OceanWaves />
     <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
       <div className="brand"><div className="brand-mark"><BookOpen size={24} /></div><div><strong>NoCap</strong><span>Quiet Knowledge Workspace</span></div><button className="mobile-close icon-button" onClick={() => setSidebarOpen(false)} aria-label="Đóng menu"><X size={20} /></button></div>
-      <div className="sidebar-caption">KHÔNG GIAN CỦA BẠN</div>
+      <div className="sidebar-caption">{curT.nav.mySpace}</div>
       <nav className="main-nav" aria-label="Điều hướng">
         {nav.map(item => <button key={item.id} className={page === item.id ? 'active' : ''} onClick={() => { setPage(item.id); setSidebarOpen(false); setQuery(''); setCategory('all') }}><item.icon size={19} /><span>{item.label}</span></button>)}
       </nav>
-      <div className="sidebar-bottom"><div className="sync-summary">{online ? <Cloud size={17} /> : <CloudOff size={17} />}<div><strong>{!session ? 'Chế độ khách' : syncing ? 'Đang tự động đồng bộ…' : pendingCount ? 'Chờ gửi tự động' : 'Tự động đồng bộ bật'}</strong><small>{session ? (pendingCount ? `${pendingCount} thay đổi trên máy` : session.user.email) : 'Đăng nhập để tự đồng bộ qua Android'}</small></div></div>{session ? <button className="secondary wide" onClick={() => void synchronize(session)} disabled={syncing}><RotateCw size={16} className={syncing ? 'spin' : ''} /> Đồng bộ ngay</button> : <button className="primary wide" onClick={() => setAuthOpen(true)}><LogIn size={16} /> Đăng nhập</button>}</div>
+      <div className="sidebar-bottom"><div className="sync-summary">{online ? <Cloud size={17} /> : <CloudOff size={17} />}<div><strong>{!session ? curT.nav.guestMode : syncing ? curT.nav.syncing : pendingCount ? curT.nav.pendingShort : curT.nav.autoSyncOn}</strong><small>{session ? (pendingCount ? `${pendingCount} ${curT.nav.pending}` : session.user.email) : curT.nav.loginPrompt}</small></div></div>{session ? <button className="secondary wide" onClick={() => void synchronize(session)} disabled={syncing}><RotateCw size={16} className={syncing ? 'spin' : ''} /> {curT.nav.syncNow}</button> : <button className="primary wide" onClick={() => setAuthOpen(true)}><LogIn size={16} /> {curT.nav.login}</button>}</div>
     </aside>
     {sidebarOpen && <button className="sidebar-shade" aria-label="Đóng menu" onClick={() => setSidebarOpen(false)} />}
 
     <main className="main-area">
-      <header className="topbar"><button className="mobile-menu icon-button" onClick={() => setSidebarOpen(true)} aria-label="Mở menu"><Menu size={22} /></button><div className="topbar-title">NO<span>CAP</span><small>READ • REMEMBER • GROW</small></div><div className="topbar-actions"><span className={`connection ${online ? '' : 'offline'}`}>{online ? 'Trực tuyến' : 'Ngoại tuyến'}</span><button className="profile-button" onClick={() => session ? setPage('account') : setAuthOpen(true)} aria-label="Tài khoản">{session?.user.displayName?.slice(0, 1).toUpperCase() || session?.user.email.slice(0, 1).toUpperCase() || 'G'}</button></div></header>
+      <header className="swiss-header">
+        <div className="swiss-header-brand" onClick={() => { setPage('home'); setQuery(''); setCategory('all') }}>
+          <div className="swiss-header-logo">
+            NOCAP <span>QUIET WORKSPACE</span>
+          </div>
+        </div>
+        <nav className="swiss-header-nav" aria-label="Menu chính">
+          <button className={`swiss-nav-link ${page === 'home' ? 'active' : ''}`} onClick={() => { setPage('home'); setQuery(''); setCategory('all') }}>{curT.nav.home}</button>
+          <button className={`swiss-nav-link ${page === 'catalog' ? 'active' : ''}`} onClick={() => { setPage('catalog'); setQuery(''); setCategory('all') }}>{curT.nav.catalog}</button>
+          <button className={`swiss-nav-link ${page === 'library' ? 'active' : ''}`} onClick={() => { setPage('library'); setQuery(''); setCategory('all') }}>{curT.nav.library}</button>
+          <button className={`swiss-nav-link ${page === 'memory' ? 'active' : ''}`} onClick={() => { setPage('memory'); setQuery(''); setCategory('all') }}>{curT.nav.memory}</button>
+          <button className={`swiss-nav-link ${page === 'stats' ? 'active' : ''}`} onClick={() => { setPage('stats'); setQuery(''); setCategory('all') }}>{curT.nav.stats}</button>
+          <button className={`swiss-nav-link ${page === 'account' ? 'active' : ''}`} onClick={() => { setPage('account'); setQuery(''); setCategory('all') }}>{curT.nav.account}</button>
+        </nav>
+        <div className="swiss-header-actions">
+          <button
+            className="swiss-lang-toggle"
+            onClick={toggleLang}
+            title={curT.header.langTooltip}
+            aria-label="Switch Language"
+          >
+            <Globe size={14} />
+            <span className="swiss-lang-current">{lang.toUpperCase()}</span>
+            <span style={{ opacity: 0.35 }}>|</span>
+            <span style={{ fontSize: '11px', opacity: 0.65 }}>{lang === 'vi' ? 'EN' : 'VI'}</span>
+          </button>
+          <span className={`swiss-status-dot ${online ? '' : 'offline'}`}>{online ? curT.header.online : curT.header.offline}</span>
+          {session ? (
+            <button className="swiss-pill-btn" onClick={() => void synchronize(session)} disabled={syncing}>
+              <RotateCw size={13} className={syncing ? 'spin' : ''} /> {syncing ? curT.header.syncing : curT.header.sync}
+            </button>
+          ) : (
+            <button className="swiss-pill-btn" onClick={() => setAuthOpen(true)}>
+              <LogIn size={13} /> {curT.header.login}
+            </button>
+          )}
+          <button className="profile-button" onClick={() => session ? setPage('account') : setAuthOpen(true)} aria-label="Tài khoản">
+            {session?.user.displayName?.slice(0, 1).toUpperCase() || session?.user.email.slice(0, 1).toUpperCase() || 'G'}
+          </button>
+          <button className="mobile-menu icon-button" onClick={() => setSidebarOpen(true)} aria-label="Mở menu"><Menu size={22} /></button>
+        </div>
+      </header>
+
+      {page === 'home' && <>
+        <section className="swiss-hero">
+          <div className="editorial-eyebrow">
+            <span className="editorial-eyebrow-dot" />
+            <span>SWISS EDITORIAL & QUIET WORKSPACE</span>
+          </div>
+          <div className="swiss-hero-echo-container">
+            <div className="swiss-hero-echo-text" aria-label="NOCAP">
+              <span className="swiss-hero-echo-layer swiss-echo-4">NOCAP</span>
+              <span className="swiss-hero-echo-layer swiss-echo-3">NOCAP</span>
+              <span className="swiss-hero-echo-layer swiss-echo-2">NOCAP</span>
+              <span className="swiss-hero-echo-layer swiss-echo-1">NOCAP</span>
+              <span className="swiss-hero-echo-layer swiss-echo-fore">NOCAP</span>
+            </div>
+          </div>
+          <p className="swiss-hero-sub">
+            {curT.hero.sub}
+          </p>
+          <div className="swiss-hero-actions">
+            <button className="pill-btn primary-pill" onClick={() => setPage('catalog')}>
+              {curT.hero.exploreBtn} <ArrowRight size={16} />
+            </button>
+            <button className="pill-btn invert-pill" onClick={() => fileInput.current?.click()}>
+              <Plus size={16} /> {curT.banners.library.addDoc}
+            </button>
+          </div>
+          <div className="editorial-pills-row" style={{ justifyContent: 'center' }}>
+            <span className="editorial-chip sage">{curT.hero.pills[0]}</span>
+            <span className="editorial-chip starry-sky">{curT.hero.pills[1]}</span>
+            <span className="editorial-chip peach">{curT.hero.pills[2]}</span>
+          </div>
+        </section>
+
+        <section className="swiss-philosophy-section">
+          <div className="swiss-hairline-v" />
+          <h2 className="swiss-philosophy-quote">
+            {curT.philosophy.quotePart1} <em>{curT.philosophy.quoteEm}</em> {curT.philosophy.quotePart2}
+          </h2>
+          <p className="swiss-philosophy-sub">{curT.philosophy.hairline}</p>
+
+          <div className="swiss-bespoke-grid">
+            <div className="swiss-bespoke-card">
+              <div className="swiss-icon-box-64"><BookOpen size={26} /></div>
+              <h3>{curT.philosophy.card1Title}</h3>
+              <p>{curT.philosophy.card1Desc}</p>
+              <button className="swiss-bespoke-cta" onClick={() => setPage('catalog')}>{curT.philosophy.card1Cta} <ArrowRight size={14} /></button>
+            </div>
+            <div className="swiss-bespoke-card">
+              <div className="swiss-icon-box-64"><Sparkles size={26} /></div>
+              <h3>{curT.philosophy.card2Title}</h3>
+              <p>{curT.philosophy.card2Desc}</p>
+              <button className="swiss-bespoke-cta" onClick={() => setPage('memory')}>{curT.philosophy.card2Cta} <ArrowRight size={14} /></button>
+            </div>
+            <div className="swiss-bespoke-card">
+              <div className="swiss-icon-box-64"><Cloud size={26} /></div>
+              <h3>{curT.philosophy.card3Title}</h3>
+              <p>{curT.philosophy.card3Desc}</p>
+              <button className="swiss-bespoke-cta" onClick={() => setPage('account')}>{curT.philosophy.card3Cta} <ArrowRight size={14} /></button>
+            </div>
+          </div>
+        </section>
+
+        <section className="swiss-showcase-section">
+          <div className="swiss-showcase-header">
+            <div>
+              <h2>{curT.showcase.title}</h2>
+              <p>{curT.showcase.sub}</p>
+            </div>
+            <button className="text-button" onClick={() => setPage('library')}>{curT.showcase.viewAll} <ArrowRight size={14} /></button>
+          </div>
+
+          <div className="swiss-asym-grid">
+            <div className="asym-card-8">
+              <div>
+                <span className="editorial-chip sage" style={{ marginBottom: '16px' }}>{curT.showcase.journeyChip}</span>
+                <h3 style={{ fontFamily: "'Plus Jakarta Sans', 'Be Vietnam Pro', sans-serif", fontSize: '26px', margin: '14px 0 8px', letterSpacing: '-0.01em' }}>
+                  {reading[0]?.title || curT.showcase.defaultTitle}
+                </h3>
+                <p style={{ color: '#78716c', fontSize: '14px', maxWidth: '520px', lineHeight: '1.6' }}>
+                  {reading[0] ? curT.showcase.readingDesc(reading[0].author || (lang === 'vi' ? 'Tác giả' : 'Author'), Math.round((Number(progressFor(records, reading[0].id)?.payload.progression || 0)) * 100)) : curT.showcase.defaultDesc}
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: '14px', alignItems: 'center', marginTop: '24px' }}>
+                {reading[0] ? (
+                  <button className="pill-btn primary-pill" onClick={() => void openBook(reading[0])}>
+                    {curT.showcase.continueReading} <ArrowRight size={16} />
+                  </button>
+                ) : (
+                  <button className="pill-btn primary-pill" onClick={() => setPage('catalog')}>
+                    {curT.showcase.pickBook} <ArrowRight size={16} />
+                  </button>
+                )}
+                <button className="pill-btn invert-pill" onClick={() => setPage('library')}>
+                  {curT.showcase.openShelf}
+                </button>
+              </div>
+            </div>
+
+            <div className="asym-card-pill-4" onClick={() => setPage('catalog')} title={curT.showcase.explorePill}>
+              <div className="asym-pill-art">
+                <div className="asym-pill-circle-glow" />
+                <div className="asym-pill-icon-wrap">
+                  <BookOpen size={44} strokeWidth={1.5} />
+                </div>
+                <div className="asym-pill-caption">
+                  <span className="asym-pill-tag">{curT.showcase.editionBadge}</span>
+                  <strong>NOCAP</strong>
+                  <small>QUIET KNOWLEDGE</small>
+                </div>
+              </div>
+              <div className="asym-pill-overlay">
+                <div className="asym-pill-badge">
+                  {curT.showcase.explorePill}
+                </div>
+              </div>
+            </div>
+
+            <div className="asym-card-circle-5">
+              <span className="editorial-chip peach" style={{ marginBottom: '10px' }}>{curT.showcase.habitChip}</span>
+              <div style={{ fontFamily: "'Plus Jakarta Sans', 'Be Vietnam Pro', sans-serif", fontSize: '44px', fontWeight: '800', lineHeight: '1', margin: '8px 0', color: '#111111' }}>
+                {readingDayCount > 0 ? `${readingDayCount}D` : '15M'}
+              </div>
+              <p style={{ fontSize: '12px', color: '#78716c', maxWidth: '180px', margin: '4px 0 12px' }}>
+                {readingDayCount > 0 ? curT.showcase.habitDesc : curT.showcase.habitDescEmpty}
+              </p>
+              <button className="text-button" onClick={() => setPage('stats')}>{curT.showcase.viewAnalytics} <ArrowRight size={12} /></button>
+            </div>
+
+            <div className="asym-card-wide-7">
+              <div>
+                <span className="editorial-chip lavender" style={{ marginBottom: '14px' }}>{curT.showcase.notesChip}</span>
+                <h4 style={{ fontFamily: 'Literata Variable, serif', fontSize: '18px', fontStyle: 'italic', fontWeight: '500', color: '#111111', margin: '12px 0 8px', lineHeight: '1.5' }}>
+                  {toText(annotations[0]?.payload.text) ? `“${toText(annotations[0]?.payload.text).slice(0, 110)}...”` : curT.showcase.defaultQuote}
+                </h4>
+                <p style={{ fontSize: '12px', color: '#838282' }}>
+                  {curT.showcase.notesSaved(annotations.length)}
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
+                {annotations.length > 0 ? (
+                  <button className="pill-btn invert-pill" onClick={() => void startFlashcardReview()}>
+                    <Sparkles size={14} /> {curT.showcase.reviewNow}
+                  </button>
+                ) : (
+                  <button className="pill-btn invert-pill" onClick={() => setPage('catalog')}>
+                    {curT.showcase.allNotes}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
+      </>}
 
       <div className="content">
         {notice && <div className="notice" role="status"><span>{notice}</span><button onClick={() => setNotice('')} aria-label="Đóng thông báo"><X size={17} /></button></div>}
         {page === 'home' && <>
-          <div className="hero"><div><p className="eyebrow">KHÔNG GIAN KIẾN THỨC CỦA BẠN</p><h1>Đọc chậm lại.<br /><em>Nhớ lâu hơn.</em></h1><p>Mọi cuốn sách, ghi chú và ý tưởng của bạn ở một nơi yên tĩnh.</p><div className="hero-actions"><button className="primary" onClick={() => setPage('catalog')}>Khám phá sách <ArrowRight size={17} /></button><button className="light-button" onClick={() => fileInput.current?.click()}><Plus size={17} /> Thêm tài liệu</button></div></div><div className="hero-art" aria-hidden="true"><div className="orbit one" /><div className="orbit two" /><BookOpen size={92} strokeWidth={1.2} /></div></div>
-          <SectionHeader title="Đọc tiếp" action="Xem tủ sách" onAction={() => setPage('library')} />
-          {reading.length ? <div className="book-grid">{reading.slice(0, 4).map(book => <BookCard key={book.id} book={book} progress={Number(progressFor(records, book.id)?.payload.progression || 0)} onOpen={() => void openBook(book)} onDetails={() => setSelectedBook(book)} onFavorite={() => void toggleFavorite(book)} favorite={favorites.has(book.id)} offline={book.source === 'local' || offlineIds.has(book.id)} offlineBusy={offlineBusy === book.id} onOffline={book.source !== 'local' && book.fileUrl ? () => void toggleOffline(book) : undefined} />)}</div> : <div className="empty-state"><BookOpen size={30} /><h3>Hành trình đọc bắt đầu ở đây</h3><p>Chọn một cuốn sách hoặc thêm tài liệu của bạn để bắt đầu.</p><button className="secondary" onClick={() => setPage('catalog')}>Xem thư viện sách</button></div>}
-          <SectionHeader title="Gợi ý cho bạn" action="Xem tất cả" onAction={() => setPage('catalog')} />
-          <div className="book-grid">{catalog.filter(book => book.fileUrl).slice(0, 4).map(book => <BookCard key={book.id} book={book} onOpen={() => void openBook(book)} onDetails={() => setSelectedBook(book)} onFavorite={() => void toggleFavorite(book)} favorite={favorites.has(book.id)} offline={offlineIds.has(book.id)} offlineBusy={offlineBusy === book.id} onOffline={() => void toggleOffline(book)} />)}</div>
+          <SectionHeader title={lang === 'vi' ? 'Đọc tiếp gần đây' : 'Continue Reading'} action={curT.showcase.viewAll} onAction={() => setPage('library')} />
+          {reading.length ? <div className="book-grid">{reading.slice(0, 4).map(book => <BookCard key={book.id} book={book} lang={lang} progress={Number(progressFor(records, book.id)?.payload.progression || 0)} onOpen={() => void openBook(book)} onStealth={() => void openBook(book).then(ok => { if (ok) setStealthActive(true) })} onDetails={() => setSelectedBook(book)} onFavorite={() => void toggleFavorite(book)} favorite={favorites.has(book.id)} offline={book.source === 'local' || offlineIds.has(book.id)} offlineBusy={offlineBusy === book.id} onOffline={book.source !== 'local' && book.fileUrl ? () => void toggleOffline(book) : undefined} />)}</div> : <div className="empty-state"><BookOpen size={30} /><h3>{lang === 'vi' ? 'Hành trình đọc bắt đầu ở đây' : 'Your reading journey begins here'}</h3><p>{lang === 'vi' ? 'Chọn một cuốn sách hoặc thêm tài liệu của bạn để bắt đầu.' : 'Pick a book or import your own document to begin.'}</p><button className="secondary" onClick={() => setPage('catalog')}>{curT.hero.exploreBtn}</button></div>}
+          <SectionHeader title={lang === 'vi' ? 'Gợi ý cho bạn' : 'Recommended for You'} action={lang === 'vi' ? 'Xem tất cả' : 'View all'} onAction={() => setPage('catalog')} />
+          <div className="book-grid">{catalog.filter(book => book.fileUrl).slice(0, 4).map(book => <BookCard key={book.id} book={book} lang={lang} onOpen={() => void openBook(book)} onStealth={() => void openBook(book).then(ok => { if (ok) setStealthActive(true) })} onDetails={() => setSelectedBook(book)} onFavorite={() => void toggleFavorite(book)} favorite={favorites.has(book.id)} offline={offlineIds.has(book.id)} offlineBusy={offlineBusy === book.id} onOffline={() => void toggleOffline(book)} />)}</div>
         </>}
 
         {(page === 'catalog' || page === 'library') && <>
-          <div className="page-heading"><div><p className="eyebrow">{page === 'catalog' ? 'THƯ VIỆN MỞ' : 'KHÔNG GIAN CÁ NHÂN'}</p><h1>{page === 'catalog' ? 'Khám phá sách' : 'Tủ sách của bạn'}</h1><p>{page === 'catalog' ? 'Những cuốn sách để đọc, tìm hiểu và ghi nhớ.' : 'Sách đã lưu, đang đọc và tài liệu thêm từ trình duyệt.'}</p></div><button className="primary" onClick={() => fileInput.current?.click()}><Plus size={17} /> Thêm tài liệu</button></div>
+          <div className="inner-page-banner">
+            <div className="banner-text">
+              <div className="banner-eyebrow">{page === 'catalog' ? curT.banners.catalog.eyebrow : curT.banners.library.eyebrow}</div>
+              <h2>{page === 'catalog' ? curT.banners.catalog.title : curT.banners.library.title}</h2>
+              <p>{page === 'catalog' ? curT.banners.catalog.desc : curT.banners.library.desc}</p>
+            </div>
+            <div className="banner-action">
+              <button className="light-button" onClick={() => fileInput.current?.click()}><Plus size={16} /> {curT.banners.catalog.addDoc}</button>
+            </div>
+          </div>
           {page === 'library' && (
             <div className="shelf-chips" role="tablist" aria-label="Bộ lọc tủ sách">
-              <button className={`shelf-chip ${shelfFilter === 'all' ? 'active' : ''}`} onClick={() => setShelfFilter('all')}>Tất cả ({libraryBooks.length})</button>
-              <button className={`shelf-chip ${shelfFilter === 'reading' ? 'active' : ''}`} onClick={() => setShelfFilter('reading')}><BookOpen size={14} /> Đang đọc</button>
-              <button className={`shelf-chip ${shelfFilter === 'favorites' ? 'active' : ''}`} onClick={() => setShelfFilter('favorites')}><BookMarked size={14} /> Yêu thích ({favorites.size})</button>
-              <button className={`shelf-chip ${shelfFilter === 'completed' ? 'active' : ''}`} onClick={() => setShelfFilter('completed')}><CheckCircle2 size={14} /> Đã xong</button>
-              <button className={`shelf-chip ${shelfFilter === 'offline' ? 'active' : ''}`} onClick={() => setShelfFilter('offline')}><Download size={14} /> Offline ({offlineIds.size})</button>
-              <button className={`shelf-chip ${shelfFilter === 'local' ? 'active' : ''}`} onClick={() => setShelfFilter('local')}><Layers size={14} /> Tài liệu riêng</button>
+              <button className={`shelf-chip ${shelfFilter === 'all' ? 'active' : ''}`} onClick={() => setShelfFilter('all')}>{curT.libraryTabs.all} ({libraryBooks.length})</button>
+              <button className={`shelf-chip ${shelfFilter === 'reading' ? 'active' : ''}`} onClick={() => setShelfFilter('reading')}><BookOpen size={14} /> {curT.libraryTabs.reading}</button>
+              <button className={`shelf-chip ${shelfFilter === 'favorites' ? 'active' : ''}`} onClick={() => setShelfFilter('favorites')}><BookMarked size={14} /> {curT.libraryTabs.favorites} ({favorites.size})</button>
+              <button className={`shelf-chip ${shelfFilter === 'completed' ? 'active' : ''}`} onClick={() => setShelfFilter('completed')}><CheckCircle2 size={14} /> {curT.libraryTabs.completed}</button>
+              <button className={`shelf-chip ${shelfFilter === 'offline' ? 'active' : ''}`} onClick={() => setShelfFilter('offline')}><Download size={14} /> {curT.libraryTabs.offline} ({offlineIds.size})</button>
+              <button className={`shelf-chip ${shelfFilter === 'local' ? 'active' : ''}`} onClick={() => setShelfFilter('local')}><Layers size={14} /> {curT.libraryTabs.local}</button>
             </div>
           )}
-          <div className="filter-bar"><label className="search-field"><Search size={18} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm tên sách hoặc tác giả…" aria-label="Tìm sách" /></label><select value={category} onChange={event => setCategory(event.target.value)} aria-label="Lọc thể loại"><option value="all">Tất cả thể loại</option>{categories.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><select value={sortOrder} onChange={e => setSortOrder(e.target.value as 'recent' | 'title' | 'progress')} aria-label="Sắp xếp sách"><option value="recent">Đọc gần nhất</option><option value="title">Tên sách (A-Z)</option><option value="progress">Tiến độ (%)</option></select>{page === 'library' && (tags.length > 0 || collections.length > 0) && <select value={organizationFilter} onChange={event => setOrganizationFilter(event.target.value)} aria-label="Lọc theo thẻ hoặc bộ sưu tập"><option value="all">Tất cả thẻ & bộ sưu tập</option>{tags.length > 0 && <optgroup label="Thẻ">{tags.map(tag => <option key={`tag:${tag.id}`} value={`tag:${tag.id}`}>{tag.name}</option>)}</optgroup>}{collections.length > 0 && <optgroup label="Bộ sưu tập">{collections.map(collection => <option key={`collection:${collection.id}`} value={`collection:${collection.id}`}>{collection.name}</option>)}</optgroup>}</select>}<span>{filteredBooks.length} tài liệu</span></div>
-          {filteredBooks.length ? <div className="book-grid">{filteredBooks.map(book => <BookCard key={book.id} book={book} progress={Number(progressFor(records, book.id)?.payload.progression || 0)} onOpen={() => void openBook(book)} onDetails={() => setSelectedBook(book)} onFavorite={book.source === 'local' ? undefined : () => void toggleFavorite(book)} favorite={favorites.has(book.id)} onDelete={book.source === 'local' || book.source === 'cloud' ? () => void deleteBook(book) : undefined} offline={book.source === 'local' || offlineIds.has(book.id)} offlineBusy={offlineBusy === book.id} onOffline={book.source !== 'local' && book.fileUrl ? () => void toggleOffline(book) : undefined} />)}</div> : <div className="empty-state"><Library size={30} /><h3>Chưa có tài liệu phù hợp</h3><p>Thử từ khóa khác hoặc thêm một tài liệu từ máy của bạn.</p><button className="secondary" onClick={() => { setQuery(''); setCategory('all'); setShelfFilter('all'); setOrganizationFilter('all') }}>Xóa bộ lọc</button></div>}
+          <div className="filter-bar"><label className="search-field"><Search size={18} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder={curT.filters.searchPlaceholder} aria-label="Tìm sách" /></label><select value={category} onChange={event => setCategory(event.target.value)} aria-label="Lọc thể loại"><option value="all">{curT.filters.allCategories}</option>{categories.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><select value={sortOrder} onChange={e => setSortOrder(e.target.value as 'recent' | 'title' | 'progress')} aria-label="Sắp xếp sách"><option value="recent">{curT.filters.recent}</option><option value="title">{curT.filters.title}</option><option value="progress">{curT.filters.progress}</option></select>{page === 'library' && (tags.length > 0 || collections.length > 0) && <select value={organizationFilter} onChange={event => setOrganizationFilter(event.target.value)} aria-label="Lọc theo thẻ hoặc bộ sưu tập"><option value="all">{curT.filters.allTagsAndCollections}</option>{tags.length > 0 && <optgroup label={curT.filters.tagsGroup}>{tags.map(tag => <option key={`tag:${tag.id}`} value={`tag:${tag.id}`}>{tag.name}</option>)}</optgroup>}{collections.length > 0 && <optgroup label={curT.filters.collectionsGroup}>{collections.map(collection => <option key={`collection:${collection.id}`} value={`collection:${collection.id}`}>{collection.name}</option>)}</optgroup>}</select>}<span>{curT.filters.docCount(filteredBooks.length)}</span></div>
+          {filteredBooks.length ? <div className="book-grid">{filteredBooks.map(book => <BookCard key={book.id} book={book} lang={lang} progress={Number(progressFor(records, book.id)?.payload.progression || 0)} onOpen={() => void openBook(book)} onStealth={() => void openBook(book).then(ok => { if (ok) setStealthActive(true) })} onDetails={() => setSelectedBook(book)} onFavorite={book.source === 'local' ? undefined : () => void toggleFavorite(book)} favorite={favorites.has(book.id)} onDelete={book.source === 'local' || book.source === 'cloud' ? () => void deleteBook(book) : undefined} offline={book.source === 'local' || offlineIds.has(book.id)} offlineBusy={offlineBusy === book.id} onOffline={book.source !== 'local' && book.fileUrl ? () => void toggleOffline(book) : undefined} />)}</div> : <div className="empty-state"><Library size={30} /><h3>{curT.filters.emptyTitle}</h3><p>{curT.filters.emptyDesc}</p><button className="secondary" onClick={() => { setQuery(''); setCategory('all'); setShelfFilter('all'); setOrganizationFilter('all') }}>{curT.filters.clearFilter}</button></div>}
         </>}
 
-        {page === 'memory' && <><div className="page-heading"><div><p className="eyebrow">READING MEMORY</p><h1>Điều đáng nhớ</h1><p>Tìm lại ghi chú, đoạn đánh dấu và dấu trang trong một chỗ.</p></div><div className="memory-actions"><div className="count-chip">{annotations.length} mục đã lưu · {dueReviewCount} cần ôn</div>{annotations.length > 0 && <><button className="primary" onClick={() => void startFlashcardReview()} title="Bắt đầu phiên ôn tập ghi chú"><Sparkles size={16} /> Ôn tập Flashcards</button><button className="secondary" onClick={exportMarkdown} title="Xuất ghi chú sang file Markdown"><FileDown size={16} /> Xuất (.md)</button></>}</div></div><label className="search-field memory-search"><Search size={18} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm trong ghi chú…" aria-label="Tìm ghi chú" /></label>{annotations.filter(record => `${record.payload.text || ''} ${record.payload.note || ''} ${record.payload.chapter_title || ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())).length ? <div className="memory-list">{annotations.filter(record => `${record.payload.text || ''} ${record.payload.note || ''} ${record.payload.chapter_title || ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())).map(record => { const book = books.find(item => item.id === record.payload.book_id); return <div className="memory-item" key={record.key}><div className="memory-icon">{record.kind === 'highlights' ? <Highlighter size={18} /> : <Bookmark size={18} />}</div><div><div className="memory-book">{book?.title || 'Tài liệu riêng'}</div><blockquote>{toText(record.payload.text) || toText(record.payload.chapter_title) || 'Dấu trang'}</blockquote>{!!record.payload.note && <p>{toText(record.payload.note)}</p>}</div>{book && <button className="text-button" onClick={() => void openBook(book, toText(record.payload.locator_json))}>Mở sách <ArrowRight size={15} /></button>}</div> })}</div> : <div className="empty-state"><Highlighter size={30} /><h3>Chưa có điều gì được lưu</h3><p>Khi đọc, chọn đoạn văn để thêm ghi chú hoặc bấm dấu trang.</p><button className="secondary" onClick={() => setPage('catalog')}>Tìm sách để đọc</button></div>}</>}
+        {page === 'memory' && <><div className="inner-page-banner">
+            <div className="banner-text">
+              <div className="banner-eyebrow">{curT.banners.memory.eyebrow}</div>
+              <h2>{curT.banners.memory.title}</h2>
+              <p>{curT.banners.memory.desc}</p>
+            </div>
+            <div className="banner-action" style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <div className="count-chip" style={{ background: 'rgba(255,255,255,0.08)', color: '#c8d8f8', border: '1px solid rgba(100,140,255,0.2)' }}>{curT.banners.memory.statsSnippet(annotations.length, dueReviewCount)}</div>
+              {annotations.length > 0 && <><button className="light-button" onClick={() => void startFlashcardReview()}><Sparkles size={15} /> {curT.banners.memory.reviewBtn}</button><button className="light-button" onClick={exportMarkdown}><FileDown size={15} /> {curT.banners.memory.exportBtn}</button></>}
+            </div>
+          </div><label className="search-field memory-search"><Search size={18} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder={curT.memoryPage.searchPlaceholder} aria-label="Tìm ghi chú" /></label>{annotations.filter(record => `${record.payload.text || ''} ${record.payload.note || ''} ${record.payload.chapter_title || ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())).length ? <div className="memory-list">{annotations.filter(record => `${record.payload.text || ''} ${record.payload.note || ''} ${record.payload.chapter_title || ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())).map(record => { const book = books.find(item => item.id === record.payload.book_id); return <div className="memory-item" key={record.key}><div className="memory-icon">{record.kind === 'highlights' ? <Highlighter size={18} /> : <Bookmark size={18} />}</div><div><div className="memory-book">{book?.title || curT.memoryPage.privateDoc}</div><blockquote>{toText(record.payload.text) || toText(record.payload.chapter_title) || curT.memoryPage.bookmarkFallback}</blockquote>{!!record.payload.note && <p>{toText(record.payload.note)}</p>}</div>{book && <button className="text-button" onClick={() => void openBook(book, toText(record.payload.locator_json))}>{curT.memoryPage.openBook} <ArrowRight size={15} /></button>}</div> })}</div> : <div className="empty-state"><Highlighter size={30} /><h3>{curT.memoryPage.emptyTitle}</h3><p>{curT.memoryPage.emptyDesc}</p><button className="secondary" onClick={() => setPage('catalog')}>{curT.memoryPage.findBook}</button></div>}</>}
 
         {page === 'stats' && <>
-          <div className="page-heading"><div><p className="eyebrow">READING ANALYTICS</p><h1>Thống kê đọc sách</h1><p>Theo dõi thói quen, tiến trình phát triển và các mục tiêu kiến thức của bạn.</p></div></div>
+          <div className="inner-page-banner">
+            <div className="banner-text">
+              <div className="banner-eyebrow">{curT.banners.stats.eyebrow}</div>
+              <h2>{curT.banners.stats.title}</h2>
+              <p>{curT.banners.stats.desc}</p>
+            </div>
+          </div>
           <div className="stats-summary-grid">
-            <div className="stat-widget"><div className="stat-icon-wrap"><Library size={22} /></div><div className="stat-content"><div className="stat-value">{libraryBooks.length}</div><div className="stat-title">Sách trong tủ</div></div></div>
-            <div className="stat-widget"><div className="stat-icon-wrap orange"><BookOpen size={22} /></div><div className="stat-content"><div className="stat-value">{reading.filter(b => (Number(progressFor(records, b.id)?.payload.progression || 0)) < 0.99).length}</div><div className="stat-title">Sách đang đọc</div></div></div>
-            <div className="stat-widget"><div className="stat-icon-wrap purple"><Highlighter size={22} /></div><div className="stat-content"><div className="stat-value">{annotations.length}</div><div className="stat-title">Ghi chú & Trích dẫn</div></div></div>
-            <div className="stat-widget"><div className="stat-icon-wrap blue"><Award size={22} /></div><div className="stat-content"><div className="stat-value">{reading.filter(b => (Number(progressFor(records, b.id)?.payload.progression || 0)) >= 0.99).length}</div><div className="stat-title">Đã hoàn thành</div></div></div><div className="stat-widget"><div className="stat-icon-wrap orange"><Flame size={22} /></div><div className="stat-content"><div className="stat-value">{totalReadingMinutes} phút</div><div className="stat-title">Thời gian đọc đã ghi nhận</div></div></div><div className="stat-widget"><div className="stat-icon-wrap blue"><BarChart3 size={22} /></div><div className="stat-content"><div className="stat-value">{readingDayCount}</div><div className="stat-title">Ngày có phiên đọc</div></div></div>
+            <div className="stat-widget"><div className="stat-icon-wrap"><Library size={22} /></div><div className="stat-content"><div className="stat-value">{libraryBooks.length}</div><div className="stat-title">{curT.statsPage.inShelf}</div></div></div>
+            <div className="stat-widget"><div className="stat-icon-wrap orange"><BookOpen size={22} /></div><div className="stat-content"><div className="stat-value">{reading.filter(b => (Number(progressFor(records, b.id)?.payload.progression || 0)) < 0.99).length}</div><div className="stat-title">{curT.statsPage.reading}</div></div></div>
+            <div className="stat-widget"><div className="stat-icon-wrap purple"><Highlighter size={22} /></div><div className="stat-content"><div className="stat-value">{annotations.length}</div><div className="stat-title">{curT.statsPage.notesAndQuotes}</div></div></div>
+            <div className="stat-widget"><div className="stat-icon-wrap blue"><Award size={22} /></div><div className="stat-content"><div className="stat-value">{reading.filter(b => (Number(progressFor(records, b.id)?.payload.progression || 0)) >= 0.99).length}</div><div className="stat-title">{curT.statsPage.completed}</div></div></div><div className="stat-widget"><div className="stat-icon-wrap orange"><Flame size={22} /></div><div className="stat-content"><div className="stat-value">{totalReadingMinutes} {curT.statsPage.minutesUnit}</div><div className="stat-title">{curT.statsPage.readingTime}</div></div></div><div className="stat-widget"><div className="stat-icon-wrap blue"><BarChart3 size={22} /></div><div className="stat-content"><div className="stat-value">{readingDayCount}</div><div className="stat-title">{curT.statsPage.activeDays}</div></div></div>
           </div>
           <div className="stats-section-row">
             <div className="stats-panel">
-              <h2>Hành trình đọc đang diễn ra</h2>
+              <h2>{curT.statsPage.activeJourney}</h2>
               {reading.length ? <div className="active-reading-list">{reading.map(book => {
                 const prog = Math.round((Number(progressFor(records, book.id)?.payload.progression || 0)) * 100)
-                return <div className="active-reading-item" key={book.id}><button className="cover-button" onClick={() => void openBook(book)} aria-label={`Mở ${book.title}`}><div className="book-cover">{book.coverUrl ? <img src={book.coverUrl} alt="" loading="lazy" onError={e => { e.currentTarget.style.display = 'none' }} /> : null}<div className="cover-fallback"><BookOpen size={20} /></div></div></button><div className="active-reading-details"><div className="active-reading-title">{book.title}</div><div className="active-reading-author">{book.author || 'Tác giả chưa rõ'} · {prog}% hoàn thành</div><div className="progress-bar"><span style={{ width: `${Math.max(4, prog)}%` }} /></div></div><button className="secondary" onClick={() => void openBook(book)}>Đọc tiếp <ArrowRight size={14} /></button></div>
-              })}</div> : <p className="muted">Bạn chưa mở cuốn sách nào. Khám phá thư viện để bắt đầu hành trình!</p>}
+                return <div className="active-reading-item" key={book.id}><button className="cover-button" onClick={() => void openBook(book)} aria-label={`Mở ${book.title}`}><div className="book-cover">{book.coverUrl ? <img src={book.coverUrl} alt="" loading="lazy" onError={e => { e.currentTarget.style.display = 'none' }} /> : null}<div className="cover-fallback"><BookOpen size={20} /></div></div></button><div className="active-reading-details"><div className="active-reading-title">{book.title}</div><div className="active-reading-author">{book.author || curT.statsPage.unknownAuthor} · {prog}% {curT.statsPage.progressSuffix}</div><div className="progress-bar"><span style={{ width: `${Math.max(4, prog)}%` }} /></div></div><button className="secondary" onClick={() => void openBook(book)}>{curT.statsPage.readContinue} <ArrowRight size={14} /></button></div>
+              })}</div> : <p className="muted">{curT.statsPage.noBooksYet}</p>}
             </div>
             <div className="streak-box">
               <div className="streak-flame"><Flame size={28} /></div>
-              <div className="streak-num">{readingDayCount > 0 ? `${readingDayCount} ngày` : 'Bắt đầu ngay'}</div>
-              <p className="eyebrow" style={{ color: '#ffbe76', margin: '8px 0 4px' }}>THÓI QUEN ĐỌC BỀN BỈ</p>
-              <div className="streak-desc">{reading.length > 0 ? `Bạn đang duy trì tiến độ đọc cùng ${reading.length} cuốn sách và ${annotations.length} mục ghi nhớ kiến thức.` : 'Đọc ít nhất 15 phút mỗi ngày giúp tăng cường khả năng ghi nhớ và tập trung sâu.'}</div>
-              {annotations.length > 0 && <button className="light-button" style={{ marginTop: '16px' }} onClick={() => void startFlashcardReview()}><Sparkles size={16} /> Ôn tập ngay hôm nay</button>}
+              <div className="streak-num">{readingDayCount > 0 ? curT.statsPage.streakDays(readingDayCount) : curT.statsPage.startNow}</div>
+              <p className="eyebrow" style={{ color: '#ffbe76', margin: '8px 0 4px' }}>{curT.statsPage.habitStreak}</p>
+              <div className="streak-desc">{reading.length > 0 ? curT.statsPage.streakActive(reading.length, annotations.length) : curT.statsPage.streakEmpty}</div>
+              {annotations.length > 0 && <button className="light-button" style={{ marginTop: '16px' }} onClick={() => void startFlashcardReview()}><Sparkles size={16} /> {curT.statsPage.reviewToday}</button>}
             </div>
           </div>
         </>}
 
-        {page === 'account' && <><div className="page-heading"><div><p className="eyebrow">TÀI KHOẢN & ĐỒNG BỘ</p><h1>{session ? 'Không gian của bạn' : 'Đọc như khách'}</h1><p>{session ? 'Sách và ghi chú của tài khoản này được tách riêng.' : 'Bạn vẫn có thể đọc và thêm tài liệu trên trình duyệt này.'}</p></div></div><div className="settings-grid"><section className="settings-card"><h2>Tài khoản</h2>{session ? <><p className="account-email">{session.user.displayName || session.user.email}</p><p className="muted">{session.user.email}</p>{!session.user.emailVerified && <p className="warning-text">Email chưa xác minh. Một số thao tác cloud cần xác minh email.</p>}<p className="muted">Gói hiện tại: <strong>{entitlement?.plan || 'FREE'}</strong>{entitlement?.plan === 'PRO' && entitlement.expiresAt ? ` · đến ${new Date(entitlement.expiresAt).toLocaleDateString('vi-VN')}` : ''}</p><button className="secondary" onClick={() => void signOut()}><LogOut size={17} /> Đăng xuất</button></> : <><p className="muted">Đăng nhập để tiếp tục trên Android và các thiết bị khác.</p><button className="primary" onClick={() => setAuthOpen(true)}>Đăng nhập / Đăng ký</button></>}</section><section className="settings-card"><h2>Tự động đồng bộ</h2><p>{online ? 'Đang kết nối Cloud • Tự động đồng bộ đa thiết bị' : 'Đang ngoại tuyến'}</p><p className="muted">{session ? (pendingCount ? `${pendingCount} thay đổi đang chờ tự động đồng bộ.` : 'Tiến độ đọc và ghi chú được tự động đồng bộ giữa Web và Android khi bạn đọc.') : 'Dữ liệu khách được lưu riêng trên trình duyệt hiện tại.'}</p>{session && <button className="secondary" onClick={() => void synchronize(session)} disabled={syncing}><RotateCw size={17} className={syncing ? 'spin' : ''} /> {syncing ? 'Đang đồng bộ…' : 'Đồng bộ ngay'}</button>}</section><section className="settings-card"><h2>Đọc thoải mái</h2><label className="range-label">Cỡ chữ <strong>{fontSize}%</strong><input type="range" min="80" max="170" step="10" value={fontSize} onChange={event => updateComfort({ fontSize: Number(event.target.value) })} /></label><div className="setting-group" style={{ margin: '14px 0 10px' }}><span className="setting-label">Kiểu chữ</span><div className="toggle-row"><button className={`choice-chip ${fontFamily === 'serif' ? 'active' : ''}`} onClick={() => updateComfort({ fontFamily: 'serif' })}>Literata · Sách</button><button className={`choice-chip ${fontFamily === 'sans' ? 'active' : ''}`} onClick={() => updateComfort({ fontFamily: 'sans' })}>Atkinson · Dễ đọc</button><button className={`choice-chip ${fontFamily === 'mono' ? 'active' : ''}`} onClick={() => updateComfort({ fontFamily: 'mono' })}>Đơn cách</button></div></div><div className="setting-group" style={{ margin: '14px 0 10px' }}><span className="setting-label">Căn lề</span><div className="toggle-row"><button className={`choice-chip ${textAlignment === 'left' ? 'active' : ''}`} onClick={() => updateComfort({ textAlignment: 'left' })}><AlignLeft size={14} /> Căn trái</button><button className={`choice-chip ${textAlignment === 'justify' ? 'active' : ''}`} onClick={() => updateComfort({ textAlignment: 'justify' })}><AlignJustify size={14} /> Căn đều</button></div></div><div className="setting-group" style={{ margin: '14px 0 10px' }}><span className="setting-label">Màu nền</span><div className="theme-row">{(['paper', 'sepia', 'night'] as const).map(value => <button key={value} className={`theme-chip ${value} ${theme === value ? 'chosen' : ''}`} onClick={() => updateComfort({ theme: value })}>{value === 'paper' ? 'Giấy sáng' : value === 'sepia' ? 'Vàng dịu' : 'Ban đêm'}</button>)}</div></div></section></div></>}
+        {page === 'account' && <><div className="inner-page-banner">
+            <div className="banner-text">
+              <div className="banner-eyebrow">{curT.banners.account.eyebrow}</div>
+              <h2>{session ? curT.banners.account.titleUser : curT.banners.account.titleGuest}</h2>
+              <p>{session ? curT.banners.account.descUser : curT.banners.account.descGuest}</p>
+            </div>
+            {!session && <div className="banner-action"><button className="light-button" onClick={() => setAuthOpen(true)}>{curT.banners.account.loginNow}</button></div>}
+          </div><div className="settings-grid"><section className="settings-card"><h2>{curT.accountPage.accountHeading}</h2>{session ? <><p className="account-email">{session.user.displayName || session.user.email}</p><p className="muted">{session.user.email}</p>{!session.user.emailVerified && <p className="warning-text">{curT.accountPage.unverifiedWarning}</p>}<p className="muted">{curT.accountPage.currentPlan} <strong>{entitlement?.plan || 'FREE'}</strong>{entitlement?.plan === 'PRO' && entitlement.expiresAt ? ` · ${curT.accountPage.validUntil(new Date(entitlement.expiresAt).toLocaleDateString(lang === 'vi' ? 'vi-VN' : 'en-US'))}` : ''}</p><button className="secondary" onClick={() => void signOut()}><LogOut size={17} /> {curT.accountPage.logout}</button></> : <><p className="muted">{curT.accountPage.loginPrompt}</p><button className="primary" onClick={() => setAuthOpen(true)}>{curT.accountPage.loginRegister}</button></>}</section><section className="settings-card"><h2>{curT.accountPage.autoSyncHeading}</h2><p>{online ? curT.accountPage.connectedCloud : curT.accountPage.offline}</p><p className="muted">{session ? (pendingCount ? curT.accountPage.pendingSync(pendingCount) : curT.accountPage.syncInfo) : curT.accountPage.guestSyncInfo}</p>{session && <button className="secondary" onClick={() => void synchronize(session)} disabled={syncing}><RotateCw size={17} className={syncing ? 'spin' : ''} /> {syncing ? curT.accountPage.syncing : curT.accountPage.syncNow}</button>}</section><section className="settings-card"><h2>{curT.accountPage.comfortHeading}</h2><label className="range-label">{curT.accountPage.fontSize} <strong>{fontSize}%</strong><input type="range" min="80" max="170" step="10" value={fontSize} onChange={event => updateComfort({ fontSize: Number(event.target.value) })} /></label><div className="setting-group" style={{ margin: '14px 0 10px' }}><span className="setting-label">{curT.accountPage.typeface}</span><div className="toggle-row"><button className={`choice-chip ${fontFamily === 'serif' ? 'active' : ''}`} onClick={() => updateComfort({ fontFamily: 'serif' })}>{curT.accountPage.serifChoice}</button><button className={`choice-chip ${fontFamily === 'sans' ? 'active' : ''}`} onClick={() => updateComfort({ fontFamily: 'sans' })}>{curT.accountPage.sansChoice}</button><button className={`choice-chip ${fontFamily === 'mono' ? 'active' : ''}`} onClick={() => updateComfort({ fontFamily: 'mono' })}>{curT.accountPage.monoChoice}</button></div></div><div className="setting-group" style={{ margin: '14px 0 10px' }}><span className="setting-label">{curT.accountPage.align}</span><div className="toggle-row"><button className={`choice-chip ${textAlignment === 'left' ? 'active' : ''}`} onClick={() => updateComfort({ textAlignment: 'left' })}><AlignLeft size={14} /> {curT.accountPage.alignLeft}</button><button className={`choice-chip ${textAlignment === 'justify' ? 'active' : ''}`} onClick={() => updateComfort({ textAlignment: 'justify' })}><AlignJustify size={14} /> {curT.accountPage.alignJustify}</button></div></div><div className="setting-group" style={{ margin: '14px 0 10px' }}><span className="setting-label">{curT.accountPage.theme}</span><div className="theme-row">{(['paper', 'sepia', 'night'] as const).map(value => <button key={value} className={`theme-chip ${value} ${theme === value ? 'chosen' : ''}`} onClick={() => updateComfort({ theme: value })}>{value === 'paper' ? curT.accountPage.themePaper : value === 'sepia' ? curT.accountPage.themeSepia : curT.accountPage.themeNight}</button>)}</div></div></section></div></>}
       </div>
+
+      <footer className="swiss-footer">
+        <div className="swiss-footer-container">
+          <div className="swiss-footer-grid">
+            <div>
+              <h4>NOCAP</h4>
+              <p>{curT.footer.brandDesc}</p>
+              <p style={{ fontSize: '12px', color: '#838282' }}>{curT.footer.pwaNote}</p>
+            </div>
+            <div>
+              <h4>{curT.footer.navHeading}</h4>
+              <ul className="swiss-footer-links">
+                <li><button onClick={() => { setPage('home'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>{curT.nav.home}</button></li>
+                <li><button onClick={() => { setPage('catalog'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>{curT.nav.catalog}</button></li>
+                <li><button onClick={() => { setPage('library'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>{curT.nav.library}</button></li>
+                <li><button onClick={() => { setPage('memory'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>{curT.nav.memory}</button></li>
+                <li><button onClick={() => { setPage('stats'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>{curT.nav.stats}</button></li>
+              </ul>
+            </div>
+            <div>
+              <h4>{curT.footer.archHeading}</h4>
+              <ul className="swiss-footer-links">
+                <li><button onClick={() => { setPage('account'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>{curT.footer.archSync}</button></li>
+                <li><button onClick={() => void startFlashcardReview()}>{curT.philosophy.card2Title}</button></li>
+                <li><button onClick={exportMarkdown}>{curT.banners.memory.exportBtn}</button></li>
+                <li><button onClick={() => fileInput.current?.click()}>{curT.banners.catalog.addDoc}</button></li>
+              </ul>
+            </div>
+            <div>
+              <h4>{curT.footer.connectHeading}</h4>
+              <p>{online ? (lang === 'vi' ? 'Trạng thái: Trực tuyến Cloud' : 'Status: Online Cloud') : (lang === 'vi' ? 'Trạng thái: Ngoại tuyến' : 'Status: Offline')}</p>
+              <p>{session ? `${lang === 'vi' ? 'Tài khoản' : 'Account'}: ${session.user.email}` : (lang === 'vi' ? 'Chế độ khách — lưu cục bộ trên trình duyệt' : 'Guest mode — stored locally')}</p>
+              {!session && (
+                <button className="swiss-pill-btn" style={{ borderColor: 'rgba(255,255,255,0.3)', color: '#fff', marginTop: '8px' }} onClick={() => setAuthOpen(true)}>
+                  {curT.header.login}
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="swiss-footer-bottom">
+            <span>{curT.footer.copyright}</span>
+            <span>{curT.footer.architectureTag}</span>
+          </div>
+        </div>
+      </footer>
+
       <input ref={fileInput} type="file" accept=".epub,.pdf,.txt,.md,.markdown,.html,.htm,.docx,.jpg,.jpeg,.png,.webp" hidden onChange={event => { const file = event.target.files?.[0]; if (file) void importFile(file); event.target.value = '' }} />
     </main>
 
     {(readerLoading || readerError) && <div className="overlay"><div className="loading-card"><button className="icon-button close-floating" onClick={() => { setReaderLoading(false); setReaderError('') }} aria-label="Đóng"><X size={20} /></button>{readerLoading ? <><div className="loader" /><h2>Đang mở sách…</h2><p>Đang chuẩn bị nội dung để đọc.</p></> : <><FileText size={32} /><h2>Chưa mở được tài liệu</h2><p>{readerError}</p><button className="primary" onClick={() => setReaderError('')}>Thử lại sau</button></>}</div></div>}
 
-    {reader && <div className={`reader-shell ${theme}`}><div className="reader-topbar"><button className="reader-back" onClick={closeReader} aria-label="Quay lại tủ sách"><ArrowLeft size={19} /> <span>Tủ sách</span></button><div className="reader-title"><strong>{reader.book.title}</strong><small>{bookLabel(reader.book)}</small></div><div className="reader-actions"><button className="icon-button" title="Mục lục sách" aria-label="Mục lục" onClick={() => setTocOpen(true)}><List size={20} /></button><button className="icon-button" title="Tùy chỉnh đọc & font" aria-label="Tùy chỉnh" onClick={() => setSettingsOpen(true)}><Type size={20} /></button><button className={`icon-button ${currentBookmarked ? 'active' : ''}`} title={currentBookmarked ? 'Bỏ dấu trang' : 'Thêm dấu trang'} aria-label={currentBookmarked ? 'Bỏ dấu trang' : 'Đánh dấu vị trí'} aria-pressed={currentBookmarked} onClick={() => void toggleBookmark()}><Bookmark size={20} fill={currentBookmarked ? 'currentColor' : 'none'} /></button><button className="icon-button" title="Ghi chú" aria-label="Thêm ghi chú" onClick={() => { setNoteText(''); setNoteOpen(true) }}><Highlighter size={20} /></button></div></div><div className="reader-body"><ReaderPane book={reader.book} bytes={reader.bytes} initial={reader.initial} fontSize={fontSize} fontFamily={fontFamily} lineHeight={lineHeight} textAlignment={textAlignment} readerWidth={readerWidth} theme={theme} onLocation={onLocation} onSelection={(text, locator) => setSelection({ text, locator })} onControls={setControls} onToc={setToc} navigateTarget={navigateTarget} annotations={readerAnnotations} /></div><div className="reader-footer"><button onClick={() => controls?.previous()} disabled={!controls} aria-label="Trang trước"><ChevronLeft size={21} /> Trước</button><span>{Math.round((location?.progression || 0) * 100)}% · {location?.chapterTitle || 'Đang đọc'}</span><button onClick={() => controls?.next()} disabled={!controls} aria-label="Trang sau">Sau <ChevronRight size={21} /></button></div></div>}
+    {reader && <div className={`reader-shell ${theme}`}><div className="reader-topbar"><button className="reader-back reader-home-btn" onClick={() => { closeReader(); setPage('home'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} aria-label={lang === 'vi' ? 'Trở về Trang chủ' : 'Home'} title={lang === 'vi' ? 'Trở về Trang chủ (Esc)' : 'Home (Esc)'}><Home size={18} /> <span>{lang === 'vi' ? 'Trang chủ' : 'Home'}</span></button><button className="reader-back" onClick={closeReader} aria-label="Quay lại tủ sách"><ArrowLeft size={19} /> <span>{lang === 'vi' ? 'Tủ sách' : 'Library'}</span></button><div className="reader-title"><strong>{reader.book.title}</strong><small>{bookLabel(reader.book)}</small></div><div className="reader-actions"><button className="stealth-topbar-pill" title={curT.stealth.btnTitle} aria-label={curT.stealth.btnLabel} onClick={() => setStealthActive(true)}><Briefcase size={15} /> <span>{lang === 'vi' ? 'Đọc ẩn (F2)' : 'Stealth (F2)'}</span></button><button className="icon-button" title="Mục lục sách" aria-label="Mục lục" onClick={() => setTocOpen(true)}><List size={20} /></button><button className="icon-button" title="Tùy chỉnh đọc & font" aria-label="Tùy chỉnh" onClick={() => setSettingsOpen(true)}><Type size={20} /></button><button className={`icon-button ${currentBookmarked ? 'active' : ''}`} title={currentBookmarked ? 'Bỏ dấu trang' : 'Thêm dấu trang'} aria-label={currentBookmarked ? 'Bỏ dấu trang' : 'Đánh dấu vị trí'} aria-pressed={currentBookmarked} onClick={() => void toggleBookmark()}><Bookmark size={20} fill={currentBookmarked ? 'currentColor' : 'none'} /></button><button className="icon-button" title="Ghi chú" aria-label="Thêm ghi chú" onClick={() => { setNoteText(''); setNoteOpen(true) }}><Highlighter size={20} /></button></div></div><div className="reader-body"><ReaderPane book={reader.book} bytes={reader.bytes} initial={reader.initial} fontSize={fontSize} fontFamily={fontFamily} lineHeight={lineHeight} textAlignment={textAlignment} readerWidth={readerWidth} theme={theme} onLocation={onLocation} onSelection={(text, locator) => setSelection({ text, locator })} onControls={setControls} onToc={setToc} navigateTarget={navigateTarget} annotations={readerAnnotations} /></div><div className="reader-footer"><button onClick={() => controls?.previous()} disabled={!controls} aria-label="Trang trước"><ChevronLeft size={21} /> Trước</button><span>{Math.round((location?.progression || 0) * 100)}% · {location?.chapterTitle || 'Đang đọc'}</span><button onClick={() => controls?.next()} disabled={!controls} aria-label="Trang sau">Sau <ChevronRight size={21} /></button></div></div>}
+
+    {stealthActive && reader && (
+      <StealthReader
+        book={reader.book}
+        bytes={reader.bytes}
+        lang={lang}
+        initialProgression={location?.progression || 0}
+        onClose={() => setStealthActive(false)}
+        onExitHome={() => {
+          setStealthActive(false)
+          closeReader()
+          setPage('home')
+          window.scrollTo({ top: 0, behavior: 'smooth' })
+        }}
+        onProgressChange={pct => {
+          const nextLoc: ReaderLocation = {
+            locatorJson: locationRef.current?.locatorJson || '',
+            progression: pct,
+            chapterTitle: locationRef.current?.chapterTitle || '',
+          }
+          onLocation(nextLoc)
+        }}
+      />
+    )}
 
     {tocOpen && reader && <div className="modal-shade" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setTocOpen(false) }}><aside className="toc-drawer" role="dialog" aria-modal="true" aria-label="Mục lục sách"><div className="toc-header"><div><p className="eyebrow">MỤC LỤC SÁCH</p><h2>{reader.book.title}</h2></div><button className="icon-button" onClick={() => setTocOpen(false)} aria-label="Đóng mục lục"><X size={19} /></button></div><div className="toc-list">{toc.length ? <TocTree items={toc} onSelect={target => { setNavigateTarget(target); setTocOpen(false) }} /> : <p className="muted" style={{ padding: '20px', textAlign: 'center', fontSize: '13px' }}>Tài liệu không có cấu trúc mục lục sẵn.</p>}</div></aside></div>}
 
-    {settingsOpen && reader && <div className="modal-shade" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setSettingsOpen(false) }}><div className="dialog settings-popup" role="dialog" aria-modal="true" aria-label="Tùy chỉnh đọc"><div className="dialog-header"><h2>Tùy chỉnh đọc</h2><button className="icon-button" onClick={() => setSettingsOpen(false)} aria-label="Đóng"><X size={18} /></button></div><label className="range-label">Cỡ chữ <strong>{fontSize}%</strong><input type="range" min="80" max="170" step="10" value={fontSize} onChange={event => updateComfort({ fontSize: Number(event.target.value) })} /></label><div className="setting-group"><span className="setting-label">Kiểu chữ</span><div className="toggle-row"><button className={`choice-chip ${fontFamily === 'serif' ? 'active' : ''}`} onClick={() => updateComfort({ fontFamily: 'serif' })}>Literata · Sách</button><button className={`choice-chip ${fontFamily === 'sans' ? 'active' : ''}`} onClick={() => updateComfort({ fontFamily: 'sans' })}>Atkinson · Dễ đọc</button><button className={`choice-chip ${fontFamily === 'mono' ? 'active' : ''}`} onClick={() => updateComfort({ fontFamily: 'mono' })}>Đơn cách</button></div></div><div className="setting-group"><span className="setting-label">Căn lề</span><div className="toggle-row"><button className={`choice-chip ${textAlignment === 'left' ? 'active' : ''}`} onClick={() => updateComfort({ textAlignment: 'left' })}><AlignLeft size={15} /> Trái</button><button className={`choice-chip ${textAlignment === 'justify' ? 'active' : ''}`} onClick={() => updateComfort({ textAlignment: 'justify' })}><AlignJustify size={15} /> Căn đều 2 bên</button></div></div><div className="setting-group"><span className="setting-label">Khoảng cách dòng</span><div className="toggle-row"><button className={`choice-chip ${lineHeight === 1.4 ? 'active' : ''}`} onClick={() => updateComfort({ lineHeight: 1.4 })}>Gọn (1.4)</button><button className={`choice-chip ${lineHeight === 1.65 ? 'active' : ''}`} onClick={() => updateComfort({ lineHeight: 1.65 })}>Vừa (1.65)</button><button className={`choice-chip ${lineHeight === 1.9 ? 'active' : ''}`} onClick={() => updateComfort({ lineHeight: 1.9 })}>Thoáng (1.9)</button></div></div><div className="setting-group"><span className="setting-label">Độ rộng trang</span><div className="toggle-row"><button className={`choice-chip ${readerWidth === 'narrow' ? 'active' : ''}`} onClick={() => updateComfort({ readerWidth: 'narrow' })}>Gọn</button><button className={`choice-chip ${readerWidth === 'standard' ? 'active' : ''}`} onClick={() => updateComfort({ readerWidth: 'standard' })}>Tiêu chuẩn</button><button className={`choice-chip ${readerWidth === 'wide' ? 'active' : ''}`} onClick={() => updateComfort({ readerWidth: 'wide' })}>Rộng</button></div></div><div className="setting-group"><span className="setting-label">Màu nền</span><div className="theme-row">{(['paper', 'sepia', 'night'] as const).map(value => <button key={value} className={`theme-chip ${value} ${theme === value ? 'chosen' : ''}`} onClick={() => updateComfort({ theme: value })}>{value === 'paper' ? 'Giấy sáng' : value === 'sepia' ? 'Vàng dịu' : 'Ban đêm'}</button>)}</div></div></div></div>}
+    {settingsOpen && reader && <div className="modal-shade" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setSettingsOpen(false) }}><div className="dialog settings-popup" role="dialog" aria-modal="true" aria-label="Tùy chỉnh đọc"><div className="dialog-header"><h2>Tùy chỉnh đọc</h2><button className="icon-button" onClick={() => setSettingsOpen(false)} aria-label="Đóng"><X size={18} /></button></div><label className="range-label">Cỡ chữ <strong>{fontSize}%</strong><input type="range" min="80" max="170" step="10" value={fontSize} onChange={event => updateComfort({ fontSize: Number(event.target.value) })} /></label><div className="setting-group"><span className="setting-label">Kiểu chữ</span><div className="toggle-row"><button className={`choice-chip ${fontFamily === 'serif' ? 'active' : ''}`} onClick={() => updateComfort({ fontFamily: 'serif' })}>Literata · Sách</button><button className={`choice-chip ${fontFamily === 'sans' ? 'active' : ''}`} onClick={() => updateComfort({ fontFamily: 'sans' })}>Atkinson · Dễ đọc</button><button className={`choice-chip ${fontFamily === 'mono' ? 'active' : ''}`} onClick={() => updateComfort({ fontFamily: 'mono' })}>Đơn cách</button></div></div><div className="setting-group"><span className="setting-label">Căn lề</span><div className="toggle-row"><button className={`choice-chip ${textAlignment === 'left' ? 'active' : ''}`} onClick={() => updateComfort({ textAlignment: 'left' })}><AlignLeft size={15} /> Trái</button><button className={`choice-chip ${textAlignment === 'justify' ? 'active' : ''}`} onClick={() => updateComfort({ textAlignment: 'justify' })}><AlignJustify size={15} /> Căn đều 2 bên</button></div></div><div className="setting-group"><span className="setting-label">Khoảng cách dòng</span><div className="toggle-row"><button className={`choice-chip ${lineHeight === 1.4 ? 'active' : ''}`} onClick={() => updateComfort({ lineHeight: 1.4 })}>Gọn (1.4)</button><button className={`choice-chip ${lineHeight === 1.65 ? 'active' : ''}`} onClick={() => updateComfort({ lineHeight: 1.65 })}>Vừa (1.65)</button><button className={`choice-chip ${lineHeight === 1.9 ? 'active' : ''}`} onClick={() => updateComfort({ lineHeight: 1.9 })}>Thoáng (1.9)</button></div></div><div className="setting-group"><span className="setting-label">Độ rộng trang</span><div className="toggle-row"><button className={`choice-chip ${readerWidth === 'narrow' ? 'active' : ''}`} onClick={() => updateComfort({ readerWidth: 'narrow' })}>Gọn</button><button className={`choice-chip ${readerWidth === 'standard' ? 'active' : ''}`} onClick={() => updateComfort({ readerWidth: 'standard' })}>Tiêu chuẩn</button><button className={`choice-chip ${readerWidth === 'wide' ? 'active' : ''}`} onClick={() => updateComfort({ readerWidth: 'wide' })}>Rộng</button></div></div><div className="setting-group"><span className="setting-label">Màu nền</span><div className="theme-row">{(['paper', 'sepia', 'night'] as const).map(value => <button key={value} className={`theme-chip ${value} ${theme === value ? 'chosen' : ''}`} onClick={() => updateComfort({ theme: value })}>{value === 'paper' ? 'Giấy sáng' : value === 'sepia' ? 'Vàng dịu' : 'Ban đêm'}</button>)}</div></div><div className="setting-group stealth-settings-section"><span className="setting-label">{lang === 'vi' ? 'Chế độ ngụy trang công sở (Boss Key)' : 'Workplace Disguise (Boss Key)'}</span><p className="muted" style={{ fontSize: '11px', margin: '4px 0 10px', lineHeight: 1.5 }}>{lang === 'vi' ? 'Chuyển đổi giao diện đọc thành Microsoft Excel 365, VS Code hoặc tài liệu ISO để đọc an toàn tại văn phòng. Phím tắt: F2.' : 'Disguise reader into Excel 365, VS Code, or ISO doc to read discreetly at work. Quick toggle: F2.'}</p><button type="button" className="stealth-launch-btn" onClick={() => { setSettingsOpen(false); setStealthActive(true) }}><Briefcase size={16} /> {lang === 'vi' ? 'Bật chế độ ngụy trang ngay (F2)' : 'Activate Stealth Mode (F2)'}</button></div></div></div>}
 
     {noteOpen && reader && <div className="modal-shade" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setNoteOpen(false) }}><div className="dialog" role="dialog" aria-modal="true" aria-labelledby="note-title"><button className="icon-button dialog-close" onClick={() => setNoteOpen(false)} aria-label="Đóng"><X size={19} /></button><p className="eyebrow">READING MEMORY</p><h2 id="note-title">Lưu điều đáng nhớ</h2>{selection?.text && <blockquote className="selection-preview">“{selection.text.slice(0, 300)}{selection.text.length > 300 ? '…' : ''}”</blockquote>}<div className="color-selector"><span>Màu highlight:</span>{(['YELLOW', 'GREEN', 'BLUE', 'PINK', 'PURPLE'] as const).map(c => <button key={c} type="button" className={`color-dot ${c.toLowerCase()} ${noteColor === c ? 'active' : ''}`} onClick={() => setNoteColor(c)} aria-label={`Màu ${c}`} />)}</div><label htmlFor="note-input">Ghi chú của bạn</label><textarea id="note-input" value={noteText} onChange={event => setNoteText(event.target.value)} maxLength={10000} rows={5} placeholder="Điều gì khiến bạn muốn giữ đoạn này?" autoFocus /><div className="dialog-actions"><button className="secondary" onClick={() => setNoteOpen(false)}>Hủy</button><button className="primary" onClick={() => void saveNote()} disabled={(!noteText.trim() && !selection?.text) || noteSaving}><Check size={17} /> {noteSaving ? 'Đang lưu…' : noteText.trim() ? 'Lưu ghi chú' : 'Lưu đoạn trích'}</button></div></div></div>}
 
@@ -948,7 +1292,7 @@ async function sha256Hex(file: Blob): Promise<string> {
     </div>}</div></div>}
 
     {authOpen && <AuthDialog onClose={() => setAuthOpen(false)} onSuccess={value => void authenticated(value)} />}
-    {selectedBook && <BookDetailsModal book={selectedBook} categories={categories} progress={Number(progressFor(records, selectedBook.id)?.payload.progression || 0)} isFavorite={favorites.has(selectedBook.id)} isOffline={selectedBook.source === 'local' || offlineIds.has(selectedBook.id)} offlineBusy={offlineBusy === selectedBook.id} onClose={() => setSelectedBook(null)} onRead={() => { const b = selectedBook; setSelectedBook(null); void openBook(b) }} onFavorite={selectedBook.source === 'local' ? undefined : () => void toggleFavorite(selectedBook)} onOffline={selectedBook.source !== 'local' && selectedBook.fileUrl ? () => void toggleOffline(selectedBook) : undefined} onDelete={selectedBook.source === 'local' || selectedBook.source === 'cloud' ? () => { const b = selectedBook; setSelectedBook(null); void deleteBook(b) } : undefined} />}
+    {selectedBook && <BookDetailsModal book={selectedBook} lang={lang} categories={categories} progress={Number(progressFor(records, selectedBook.id)?.payload.progression || 0)} isFavorite={favorites.has(selectedBook.id)} isOffline={selectedBook.source === 'local' || offlineIds.has(selectedBook.id)} offlineBusy={offlineBusy === selectedBook.id} onClose={() => setSelectedBook(null)} onRead={() => { const b = selectedBook; setSelectedBook(null); void openBook(b) }} onStealthRead={() => { const b = selectedBook; setSelectedBook(null); void openBook(b).then(ok => { if (ok) setStealthActive(true) }) }} onFavorite={selectedBook.source === 'local' ? undefined : () => void toggleFavorite(selectedBook)} onOffline={selectedBook.source !== 'local' && selectedBook.fileUrl ? () => void toggleOffline(selectedBook) : undefined} onDelete={selectedBook.source === 'local' || selectedBook.source === 'cloud' ? () => { const b = selectedBook; setSelectedBook(null); void deleteBook(b) } : undefined} />}
   </div>
 }
 
@@ -961,9 +1305,11 @@ function SectionHeader({ title, action, onAction }: { title: string; action: str
   return <div className="section-header"><h2>{title}</h2><button onClick={onAction}>{action} <ArrowRight size={16} /></button></div>
 }
 
-function BookCard({ book, progress, onOpen, onDetails, favorite, onFavorite, onDelete, offline, offlineBusy, onOffline }: { book: Book; progress?: number; onOpen: () => void; onDetails?: () => void; favorite: boolean; onFavorite?: () => void; onDelete?: () => void; offline?: boolean; offlineBusy?: boolean; onOffline?: () => void }) {
+function BookCard({ book, progress, onOpen, onStealth, onDetails, favorite, onFavorite, onDelete, offline, offlineBusy, onOffline, lang = 'vi' }: { book: Book; progress?: number; onOpen: () => void; onStealth?: () => void; onDetails?: () => void; favorite: boolean; onFavorite?: () => void; onDelete?: () => void; offline?: boolean; offlineBusy?: boolean; onOffline?: () => void; lang?: Lang }) {
   const handleDetails = onDetails || onOpen
-  return <article className="book-card"><button className="cover-button" onClick={handleDetails} aria-label={`Xem chi tiết ${book.title}`}><div className="book-cover">{book.coverUrl ? <img src={book.coverUrl} alt="" loading="lazy" onError={event => { event.currentTarget.style.display = 'none' }} /> : null}<div className="cover-fallback"><BookOpen size={34} /><small>NoCap</small></div></div></button><div className="book-info"><div className="book-meta">{offline ? 'ĐÃ LƯU OFFLINE' : book.source === 'cloud' ? 'CLOUD CỦA BẠN' : book.language === 'vi' ? 'TIẾNG VIỆT' : 'SÁCH ĐIỆN TỬ'}</div><button className="book-title" onClick={handleDetails}>{book.title}</button><p>{bookLabel(book)}</p>{!!progress && <div className="progress-bar" aria-label={`Đã đọc ${Math.round(progress * 100)} phần trăm`}><span style={{ width: `${Math.max(2, progress * 100)}%` }} /></div>}<div className="card-actions"><button className="read-link" onClick={onOpen}>{progress ? 'Đọc tiếp' : 'Bắt đầu đọc'} <ArrowRight size={15} /></button>{onOffline && <button className="icon-button" title={offline ? 'Bỏ bản tải offline' : 'Tải để đọc offline'} aria-label={offline ? `Bỏ bản tải offline của ${book.title}` : `Tải ${book.title} để đọc offline`} onClick={onOffline} disabled={offlineBusy}>{offline ? <Check size={17} /> : <Download size={17} />}</button>}{onFavorite && <button className="icon-button" title={favorite ? 'Bỏ lưu' : 'Lưu vào tủ sách'} aria-label={favorite ? 'Bỏ lưu' : 'Lưu vào tủ sách'} onClick={onFavorite}><BookMarked size={17} fill={favorite ? 'currentColor' : 'none'} /></button>}{onDelete && <button className="icon-button" title="Xóa tệp trên trình duyệt" aria-label="Xóa tệp" onClick={onDelete}><Trash2 size={17} /></button>}</div></div></article>
+  const curT = t[lang]
+  const metaText = offline ? curT.bookCard.savedOffline : book.source === 'cloud' ? curT.bookCard.cloudPersonal : book.language === 'vi' ? curT.bookCard.vietnamese : curT.bookCard.ebook
+  return <article className="book-card"><button className="cover-button" onClick={handleDetails} aria-label={curT.bookCard.detailsAria(book.title)}><div className="book-cover">{book.coverUrl ? <img src={book.coverUrl} alt="" loading="lazy" onError={event => { event.currentTarget.style.display = 'none' }} /> : null}<div className="cover-fallback"><BookOpen size={34} /><small>NoCap</small></div></div></button><div className="book-info"><div className="book-meta">{metaText}</div><button className="book-title" onClick={handleDetails}>{book.title}</button><p>{bookLabel(book, lang)}</p>{!!progress && <div className="progress-bar" aria-label={curT.bookCard.readPercentAria(Math.round(progress * 100))}><span style={{ width: `${Math.max(2, progress * 100)}%` }} /></div>}<div className="card-actions"><button className="read-link" onClick={onOpen}>{progress ? curT.bookCard.continueReading : curT.bookCard.startReading} <ArrowRight size={15} /></button>{onStealth && <button type="button" className="icon-button stealth-card-btn" title={curT.bookCard.stealthRead || (lang === 'vi' ? 'Đọc ẩn công sở (F2)' : 'Stealth Read (F2)')} aria-label={curT.bookCard.stealthRead || 'Đọc ẩn công sở'} onClick={e => { e.stopPropagation(); onStealth() }}><Briefcase size={16} /></button>}{onOffline && <button className="icon-button" title={offline ? curT.bookCard.removeOffline : curT.bookCard.downloadOffline} aria-label={offline ? `${curT.bookCard.removeOffline}: ${book.title}` : `${curT.bookCard.downloadOffline}: ${book.title}`} onClick={onOffline} disabled={offlineBusy}>{offline ? <Check size={17} /> : <Download size={17} />}</button>}{onFavorite && <button className="icon-button" title={favorite ? curT.bookCard.unfavorite : curT.bookCard.favorite} aria-label={favorite ? `${curT.bookCard.unfavorite}: ${book.title}` : `${curT.bookCard.favorite}: ${book.title}`} onClick={onFavorite}><BookMarked size={17} fill={favorite ? 'currentColor' : 'none'} /></button>}{onDelete && <button className="icon-button" title={curT.bookCard.deleteFile} aria-label={curT.bookCard.deleteFile} onClick={onDelete}><Trash2 size={17} /></button>}</div></div></article>
 }
 
 function BookDetailsModal({
@@ -975,9 +1321,11 @@ function BookDetailsModal({
   offlineBusy,
   onClose,
   onRead,
+  onStealthRead,
   onFavorite,
   onOffline,
-  onDelete
+  onDelete,
+  lang = 'vi',
 }: {
   book: Book
   categories: Category[]
@@ -987,11 +1335,14 @@ function BookDetailsModal({
   offlineBusy?: boolean
   onClose: () => void
   onRead: () => void
+  onStealthRead?: () => void
   onFavorite?: () => void
   onOffline?: () => void
   onDelete?: () => void
+  lang?: Lang
 }) {
-  const categoryName = categories.find(c => c.id === book.categoryId)?.name || (book.source === 'local' ? 'Tài liệu riêng' : 'Tổng hợp')
+  const curT = t[lang]
+  const categoryName = categories.find(c => c.id === book.categoryId)?.name || (book.source === 'local' ? curT.bookModal.privateDoc : curT.bookModal.generalCategory)
   const progressPct = progress ? Math.round(progress * 100) : 0
   const sizeFormatted = book.fileSizeBytes ? `${(book.fileSizeBytes / (1024 * 1024)).toFixed(1)} MB` : undefined
 
@@ -1009,39 +1360,48 @@ function BookDetailsModal({
           </div>
           <div className="book-details-info">
             <h2 id="book-detail-title" className="book-details-title">{book.title}</h2>
-            <div className="book-details-author">Tác giả: <strong>{book.author || 'Chưa rõ'}</strong></div>
+            <div className="book-details-author">{curT.bookModal.authorPrefix} <strong>{book.author || curT.bookModal.unknownAuthor}</strong></div>
             <div className="book-details-badges">
               <span className="book-badge rating"><Star size={13} fill="currentColor" /> 4.8</span>
               <span className="book-badge">{categoryName}</span>
               <span className="book-badge format">{book.format?.toUpperCase() || 'EPUB'}</span>
               {sizeFormatted && <span className="book-badge format">{sizeFormatted}</span>}
-              {progressPct > 0 && <span className="book-badge progress">Đã đọc {progressPct}%</span>}
+              {progressPct > 0 && <span className="book-badge progress">{curT.bookModal.readPercent(progressPct)}</span>}
             </div>
             <div className="book-details-actions">
               <button className="primary" onClick={onRead}>
-                <BookOpen size={16} /> {progressPct > 0 ? 'Đọc tiếp' : 'Đọc sách'}
+                <BookOpen size={16} /> {progressPct > 0 ? curT.bookModal.continueReading : curT.bookModal.readBook}
               </button>
+              {onStealthRead && (
+                <button
+                  className="secondary stealth-modal-btn"
+                  onClick={onStealthRead}
+                  title={lang === 'vi' ? 'Đọc ngụy trang giao diện Excel / VS Code công sở (Phím F2)' : 'Stealth Read disguised as Excel / VS Code (F2)'}
+                >
+                  <Briefcase size={16} /> {lang === 'vi' ? 'Đọc ẩn (F2)' : 'Stealth (F2)'}
+                </button>
+              )}
               {onOffline && (
                 <button className="secondary" onClick={onOffline} disabled={offlineBusy}>
-                  {isOffline ? <><Check size={16} /> Đã lưu offline</> : <><Download size={16} /> Tải offline</>}
+                  {isOffline ? <><Check size={16} /> {curT.bookModal.savedOffline}</> : <><Download size={16} /> {curT.bookModal.downloadOffline}</>}
                 </button>
               )}
               {onFavorite && (
                 <button className="secondary" onClick={onFavorite}>
-                  <BookMarked size={16} fill={isFavorite ? 'currentColor' : 'none'} /> {isFavorite ? 'Đã yêu thích' : 'Yêu thích'}
+                  <BookMarked size={16} fill={isFavorite ? 'currentColor' : 'none'} /> {isFavorite ? curT.bookModal.favorited : curT.bookModal.favorite}
                 </button>
               )}
               {onDelete && (
                 <button className="secondary" style={{ color: '#b91c1c' }} onClick={onDelete}>
-                  <Trash2 size={16} /> Xóa sách
+                  <Trash2 size={16} /> {curT.bookModal.deleteBook}
                 </button>
               )}
             </div>
           </div>
         </div>
         <div className="book-details-desc">
-          <h3>Giới thiệu</h3>
-          <p>{book.description || 'Chưa có phần giới thiệu chi tiết cho tác phẩm này. Bạn có thể mở đọc sách ngay để khám phá toàn bộ nội dung.'}</p>
+          <h3>{lang === 'vi' ? 'Giới thiệu' : 'Overview'}</h3>
+          <p>{book.description || (lang === 'vi' ? 'Chưa có phần giới thiệu chi tiết cho tác phẩm này. Bạn có thể mở đọc sách ngay để khám phá toàn bộ nội dung.' : 'No detailed description available for this work yet. You can open and read the book right away.')}</p>
         </div>
       </div>
     </div>
