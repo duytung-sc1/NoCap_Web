@@ -1,4 +1,4 @@
-import { openDB, type DBSchema } from 'idb'
+import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import type { Book, Category, LocalFile, PendingOperation, SyncRecord } from './types'
 
 export type OfflineBook = { key: string; profile: string; bookId: string; data: Blob; savedAt: number }
@@ -13,9 +13,12 @@ interface NoCapDB extends DBSchema {
   metadata: { key: string; value: CachedCatalog | SyncCursor }
 }
 
-let connection: ReturnType<typeof openDB<NoCapDB>> | null = null
-function db() {
-  if (!connection) connection = openDB<NoCapDB>('nocap-web-v1', 2, {
+let connection: Promise<IDBPDatabase<NoCapDB>> | null = null
+
+function openConnection(): Promise<IDBPDatabase<NoCapDB>> {
+  if (connection) return connection
+  let opening: Promise<IDBPDatabase<NoCapDB>>
+  opening = openDB<NoCapDB>('nocap-web-v1', 2, {
     upgrade(database, oldVersion) {
       if (oldVersion < 1) {
         database.createObjectStore('files', { keyPath: 'key' })
@@ -27,55 +30,94 @@ function db() {
         database.createObjectStore('metadata', { keyPath: 'key' })
       }
     },
+    blocking() {
+      // Another tab or a newer app version needs to upgrade the database.
+      // Release this handle so the next operation opens a fresh connection.
+      void opening.then(database => database.close()).catch(() => {})
+      if (connection === opening) connection = null
+    },
+    terminated() {
+      // Safari/iOS may terminate IndexedDB connections when an in-app browser
+      // is backgrounded. Never keep the resolved, closed handle cached.
+      if (connection === opening) connection = null
+    },
   })
-  return connection
+  connection = opening
+  void opening.catch(() => {
+    if (connection === opening) connection = null
+  })
+  return opening
+}
+
+function isClosedConnectionError(error: unknown): boolean {
+  if (!(error instanceof Error || (typeof DOMException !== 'undefined' && error instanceof DOMException))) return false
+  const name = 'name' in error ? String(error.name) : ''
+  const message = 'message' in error ? String(error.message) : String(error)
+  return name === 'InvalidStateError' || /(?:database )?connection is clos(?:ed|ing)|database is clos(?:ed|ing)/i.test(message)
+}
+
+async function withDatabase<T>(operation: (database: IDBPDatabase<NoCapDB>) => Promise<T>): Promise<T> {
+  const firstOpening = openConnection()
+  const firstDatabase = await firstOpening
+  try {
+    return await operation(firstDatabase)
+  } catch (error) {
+    if (!isClosedConnectionError(error)) throw error
+    if (connection === firstOpening) connection = null
+    try { firstDatabase.close() } catch { /* already closed by the browser */ }
+    return operation(await openConnection())
+  }
 }
 
 const range = (profile: string) => IDBKeyRange.bound(`${profile}:`, `${profile}:\uffff`)
 export const keyFor = (profile: string, id: string) => `${profile}:${id}`
 
-export async function getFiles(profile: string) { return (await db()).getAll('files', range(profile)) }
-export async function getFile(profile: string, id: string) { return (await db()).get('files', keyFor(profile, id)) }
-export async function saveFile(value: LocalFile) { await (await db()).put('files', value) }
-export async function getOfflineBooks(profile: string) { return (await db()).getAll('offlineBooks', range(profile)) }
-export async function getOfflineBook(profile: string, bookId: string) { return (await db()).get('offlineBooks', keyFor(profile, bookId)) }
+export async function getFiles(profile: string) { return withDatabase(database => database.getAll('files', range(profile))) }
+export async function getFile(profile: string, id: string) { return withDatabase(database => database.get('files', keyFor(profile, id))) }
+export async function saveFile(value: LocalFile) { await withDatabase(database => database.put('files', value)) }
+export async function removeFile(profile: string, id: string) { await withDatabase(database => database.delete('files', keyFor(profile, id))) }
+export async function getOfflineBooks(profile: string) { return withDatabase(database => database.getAll('offlineBooks', range(profile))) }
+export async function getOfflineBook(profile: string, bookId: string) { return withDatabase(database => database.get('offlineBooks', keyFor(profile, bookId))) }
 export async function saveOfflineBook(profile: string, bookId: string, data: Blob) {
-  await (await db()).put('offlineBooks', { key: keyFor(profile, bookId), profile, bookId, data, savedAt: Date.now() })
+  await withDatabase(database => database.put('offlineBooks', { key: keyFor(profile, bookId), profile, bookId, data, savedAt: Date.now() }))
 }
-export async function removeOfflineBook(profile: string, bookId: string) { await (await db()).delete('offlineBooks', keyFor(profile, bookId)) }
+export async function removeOfflineBook(profile: string, bookId: string) { await withDatabase(database => database.delete('offlineBooks', keyFor(profile, bookId))) }
 export async function getCachedCatalog(): Promise<CachedCatalog | undefined> {
-  const value = await (await db()).get('metadata', 'public-catalog')
+  const value = await withDatabase(database => database.get('metadata', 'public-catalog'))
   return value && 'books' in value ? value : undefined
 }
 export async function saveCachedCatalog(books: Book[], categories: Category[]) {
-  await (await db()).put('metadata', { key: 'public-catalog', books, categories, savedAt: Date.now() })
+  await withDatabase(database => database.put('metadata', { key: 'public-catalog', books, categories, savedAt: Date.now() }))
 }
 export async function getSyncCursor(profile: string): Promise<number> {
-  const value = await (await db()).get('metadata', `sync-cursor:${profile}`)
+  const value = await withDatabase(database => database.get('metadata', `sync-cursor:${profile}`))
   const cursor = value && 'cursor' in value ? Number(value.cursor) : 0
   return Number.isSafeInteger(cursor) && cursor >= 0 ? cursor : 0
 }
 export async function saveSyncCursor(profile: string, cursor: number) {
   if (!Number.isSafeInteger(cursor) || cursor < 0) throw new Error('Invalid sync cursor')
-  await (await db()).put('metadata', { key: `sync-cursor:${profile}`, cursor })
+  await withDatabase(database => database.put('metadata', { key: `sync-cursor:${profile}`, cursor }))
 }
 export async function removeLocalDocument(profile: string, id: string) {
-  const database = await db()
-  const transaction = database.transaction(['files', 'records', 'pending'], 'readwrite')
-  await transaction.objectStore('files').delete(keyFor(profile, id))
-  for (const record of await transaction.objectStore('records').getAll(range(profile))) {
-    if (record.payload.book_id === id || (record.kind === 'catalog_books' && record.payload.id === id)) await transaction.objectStore('records').delete(record.key)
-  }
-  for (const pending of await transaction.objectStore('pending').getAll(range(profile))) {
-    if (pending.operation.payload.book_id === id || (pending.operation.kind === 'catalog_books' && pending.operation.payload.id === id)) await transaction.objectStore('pending').delete(pending.key)
-  }
-  await transaction.done
+  await withDatabase(async database => {
+    const transaction = database.transaction(['files', 'records', 'pending'], 'readwrite')
+    await transaction.objectStore('files').delete(keyFor(profile, id))
+    for (const record of await transaction.objectStore('records').getAll(range(profile))) {
+      if (record.payload.book_id === id || (record.kind === 'catalog_books' && record.payload.id === id)) await transaction.objectStore('records').delete(record.key)
+    }
+    for (const pending of await transaction.objectStore('pending').getAll(range(profile))) {
+      if (pending.operation.payload.book_id === id || (pending.operation.kind === 'catalog_books' && pending.operation.payload.id === id)) await transaction.objectStore('pending').delete(pending.key)
+    }
+    await transaction.done
+  })
 }
-export async function getRecords(profile: string) { return (await db()).getAll('records', range(profile)) }
-export async function saveRecord(value: SyncRecord) { await (await db()).put('records', value) }
-export async function getPending(profile: string) { return (await db()).getAll('pending', range(profile)) }
-export async function savePending(value: PendingOperation) { await (await db()).put('pending', value) }
-export async function removePending(key: string) { await (await db()).delete('pending', key) }
+export async function getRecords(profile: string) { return withDatabase(database => database.getAll('records', range(profile))) }
+export async function getRecord(key: string) { return withDatabase(database => database.get('records', key)) }
+export async function saveRecord(value: SyncRecord) { await withDatabase(database => database.put('records', value)) }
+export async function getPending(profile: string) { return withDatabase(database => database.getAll('pending', range(profile))) }
+export async function getPendingItem(key: string) { return withDatabase(database => database.get('pending', key)) }
+export async function savePending(value: PendingOperation) { await withDatabase(database => database.put('pending', value)) }
+export async function removePending(key: string) { await withDatabase(database => database.delete('pending', key)) }
 
 export function readSession(): import('./types').Session | null {
   try {

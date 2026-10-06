@@ -1,7 +1,7 @@
 import { md5 } from '@noble/hashes/legacy.js'
-import { getChanges, getUser, pushOperation, ApiError } from './api'
-import { getPending, getRecords, getSyncCursor, keyFor, removePending, savePending, saveRecord, saveSyncCursor } from './store'
-import { SYNC_KINDS, type Session, type SyncKind, type SyncOperation, type SyncRecord } from './types'
+import { API_BASE, getChanges, getUser, pushOperation, ApiError } from './api'
+import { getPending, getPendingItem, getRecord, getRecords, getSyncCursor, keyFor, removePending, savePending, saveRecord, saveSyncCursor } from './store'
+import { SYNC_KINDS, type PendingOperation, type Session, type SyncKind, type SyncOperation, type SyncRecord } from './types'
 
 const encoder = new TextEncoder()
 const hex = (text: string) => Array.from(encoder.encode(text), byte => byte.toString(16).padStart(2, '0')).join('').toUpperCase()
@@ -30,10 +30,10 @@ export async function localRecords(profile: string): Promise<SyncRecord[]> { ret
 
 export async function mutate(profile: string, kind: SyncKind, id: string, payload: Record<string, unknown>, deleted = false, localOnly = false) {
   const key = recordKey(profile, kind, id)
-  const current = (await getRecords(profile)).find(record => record.key === key)
+  const current = await getRecord(key)
   await saveRecord({ key, profile, kind, id, version: current?.version || 0, deleted, payload })
   if (profile === 'DEVICE_LOCAL' || localOnly) return
-  const pending = (await getPending(profile)).find(item => item.key === pendingKey(profile, kind, id))
+  const pending = await getPendingItem(pendingKey(profile, kind, id))
   // An in-flight or conflicted operation must keep its original payload and
   // operation ID; the newer local edit stays in the record until it can be
   // reconciled without clobbering either version.
@@ -57,7 +57,7 @@ export async function syncNow(session: Session): Promise<{ conflicts: number; ch
     const receipt = result.receipts[0]
     if (!receipt) throw new Error('Máy chủ chưa xác nhận thao tác đồng bộ.')
     const key = recordKey(profile, item.operation.kind, item.operation.id)
-    const current = (await getRecords(profile)).find(record => record.key === key)
+    const current = await getRecord(key)
     const latest = receipt.current
     if (receipt.status === 'APPLIED' && latest) {
       const changedAgain = current && (current.deleted !== item.operation.deleted || JSON.stringify(current.payload) !== JSON.stringify(item.operation.payload))
@@ -96,4 +96,170 @@ export async function syncNow(session: Session): Promise<{ conflicts: number; ch
 export function readableError(error: unknown): string {
   if (error instanceof ApiError && error.status === 401) return 'Phiên đăng nhập đã hết hạn. Đăng nhập lại để đồng bộ.'
   return error instanceof Error ? error.message : 'Không hoàn tất được thao tác. Vui lòng thử lại.'
+}
+
+export function getDeviceId(): string {
+  try {
+    let id = localStorage.getItem('nocap_device_id')
+    if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+      id = crypto.randomUUID()
+      localStorage.setItem('nocap_device_id', id)
+    }
+    return id
+  } catch {
+    return '00000000-0000-0000-0000-000000000001'
+  }
+}
+
+const syncBroadcastChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('nocap_tab_sync') : null
+
+export function broadcastSyncRequired(profile: string) {
+  try {
+    syncBroadcastChannel?.postMessage({ type: 'sync_required', profile, timestamp: Date.now() })
+  } catch {
+    // Ignore channel errors
+  }
+}
+
+export function connectLiveSync(session: Session, deviceId: string, onSyncRequired: () => void): () => void {
+  let active = true
+  let ws: WebSocket | null = null
+  let pingTimer: ReturnType<typeof setInterval> | null = null
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  let backoffMs = 2000
+
+  const onChannelMessage = (event: MessageEvent) => {
+    if (!active) return
+    const data = event.data as { type?: string; profile?: string }
+    if (data?.type === 'sync_required' && (!data.profile || data.profile === profileFor(session))) {
+      onSyncRequired()
+    }
+  }
+  syncBroadcastChannel?.addEventListener('message', onChannelMessage)
+
+  const connect = () => {
+    if (!active) return
+    try {
+      const wsUrl = `${API_BASE.replace(/^http/, 'ws')}/api/v1/sync/live?token=${encodeURIComponent(session.token)}&device=${encodeURIComponent(deviceId)}`
+      ws = new WebSocket(wsUrl)
+      ws.onopen = () => {
+        backoffMs = 2000
+        if (pingTimer) clearInterval(pingTimer)
+        pingTimer = setInterval(() => {
+          if (ws?.readyState === WebSocket.OPEN) {
+            try { ws.send('ping') } catch {}
+          }
+        }, 25000)
+      }
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data) as { type?: string }
+          if (msg.type === 'sync_required') {
+            onSyncRequired()
+          }
+        } catch {}
+      }
+      ws.onclose = () => {
+        if (pingTimer) clearInterval(pingTimer)
+        if (active) {
+          reconnectTimer = setTimeout(connect, backoffMs)
+          backoffMs = Math.min(30000, backoffMs * 1.5)
+        }
+      }
+      ws.onerror = () => {
+        try { ws?.close() } catch {}
+      }
+    } catch {
+      if (active) {
+        reconnectTimer = setTimeout(connect, backoffMs)
+        backoffMs = Math.min(30000, backoffMs * 1.5)
+      }
+    }
+  }
+
+  connect()
+
+  return () => {
+    active = false
+    syncBroadcastChannel?.removeEventListener('message', onChannelMessage)
+    if (pingTimer) clearInterval(pingTimer)
+    if (reconnectTimer) clearTimeout(reconnectTimer)
+    if (ws) {
+      ws.onclose = null
+      ws.onerror = null
+      try { ws.close() } catch {}
+    }
+  }
+}
+
+export async function getConflicts(profile: string): Promise<PendingOperation[]> {
+  const allPending = await getPending(profile)
+  return allPending.filter(item => !!item.conflicted)
+}
+
+export async function resolveConflict(
+  session: Session,
+  key: string,
+  strategy: 'keep_local' | 'take_remote'
+): Promise<void> {
+  const profile = profileFor(session)
+  const item = await getPendingItem(key)
+  if (!item) return
+  if (item.profile !== profile) throw new Error('Mục đồng bộ không thuộc tài khoản hiện tại.')
+  await getUser(session.token)
+
+  let remote: Awaited<ReturnType<typeof getChanges>>['changes'][number] | undefined
+  let cursor = 0
+  for (let page = 0; ; page++) {
+    if (page >= 100) throw new Error('Có quá nhiều thay đổi để đối soát. Vui lòng thử lại.')
+    const result = await getChanges(session.token, cursor)
+    for (const change of result.changes) {
+      if (change.kind === item.operation.kind && change.id === item.operation.id) remote = change
+    }
+    if (!result.hasMore) break
+    if (result.cursor <= cursor) throw new Error('Máy chủ chưa trả đủ dữ liệu đối soát.')
+    cursor = result.cursor
+  }
+
+  if (strategy === 'take_remote') {
+    if (!remote) throw new Error('Chưa tìm thấy bản cloud. Bản trên máy vẫn được giữ.')
+    await saveRecord({
+        key: recordKey(profile, remote.kind as SyncKind, remote.id),
+        profile,
+        kind: remote.kind as SyncKind,
+        id: remote.id,
+        version: remote.version,
+        deleted: !!remote.deleted,
+        payload: remote.payload,
+    })
+    await removePending(key)
+  } else {
+    const baseVersion = remote ? remote.version : item.operation.baseVersion
+    const local = await getRecord(key)
+    const refreshedOp: SyncOperation = {
+      ...item.operation,
+      opId: crypto.randomUUID(),
+      baseVersion,
+      payload: local?.payload || item.operation.payload,
+      deleted: local?.deleted ?? item.operation.deleted,
+    }
+    // Persist the new ID before pushing so a lost response can be retried safely.
+    await savePending({ ...item, operation: refreshedOp, attempted: true, conflicted: true })
+    const pushRes = await pushOperation(session.token, refreshedOp)
+    const receipt = pushRes.receipts[0]
+    if (receipt && receipt.status === 'APPLIED' && receipt.current) {
+      await saveRecord({
+        key: recordKey(profile, item.operation.kind, item.operation.id),
+        profile,
+        kind: item.operation.kind,
+        id: item.operation.id,
+        version: receipt.current.version,
+        deleted: !!receipt.current.deleted,
+        payload: receipt.current.payload,
+      })
+      await removePending(key)
+    } else {
+      throw new Error('Chưa thể giải quyết xung đột với máy chủ. Vui lòng thử lại.')
+    }
+  }
 }

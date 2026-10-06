@@ -19,6 +19,26 @@ untracked `.env.local` with `VITE_API_BASE_URL` set to the QA Worker.
 
 `npm run build`, `npm run lint`, and `npm test` are the local gates.
 
+## Deploy to Cloudflare Pages
+
+The production frontend is hosted at https://nocap-web.pages.dev and uses the
+existing production API. Deployment uploads the current working tree, including
+uncommitted changes; it does not commit or push Git changes.
+
+```powershell
+cd "D:\du an\nocap-web"
+npx wrangler login
+npm test
+npm run lint
+npm run deploy
+```
+
+`wrangler.jsonc` identifies the Pages project and the `dist` build directory.
+No API credentials are included in the frontend bundle. Service-worker and HTML
+responses revalidate on update; hashed assets use long-lived caching. Local
+browser data belongs to each URL separately, so files saved under localhost or a
+temporary tunnel are not automatically present on the Pages domain.
+
 ## Try offline reading locally
 
 The service worker is generated for the built preview, not the Vite development

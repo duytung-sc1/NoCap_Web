@@ -1,15 +1,20 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlignJustify, AlignLeft, ArrowLeft, ArrowRight, Award, BarChart3, BookMarked, BookOpen, Bookmark, Briefcase, Check, CheckCircle2, ChevronLeft, ChevronRight, Cloud, CloudOff, Download, FileDown, FileText, Flame, Globe, Highlighter, Home, Layers, Library, List, LogIn, LogOut, Menu, Plus, RotateCcw, RotateCw, Search, Settings2, Sparkles, Star, Trash2, Type, X } from 'lucide-react'
-import { forgotPassword, getCatalog, getEntitlement, getUser, loadBookBytes, login, logout, register, uploadBlob, type Entitlement } from './api'
-import { ReaderPane } from './Reader'
-import { StealthReader } from './stealth/StealthReader'
-import { getCachedCatalog, getFile, getFiles, getOfflineBook, getOfflineBooks, getPending, readSession, removeLocalDocument, removeOfflineBook, saveCachedCatalog, saveFile, saveOfflineBook, saveSession } from './store'
-import { androidRecordId, localRecords, mutate, profileFor, readableError, syncNow } from './sync'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { AlignJustify, AlignLeft, ArrowLeft, ArrowRight, Award, BarChart3, BookMarked, BookOpen, Bookmark, Briefcase, Check, CheckCircle2, ChevronLeft, ChevronRight, Cloud, CloudOff, Download, Edit3, FileDown, FileText, Flame, FolderPlus, Globe, Highlighter, Home, Layers, Library, List, LogIn, LogOut, Menu, Plus, RotateCcw, RotateCw, Search, Settings2, ShieldAlert, Sparkles, Star, Tag, Trash2, Type, Upload, X } from 'lucide-react'
+import { ApiError, deleteAccount, deleteAllCloudBackups, deleteCloudBackup, forgotPassword, getCatalog, getCloudBackups, getEntitlement, getUser, loadBookBytes, login, loginWithGoogle, logout, register, updateProfile, uploadBlob, type CloudBackupItem, type Entitlement } from './api'
+import type { StealthPosition } from './stealth/StealthReader'
+import { getCachedCatalog, getFile, getFiles, getOfflineBook, getOfflineBooks, getPending, readSession, removeFile, removeLocalDocument, removeOfflineBook, saveCachedCatalog, saveFile, saveOfflineBook, saveSession } from './store'
+import { androidCompositeRecordId, androidRecordId, broadcastSyncRequired, connectLiveSync, getConflicts, getDeviceId, localRecords, mutate, profileFor, readableError, resolveConflict, syncNow } from './sync'
+import { createLibraryBackup, downloadBackupFile, restoreLibraryBackup } from './backup'
+import { mergeBooksById } from './library'
+import { importWithChunkRecovery } from './lazyRecovery'
 import { initialReviewItem, nextReview, reviewIsDue, type ReviewItemPayload } from './review'
-import type { Book, Category, FontFamily, LocalFile, ReaderLocation, ReaderWidth, Session, SyncRecord, TextAlignment, TocItem } from './types'
+import type { Book, Category, FontFamily, LocalFile, PendingOperation, ReaderLocation, ReaderWidth, Session, SyncRecord, TextAlignment, TocItem } from './types'
 import { OceanWaves } from './OceanWaves'
 import { getStoredLang, setStoredLang, t, type Lang } from './i18n'
 import './App.css'
+
+const ReaderPane = lazy(() => importWithChunkRecovery(() => import('./Reader')).then(module => ({ default: module.ReaderPane })))
+const StealthReader = lazy(() => importWithChunkRecovery(() => import('./stealth/StealthReader')).then(module => ({ default: module.StealthReader })))
 
 type Page = 'home' | 'catalog' | 'library' | 'memory' | 'stats' | 'account'
 type ShelfFilter = 'all' | 'reading' | 'favorites' | 'completed' | 'offline' | 'local'
@@ -128,7 +133,24 @@ function App() {
   const [controls, setControls] = useState<{ previous: () => void; next: () => void } | null>(null)
   const [selectedBook, setSelectedBook] = useState<Book | null>(null)
   const [stealthActive, setStealthActive] = useState(false)
+  const [stealthProgressRequest, setStealthProgressRequest] = useState<{ progression: number; requestId: number; href?: string } | null>(null)
+  const [editNameOpen, setEditNameOpen] = useState(false)
+  const [editNameInput, setEditNameInput] = useState('')
+  const [savingName, setSavingName] = useState(false)
+  const [cloudBackups, setCloudBackups] = useState<CloudBackupItem[]>([])
+  const [loadingBackups, setLoadingBackups] = useState(false)
+  const [deleteAccountOpen, setDeleteAccountOpen] = useState(false)
+  const [deleteAccountBusy, setDeleteAccountBusy] = useState(false)
+  const [conflicts, setConflicts] = useState<PendingOperation[]>([])
+  const [conflictModalOpen, setConflictModalOpen] = useState(false)
+  const [tagsCollectionsOpen, setTagsCollectionsOpen] = useState(false)
+  const [tagTab, setTagTab] = useState<'tags' | 'collections'>('tags')
+  const [newTagName, setNewTagName] = useState('')
+  const [newCollectionName, setNewCollectionName] = useState('')
+  const [editingItemId, setEditingItemId] = useState<string | null>(null)
+  const [editingItemName, setEditingItemName] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
+  const restoreInputRef = useRef<HTMLInputElement>(null)
   const progressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const preferenceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const readingSessionRef = useRef<{ id: string; bookId: string; startedAt: number; startProgress: number; format: string; localOnly: boolean } | null>(null)
@@ -142,9 +164,15 @@ function App() {
   locationRef.current = location
   const lastSyncAt = useRef(0)
   const syncNeedsRerun = useRef(false)
+  const openRequestId = useRef(0)
+  const closeReaderRef = useRef<() => void>(() => {})
 
   useEffect(() => {
-    localStorage.setItem('nocap-reader-comfort-v1', JSON.stringify({ fontSize, fontFamily, lineHeight, textAlignment, theme, readerWidth }))
+    try {
+      localStorage.setItem('nocap-reader-comfort-v1', JSON.stringify({ fontSize, fontFamily, lineHeight, textAlignment, theme, readerWidth }))
+    } catch {
+      // Reading still works when browser privacy settings disable localStorage.
+    }
   }, [fontSize, fontFamily, lineHeight, textAlignment, theme, readerWidth])
 
   useEffect(() => {
@@ -159,6 +187,7 @@ function App() {
 
   useEffect(() => {
     const onGlobalKey = (e: KeyboardEvent) => {
+      if (stealthActive) return
       if (e.key === 'F2') {
         if (reader) {
           e.preventDefault()
@@ -174,7 +203,7 @@ function App() {
         if (selectedBook) { setSelectedBook(null); return }
         if (reader) {
           e.preventDefault()
-          closeReader()
+          closeReaderRef.current()
           setPage('home')
           window.scrollTo({ top: 0, behavior: 'smooth' })
         }
@@ -182,7 +211,7 @@ function App() {
     }
     window.addEventListener('keydown', onGlobalKey)
     return () => window.removeEventListener('keydown', onGlobalKey)
-  }, [reader, tocOpen, settingsOpen, noteOpen, reviewOpen, authOpen, selectedBook])
+  }, [reader, tocOpen, settingsOpen, noteOpen, reviewOpen, authOpen, selectedBook, stealthActive])
 
   const refreshLocal = useCallback(async (selectedProfile: string) => {
     const [nextRecords, nextFiles, nextPending, nextOffline, publicOffline] = await Promise.all([localRecords(selectedProfile), getFiles(selectedProfile), getPending(selectedProfile), getOfflineBooks(selectedProfile), getOfflineBooks('PUBLIC_OFFLINE')])
@@ -212,7 +241,13 @@ function App() {
     return () => { active = false; window.removeEventListener('online', update); window.removeEventListener('offline', update) }
   }, [])
 
-  useEffect(() => { void refreshLocal(profile) }, [profile, refreshLocal])
+  useEffect(() => {
+    void refreshLocal(profile).catch(() => {
+      setNotice(lang === 'vi'
+        ? 'Bộ nhớ cục bộ của trình duyệt đang bị gián đoạn. Sách trực tuyến vẫn có thể đọc bình thường.'
+        : 'Browser storage is temporarily unavailable. Online books can still be read normally.')
+    })
+  }, [profile, refreshLocal, lang])
 
   const synchronize = useCallback(async (activeSession: Session, silent = false) => {
     if (!navigator.onLine) {
@@ -233,12 +268,14 @@ function App() {
       try {
         do {
           syncNeedsRerun.current = false
-          const result = await syncNow(activeSession)
+          await syncNow(activeSession)
           lastSyncAt.current = Date.now()
           await refreshLocal(profileFor(activeSession))
+          const currentConflicts = await getConflicts(targetProfile)
+          setConflicts(currentConflicts)
           if (profileRef.current === profileFor(activeSession)) {
-            if (result.conflicts) {
-              setNotice(`${result.conflicts} thay đổi cần đối soát; bản trên trình duyệt vẫn được giữ.`)
+            if (currentConflicts.length) {
+              setNotice(`${currentConflicts.length} xung đột đồng bộ cần giải quyết.`)
             } else if (!silent && !syncNeedsRerun.current) {
               setNotice('Đã đồng bộ với tài khoản của bạn.')
             }
@@ -259,6 +296,25 @@ function App() {
     syncFlight.current = { profile: targetProfile, promise: flight }
     try { await flight } finally { if (syncFlight.current?.promise === flight) syncFlight.current = null }
   }, [refreshLocal])
+
+  useEffect(() => {
+    if (!session) return
+    const deviceId = getDeviceId()
+    const cleanup = connectLiveSync(session, deviceId, () => {
+      void synchronize(session, true)
+    })
+    return cleanup
+  }, [session, synchronize])
+
+  useEffect(() => {
+    if (page === 'account' && session) {
+      setLoadingBackups(true)
+      getCloudBackups(session.token)
+        .then(res => setCloudBackups(res.backups || []))
+        .catch(() => setCloudBackups([]))
+        .finally(() => setLoadingBackups(false))
+    }
+  }, [page, session])
 
   const beginReadingSession = useCallback((book: Book, startProgress: number) => {
     readingSessionRef.current = {
@@ -396,12 +452,40 @@ function App() {
   }, [synchronize, refreshLocal, beginReadingSession, completeReadingSession])
 
   const cloudBooks = useMemo(() => records.map(syncedBook).filter((book): book is Book => !!book && !!book.id && !catalog.some(item => item.id === book.id)), [records, catalog])
-  const books = useMemo(() => [...catalog, ...cloudBooks, ...localFiles.map(file => file.book)], [catalog, cloudBooks, localFiles])
+  const books = useMemo(() => mergeBooksById(catalog, cloudBooks, localFiles.map(file => file.book)), [catalog, cloudBooks, localFiles])
   const favorites = useMemo(() => new Set(records.filter(r => r.kind === 'favorites' && !r.deleted).map(r => toText(r.payload.book_id))), [records])
   const reading = useMemo(() => books.filter(book => !!progressFor(records, book.id)).sort((a, b) => Number(progressFor(records, b.id)?.payload.last_read_at || 0) - Number(progressFor(records, a.id)?.payload.last_read_at || 0)), [books, records])
   const libraryBooks = useMemo(() => books.filter(book => book.source === 'local' || book.source === 'cloud' || offlineIds.has(book.id) || favorites.has(book.id) || !!progressFor(records, book.id)), [books, offlineIds, favorites, records])
   const tags = useMemo(() => records.filter(record => record.kind === 'tags' && !record.deleted).map(record => ({ id: toText(record.payload.id), name: toText(record.payload.name) })).filter(item => item.id && item.name), [records])
   const collections = useMemo(() => records.filter(record => record.kind === 'collections' && !record.deleted).map(record => ({ id: toText(record.payload.id), name: toText(record.payload.name) })).filter(item => item.id && item.name), [records])
+  const bookTags = useMemo(() => {
+    const map = new Map<string, Set<string>>()
+    for (const record of records) {
+      if (record.kind === 'book_tag_cross_ref' && !record.deleted) {
+        const bookId = toText(record.payload.book_id)
+        const tagId = toText(record.payload.tag_id)
+        if (bookId && tagId) {
+          if (!map.has(bookId)) map.set(bookId, new Set())
+          map.get(bookId)!.add(tagId)
+        }
+      }
+    }
+    return map
+  }, [records])
+  const bookCollections = useMemo(() => {
+    const map = new Map<string, Set<string>>()
+    for (const record of records) {
+      if (record.kind === 'book_collection_cross_ref' && !record.deleted) {
+        const bookId = toText(record.payload.book_id)
+        const colId = toText(record.payload.collection_id)
+        if (bookId && colId) {
+          if (!map.has(bookId)) map.set(bookId, new Set())
+          map.get(bookId)!.add(colId)
+        }
+      }
+    }
+    return map
+  }, [records])
   const filteredBooks = useMemo(() => {
     let list = page === 'library' ? libraryBooks : catalog
     if (page === 'library') {
@@ -467,14 +551,16 @@ function App() {
   const readingDayCount = useMemo(() => new Set(readingSessions.map(record => new Date(Number(record.payload.started_at) || 0).toISOString().slice(0, 10))).size, [readingSessions])
 
   async function authenticated(value: Session) {
+    openRequestId.current++
     if (progressTimer.current) clearTimeout(progressTimer.current)
     if (preferenceTimer.current) clearTimeout(preferenceTimer.current)
     if (readerRef.current) await completeReadingSession(readerRef.current, locationRef.current?.progression || 0)
     setReader(null); readerRef.current = null; setRecords([]); setLocalFiles([]); setOfflineIds(new Set())
-    saveSession(value); setSession(value); setAuthOpen(false); setPage('home'); setNotice(`Đã đăng nhập ${value.user.email}.`)
+    saveSession(value); setSession(value); setAuthOpen(false); setPage('home'); setNotice(curT.auth.signedIn(value.user.email))
   }
 
   async function signOut() {
+    openRequestId.current++
     if (progressTimer.current) clearTimeout(progressTimer.current)
     if (preferenceTimer.current) clearTimeout(preferenceTimer.current)
     if (readerRef.current) await completeReadingSession(readerRef.current, locationRef.current?.progression || 0)
@@ -482,6 +568,188 @@ function App() {
     saveSession(null); setSession(null); setRecords([]); setLocalFiles([]); setOfflineIds(new Set()); setReader(null); readerRef.current = null
     setPage('home'); setNotice('Đã đăng xuất. Dữ liệu tài khoản được giữ riêng và không bị xóa.')
     if (oldToken) void logout(oldToken).catch(() => {})
+  }
+
+  async function handleUpdateDisplayName() {
+    if (!session || !editNameInput.trim()) return
+    setSavingName(true)
+    try {
+      const updated = await updateProfile(session.token, { displayName: editNameInput.trim() })
+      const newSession: Session = { ...session, user: updated }
+      saveSession(newSession)
+      setSession(newSession)
+      setEditNameOpen(false)
+      setNotice(lang === 'vi' ? 'Đã cập nhật tên tài khoản thành công.' : 'Account name updated successfully.')
+    } catch (err) {
+      setNotice(readableError(err))
+    } finally {
+      setSavingName(false)
+    }
+  }
+
+  async function handleDeleteCloudBackup(id: string) {
+    if (!session) return
+    if (!confirm(lang === 'vi' ? 'Bạn có chắc muốn xóa bản sao lưu này trên Cloud?' : 'Delete this cloud backup?')) return
+    try {
+      await deleteCloudBackup(session.token, id)
+      setCloudBackups(prev => prev.filter(b => b.id !== id))
+      setNotice(lang === 'vi' ? 'Đã xóa bản sao lưu cloud.' : 'Cloud backup deleted.')
+    } catch (err) {
+      setNotice(readableError(err))
+    }
+  }
+
+  async function handleDeleteAllCloudBackups() {
+    if (!session) return
+    if (!confirm(lang === 'vi' ? 'Bạn có chắc muốn xóa TOÀN BỘ bản sao lưu trên Cloud?' : 'Delete ALL cloud backups?')) return
+    try {
+      await deleteAllCloudBackups(session.token)
+      setCloudBackups([])
+      setNotice(lang === 'vi' ? 'Đã xóa toàn bộ sao lưu cloud.' : 'All cloud backups deleted.')
+    } catch (err) {
+      setNotice(readableError(err))
+    }
+  }
+
+  async function handleDeleteAccount() {
+    if (!session) return
+    setDeleteAccountBusy(true)
+    try {
+      await deleteAccount(session.token)
+      saveSession(null)
+      setSession(null)
+      setRecords([])
+      setLocalFiles([])
+      setOfflineIds(new Set())
+      openRequestId.current++
+      setReader(null)
+      readerRef.current = null
+      setConflicts([])
+      setCloudBackups([])
+      setPage('home')
+      setDeleteAccountOpen(false)
+      setNotice(lang === 'vi' ? 'Tài khoản của bạn đã được xóa thành công.' : 'Your account has been deleted.')
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        setDeleteAccountOpen(false)
+        setNotice(lang === 'vi' ? 'Vui lòng đăng nhập lại trước khi xóa tài khoản để xác minh bảo mật.' : 'Please sign in again before deleting your account.')
+        setAuthOpen(true)
+      } else {
+        setNotice(readableError(err))
+      }
+    } finally {
+      setDeleteAccountBusy(false)
+    }
+  }
+
+  async function handleExportBackup() {
+    try {
+      const data = await createLibraryBackup(profile)
+      downloadBackupFile(data)
+      setNotice(lang === 'vi' ? 'Đã tải tệp sao lưu dữ liệu JSON về máy.' : 'JSON backup downloaded.')
+    } catch (err) {
+      setNotice(readableError(err))
+    }
+  }
+
+  async function handleRestoreBackup(file: File) {
+    try {
+      const text = await file.text()
+      const parsed = JSON.parse(text)
+      const res = await restoreLibraryBackup(profile, parsed)
+      await refreshLocal(profile)
+      setNotice(lang === 'vi' ? `Đã khôi phục thành công ${res.restoredRecords} mục dữ liệu.` : `Restored ${res.restoredRecords} data items.`)
+    } catch (err) {
+      setNotice(readableError(err))
+    }
+  }
+
+  async function handleResolveConflict(key: string, strategy: 'keep_local' | 'take_remote') {
+    if (!session) return
+    try {
+      await resolveConflict(session, key, strategy)
+      const nextConflicts = await getConflicts(profileFor(session))
+      setConflicts(nextConflicts)
+      if (!nextConflicts.length) setConflictModalOpen(false)
+      void refreshLocal(profileFor(session))
+      void synchronize(session, true)
+    } catch (err) {
+      setNotice(readableError(err))
+    }
+  }
+
+  async function handleCreateTag() {
+    if (!newTagName.trim()) return
+    const id = crypto.randomUUID()
+    const payload = { id, name: newTagName.trim(), created_at: ms() }
+    await mutate(profile, 'tags', androidRecordId('tags', id), payload, false, !session)
+    broadcastSyncRequired(profile)
+    setNewTagName('')
+    await refreshLocal(profile)
+    if (session) void synchronize(session, true)
+  }
+
+  async function handleDeleteTag(tagId: string) {
+    await mutate(profile, 'tags', androidRecordId('tags', tagId), { id: tagId }, true, !session)
+    broadcastSyncRequired(profile)
+    await refreshLocal(profile)
+    if (session) void synchronize(session, true)
+  }
+
+  async function handleCreateCollection() {
+    if (!newCollectionName.trim()) return
+    const id = crypto.randomUUID()
+    const payload = { id, name: newCollectionName.trim(), created_at: ms() }
+    await mutate(profile, 'collections', androidRecordId('collections', id), payload, false, !session)
+    broadcastSyncRequired(profile)
+    setNewCollectionName('')
+    await refreshLocal(profile)
+    if (session) void synchronize(session, true)
+  }
+
+  async function handleDeleteCollection(colId: string) {
+    await mutate(profile, 'collections', androidRecordId('collections', colId), { id: colId }, true, !session)
+    broadcastSyncRequired(profile)
+    await refreshLocal(profile)
+    if (session) void synchronize(session, true)
+  }
+
+  async function handleUpdateTag(tagId: string, name: string) {
+    if (!name.trim()) return
+    const existing = records.find(r => r.kind === 'tags' && !r.deleted && (r.payload.id === tagId || r.id === androidRecordId('tags', tagId)))
+    const payload = { ...(existing?.payload || {}), id: tagId, name: name.trim(), updated_at: ms() }
+    await mutate(profile, 'tags', androidRecordId('tags', tagId), payload, false, !session)
+    broadcastSyncRequired(profile)
+    await refreshLocal(profile)
+    if (session) void synchronize(session, true)
+  }
+
+  async function handleUpdateCollection(colId: string, name: string) {
+    if (!name.trim()) return
+    const existing = records.find(r => r.kind === 'collections' && !r.deleted && (r.payload.id === colId || r.id === androidRecordId('collections', colId)))
+    const payload = { ...(existing?.payload || {}), id: colId, name: name.trim(), updated_at: ms() }
+    await mutate(profile, 'collections', androidRecordId('collections', colId), payload, false, !session)
+    broadcastSyncRequired(profile)
+    await refreshLocal(profile)
+    if (session) void synchronize(session, true)
+  }
+
+  async function handleToggleBookTag(bookId: string, tagId: string) {
+    const isAssigned = bookTags.get(bookId)?.has(tagId)
+    const recId = androidCompositeRecordId('book_tag_cross_ref', [bookId, tagId])
+    await mutate(profile, 'book_tag_cross_ref', recId, { book_id: bookId, tag_id: tagId, created_at: ms() }, !!isAssigned, !session)
+    broadcastSyncRequired(profile)
+    await refreshLocal(profile)
+    if (session) void synchronize(session, true)
+  }
+
+  async function handleToggleBookCollection(bookId: string, colId: string) {
+    const isAssigned = bookCollections.get(bookId)?.has(colId)
+    const recId = androidCompositeRecordId('book_collection_cross_ref', [bookId, colId])
+    await mutate(profile, 'book_collection_cross_ref', recId, { book_id: bookId, collection_id: colId, created_at: ms() }, !!isAssigned, !session)
+    broadcastSyncRequired(profile)
+    await refreshLocal(profile)
+    if (session) void synchronize(session, true)
   }
 
   function applyComfort(next: ReaderComfort) {
@@ -611,18 +879,31 @@ async function sha256Hex(file: Blob): Promise<string> {
         setNotice('Đã thêm tài liệu vào trình duyệt này. Đăng nhập để tự động sao lưu lên Cloud.')
       }
     } catch {
-      if (profileRef.current === profile) setNotice('Không lưu được tệp. Kiểm tra dung lượng trình duyệt rồi thử lại.')
+      if (profileRef.current === profile) setNotice(lang === 'vi'
+        ? 'Không lưu được tệp. Bộ nhớ trình duyệt có thể đang bị gián đoạn hoặc không đủ dung lượng.'
+        : 'Could not save the file. Browser storage may be temporarily unavailable or out of space.')
     }
   }
 
   async function openBook(book: Book, initialOverride?: string): Promise<boolean> {
+    const requestId = ++openRequestId.current
     const targetProfile = profile
     if (progressTimer.current) clearTimeout(progressTimer.current)
-    setReaderError(''); setReaderLoading(true); setLocation(null); setSelection(null)
+    setReaderError(''); setReaderLoading(true); setLocation(null); setSelection(null); setStealthProgressRequest(null); setControls(null)
     try {
-      const [local, offlineCopy] = await Promise.all([getFile(profile, book.id), getOfflineBook(offlineProfileFor(book, profile), book.id)])
+      const [localResult, offlineResult] = await Promise.allSettled([
+        getFile(profile, book.id),
+        getOfflineBook(offlineProfileFor(book, profile), book.id),
+      ])
+      const local = localResult.status === 'fulfilled' ? localResult.value : undefined
+      const offlineCopy = offlineResult.status === 'fulfilled' ? offlineResult.value : undefined
+      if (!local && !offlineCopy && (book.source === 'local' || book.fileUrl?.startsWith('nocap-private:')) && localResult.status === 'rejected') {
+        throw new Error(lang === 'vi'
+          ? 'Bộ nhớ trình duyệt vừa bị đóng. Hãy tải lại trang rồi mở tài liệu riêng này.'
+          : 'Browser storage was closed. Reload the page, then open this private document again.')
+      }
       const bytes = local ? await local.data.arrayBuffer() : offlineCopy ? await offlineCopy.data.arrayBuffer() : await loadBookBytes(book, session?.token)
-      if (profileRef.current !== targetProfile) return false
+      if (profileRef.current !== targetProfile || openRequestId.current !== requestId) return false
       if (!bytes.byteLength) throw new Error('Tệp sách không có nội dung.')
       const savedComfort = comfortFromRecord(records.find(record => record.kind === 'per_book_preferences' && !record.deleted && record.payload.book_id === book.id), readerWidth)
       if (savedComfort) applyComfort(savedComfort)
@@ -635,10 +916,10 @@ async function sha256Hex(file: Blob): Promise<string> {
       setReader({ book, bytes, initial: initialLoc })
       return true
     } catch (error) {
-      if (profileRef.current === targetProfile) setReaderError(readableError(error))
+      if (profileRef.current === targetProfile && openRequestId.current === requestId) setReaderError(readableError(error))
       return false
     }
-    finally { setReaderLoading(false) }
+    finally { if (openRequestId.current === requestId) setReaderLoading(false) }
   }
 
   async function toggleOffline(book: Book) {
@@ -682,7 +963,28 @@ async function sha256Hex(file: Blob): Promise<string> {
     }, 1500)
   }, [refreshLocal, synchronize])
 
+  const onStealthProgressChange = useCallback((position: StealthPosition) => {
+    const next: ReaderLocation = {
+      locatorJson: JSON.stringify({ type: 'STEALTH', version: 1, progression: position.progression, href: position.sourceHref }),
+      progression: position.progression,
+      chapterTitle: locationRef.current?.chapterTitle || '',
+    }
+    onLocation(next)
+  }, [onLocation])
+
+  const closeStealthReader = useCallback((position?: StealthPosition) => {
+    setStealthActive(false)
+    if (position) {
+      setStealthProgressRequest(previous => ({
+        progression: Math.min(1, Math.max(0, position.progression)),
+        requestId: (previous?.requestId || 0) + 1,
+        href: position.sourceHref,
+      }))
+    }
+  }, [])
+
   function closeReader() {
+    openRequestId.current++
     if (progressTimer.current) { clearTimeout(progressTimer.current); progressTimer.current = null }
     const loc = locationRef.current || location
     if (reader && loc) {
@@ -695,8 +997,9 @@ async function sha256Hex(file: Blob): Promise<string> {
       })
     }
     if (reader && !loc) void completeReadingSession(reader.book, 0)
-    setReader(null); readerRef.current = null; locationRef.current = null; setSelection(null); setStealthActive(false)
+    setReader(null); readerRef.current = null; locationRef.current = null; setSelection(null); setStealthActive(false); setStealthProgressRequest(null); setControls(null)
   }
+  closeReaderRef.current = closeReader
 
   async function toggleFavorite(book: Book) {
     const value = !favorites.has(book.id)
@@ -848,6 +1151,7 @@ async function sha256Hex(file: Blob): Promise<string> {
     if (book.source === 'local') {
       await removeLocalDocument(profile, book.id)
     } else if (book.source === 'cloud') {
+      await removeFile(profile, book.id)
       await removeOfflineBook(offlineProfileFor(book, profile), book.id)
       await mutate(profile, 'catalog_books', androidRecordId('catalog_books', book.id), {}, true)
       if (session && online) void synchronize(session)
@@ -907,12 +1211,12 @@ async function sha256Hex(file: Blob): Promise<string> {
           </button>
           <span className={`swiss-status-dot ${online ? '' : 'offline'}`}>{online ? curT.header.online : curT.header.offline}</span>
           {session ? (
-            <button className="swiss-pill-btn" onClick={() => void synchronize(session)} disabled={syncing}>
-              <RotateCw size={13} className={syncing ? 'spin' : ''} /> {syncing ? curT.header.syncing : curT.header.sync}
+            <button className="swiss-pill-btn" onClick={() => void synchronize(session)} disabled={syncing} aria-label={syncing ? curT.header.syncing : curT.header.sync} title={syncing ? curT.header.syncing : curT.header.sync}>
+              <RotateCw size={13} className={syncing ? 'spin' : ''} /> <span>{syncing ? curT.header.syncing : curT.header.sync}</span>
             </button>
           ) : (
-            <button className="swiss-pill-btn" onClick={() => setAuthOpen(true)}>
-              <LogIn size={13} /> {curT.header.login}
+            <button className="swiss-pill-btn" onClick={() => setAuthOpen(true)} aria-label={curT.header.login} title={curT.header.login}>
+              <LogIn size={13} /> <span>{curT.header.login}</span>
             </button>
           )}
           <button className="profile-button" onClick={() => session ? setPage('account') : setAuthOpen(true)} aria-label="Tài khoản">
@@ -946,6 +1250,14 @@ async function sha256Hex(file: Blob): Promise<string> {
             </button>
             <button className="pill-btn invert-pill" onClick={() => fileInput.current?.click()}>
               <Plus size={16} /> {curT.banners.library.addDoc}
+            </button>
+            <button
+              className="pill-btn"
+              style={{ background: 'rgba(212, 175, 55, 0.12)', border: '1px solid rgba(212, 175, 55, 0.35)', color: '#d4af37' }}
+              onClick={() => window.dispatchEvent(new CustomEvent('replay-nocap-intro'))}
+              title={lang === 'vi' ? 'Xem lại hiệu ứng 3D lật sách vào NoCap' : 'Replay 3D Book Portal Animation'}
+            >
+              <Sparkles size={16} /> {lang === 'vi' ? 'Hiệu ứng 3D' : '3D Portal'}
             </button>
           </div>
           <div className="editorial-pills-row" style={{ justifyContent: 'center' }}>
@@ -1077,6 +1389,13 @@ async function sha256Hex(file: Blob): Promise<string> {
       </>}
 
       <div className="content">
+        <input type="file" ref={restoreInputRef} accept=".json" onChange={e => { const f = e.target.files?.[0]; if (f) void handleRestoreBackup(f); e.target.value = '' }} style={{ display: 'none' }} />
+        {conflicts.length > 0 && (
+          <div className="conflict-banner">
+            <span>⚠️ {lang === 'vi' ? `Phát hiện ${conflicts.length} xung đột dữ liệu giữa máy này và Cloud.` : `Detected ${conflicts.length} sync conflicts.`}</span>
+            <button onClick={() => setConflictModalOpen(true)}>{lang === 'vi' ? 'Xem & Giải quyết' : 'Review & Resolve'}</button>
+          </div>
+        )}
         {notice && <div className="notice" role="status"><span>{notice}</span><button onClick={() => setNotice('')} aria-label="Đóng thông báo"><X size={17} /></button></div>}
         {page === 'home' && <>
           <SectionHeader title={lang === 'vi' ? 'Đọc tiếp gần đây' : 'Continue Reading'} action={curT.showcase.viewAll} onAction={() => setPage('library')} />
@@ -1092,8 +1411,15 @@ async function sha256Hex(file: Blob): Promise<string> {
               <h2>{page === 'catalog' ? curT.banners.catalog.title : curT.banners.library.title}</h2>
               <p>{page === 'catalog' ? curT.banners.catalog.desc : curT.banners.library.desc}</p>
             </div>
-            <div className="banner-action">
+            <div className="banner-action" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               <button className="light-button" onClick={() => fileInput.current?.click()}><Plus size={16} /> {curT.banners.catalog.addDoc}</button>
+              {page === 'library' && (
+                <>
+                  <button className="light-button" onClick={() => setTagsCollectionsOpen(true)}><Tag size={15} /> {curT.accountPage.manageTagsCollections}</button>
+                  <button className="light-button" onClick={() => void handleExportBackup()}><FileDown size={15} /> {curT.accountPage.exportBackup}</button>
+                  <button className="light-button" onClick={() => restoreInputRef.current?.click()}><Upload size={15} /> {curT.accountPage.restoreBackup}</button>
+                </>
+              )}
             </div>
           </div>
           {page === 'library' && (
@@ -1104,6 +1430,30 @@ async function sha256Hex(file: Blob): Promise<string> {
               <button className={`shelf-chip ${shelfFilter === 'completed' ? 'active' : ''}`} onClick={() => setShelfFilter('completed')}><CheckCircle2 size={14} /> {curT.libraryTabs.completed}</button>
               <button className={`shelf-chip ${shelfFilter === 'offline' ? 'active' : ''}`} onClick={() => setShelfFilter('offline')}><Download size={14} /> {curT.libraryTabs.offline} ({offlineIds.size})</button>
               <button className={`shelf-chip ${shelfFilter === 'local' ? 'active' : ''}`} onClick={() => setShelfFilter('local')}><Layers size={14} /> {curT.libraryTabs.local}</button>
+            </div>
+          )}
+          {page === 'library' && (tags.length > 0 || collections.length > 0) && (
+            <div className="tag-chip-row" style={{ marginBottom: '14px' }}>
+              {tags.map(tag => (
+                <button
+                  key={tag.id}
+                  className={`tag-badge ${organizationFilter === `tag:${tag.id}` ? 'active' : ''}`}
+                  onClick={() => setOrganizationFilter(prev => prev === `tag:${tag.id}` ? 'all' : `tag:${tag.id}`)}
+                  style={{ cursor: 'pointer', border: organizationFilter === `tag:${tag.id}` ? '1px solid #167e70' : '1px solid #e2e8f0', background: organizationFilter === `tag:${tag.id}` ? '#e6f4f1' : '#f8fafc' }}
+                >
+                  <Tag size={11} /> {tag.name}
+                </button>
+              ))}
+              {collections.map(col => (
+                <button
+                  key={col.id}
+                  className={`tag-badge collection ${organizationFilter === `collection:${col.id}` ? 'active' : ''}`}
+                  onClick={() => setOrganizationFilter(prev => prev === `collection:${col.id}` ? 'all' : `collection:${col.id}`)}
+                  style={{ cursor: 'pointer', border: organizationFilter === `collection:${col.id}` ? '1px solid #4338ca' : '1px solid #e0e7ff', background: organizationFilter === `collection:${col.id}` ? '#e0e7ff' : '#f5f3ff' }}
+                >
+                  <FolderPlus size={11} /> {col.name}
+                </button>
+              ))}
             </div>
           )}
           <div className="filter-bar"><label className="search-field"><Search size={18} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder={curT.filters.searchPlaceholder} aria-label="Tìm sách" /></label><select value={category} onChange={event => setCategory(event.target.value)} aria-label="Lọc thể loại"><option value="all">{curT.filters.allCategories}</option>{categories.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><select value={sortOrder} onChange={e => setSortOrder(e.target.value as 'recent' | 'title' | 'progress')} aria-label="Sắp xếp sách"><option value="recent">{curT.filters.recent}</option><option value="title">{curT.filters.title}</option><option value="progress">{curT.filters.progress}</option></select>{page === 'library' && (tags.length > 0 || collections.length > 0) && <select value={organizationFilter} onChange={event => setOrganizationFilter(event.target.value)} aria-label="Lọc theo thẻ hoặc bộ sưu tập"><option value="all">{curT.filters.allTagsAndCollections}</option>{tags.length > 0 && <optgroup label={curT.filters.tagsGroup}>{tags.map(tag => <option key={`tag:${tag.id}`} value={`tag:${tag.id}`}>{tag.name}</option>)}</optgroup>}{collections.length > 0 && <optgroup label={curT.filters.collectionsGroup}>{collections.map(collection => <option key={`collection:${collection.id}`} value={`collection:${collection.id}`}>{collection.name}</option>)}</optgroup>}</select>}<span>{curT.filters.docCount(filteredBooks.length)}</span></div>
@@ -1154,14 +1504,130 @@ async function sha256Hex(file: Blob): Promise<string> {
           </div>
         </>}
 
-        {page === 'account' && <><div className="inner-page-banner">
+        {page === 'account' && <>
+          <div className="inner-page-banner">
             <div className="banner-text">
               <div className="banner-eyebrow">{curT.banners.account.eyebrow}</div>
               <h2>{session ? curT.banners.account.titleUser : curT.banners.account.titleGuest}</h2>
               <p>{session ? curT.banners.account.descUser : curT.banners.account.descGuest}</p>
             </div>
             {!session && <div className="banner-action"><button className="light-button" onClick={() => setAuthOpen(true)}>{curT.banners.account.loginNow}</button></div>}
-          </div><div className="settings-grid"><section className="settings-card"><h2>{curT.accountPage.accountHeading}</h2>{session ? <><p className="account-email">{session.user.displayName || session.user.email}</p><p className="muted">{session.user.email}</p>{!session.user.emailVerified && <p className="warning-text">{curT.accountPage.unverifiedWarning}</p>}<p className="muted">{curT.accountPage.currentPlan} <strong>{entitlement?.plan || 'FREE'}</strong>{entitlement?.plan === 'PRO' && entitlement.expiresAt ? ` · ${curT.accountPage.validUntil(new Date(entitlement.expiresAt).toLocaleDateString(lang === 'vi' ? 'vi-VN' : 'en-US'))}` : ''}</p><button className="secondary" onClick={() => void signOut()}><LogOut size={17} /> {curT.accountPage.logout}</button></> : <><p className="muted">{curT.accountPage.loginPrompt}</p><button className="primary" onClick={() => setAuthOpen(true)}>{curT.accountPage.loginRegister}</button></>}</section><section className="settings-card"><h2>{curT.accountPage.autoSyncHeading}</h2><p>{online ? curT.accountPage.connectedCloud : curT.accountPage.offline}</p><p className="muted">{session ? (pendingCount ? curT.accountPage.pendingSync(pendingCount) : curT.accountPage.syncInfo) : curT.accountPage.guestSyncInfo}</p>{session && <button className="secondary" onClick={() => void synchronize(session)} disabled={syncing}><RotateCw size={17} className={syncing ? 'spin' : ''} /> {syncing ? curT.accountPage.syncing : curT.accountPage.syncNow}</button>}</section><section className="settings-card"><h2>{curT.accountPage.comfortHeading}</h2><label className="range-label">{curT.accountPage.fontSize} <strong>{fontSize}%</strong><input type="range" min="80" max="170" step="10" value={fontSize} onChange={event => updateComfort({ fontSize: Number(event.target.value) })} /></label><div className="setting-group" style={{ margin: '14px 0 10px' }}><span className="setting-label">{curT.accountPage.typeface}</span><div className="toggle-row"><button className={`choice-chip ${fontFamily === 'serif' ? 'active' : ''}`} onClick={() => updateComfort({ fontFamily: 'serif' })}>{curT.accountPage.serifChoice}</button><button className={`choice-chip ${fontFamily === 'sans' ? 'active' : ''}`} onClick={() => updateComfort({ fontFamily: 'sans' })}>{curT.accountPage.sansChoice}</button><button className={`choice-chip ${fontFamily === 'mono' ? 'active' : ''}`} onClick={() => updateComfort({ fontFamily: 'mono' })}>{curT.accountPage.monoChoice}</button></div></div><div className="setting-group" style={{ margin: '14px 0 10px' }}><span className="setting-label">{curT.accountPage.align}</span><div className="toggle-row"><button className={`choice-chip ${textAlignment === 'left' ? 'active' : ''}`} onClick={() => updateComfort({ textAlignment: 'left' })}><AlignLeft size={14} /> {curT.accountPage.alignLeft}</button><button className={`choice-chip ${textAlignment === 'justify' ? 'active' : ''}`} onClick={() => updateComfort({ textAlignment: 'justify' })}><AlignJustify size={14} /> {curT.accountPage.alignJustify}</button></div></div><div className="setting-group" style={{ margin: '14px 0 10px' }}><span className="setting-label">{curT.accountPage.theme}</span><div className="theme-row">{(['paper', 'sepia', 'night'] as const).map(value => <button key={value} className={`theme-chip ${value} ${theme === value ? 'chosen' : ''}`} onClick={() => updateComfort({ theme: value })}>{value === 'paper' ? curT.accountPage.themePaper : value === 'sepia' ? curT.accountPage.themeSepia : curT.accountPage.themeNight}</button>)}</div></div></section></div></>}
+          </div>
+          <div className="settings-grid">
+            <section className="settings-card">
+              <h2>{curT.accountPage.accountHeading}</h2>
+              {session ? (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <p className="account-email" style={{ margin: 0 }}>{session.user.displayName || session.user.email}</p>
+                    <button
+                      className="icon-button"
+                      title={curT.accountPage.editDisplayName}
+                      onClick={() => { setEditNameInput(session.user.displayName || ''); setEditNameOpen(true) }}
+                    >
+                      <Edit3 size={15} />
+                    </button>
+                  </div>
+                  <p className="muted">{session.user.email}</p>
+                  {!session.user.emailVerified && <p className="warning-text">{curT.accountPage.unverifiedWarning}</p>}
+                  <p className="muted">
+                    {curT.accountPage.currentPlan} <strong>{entitlement?.plan || 'FREE'}</strong>
+                    {entitlement?.plan === 'PRO' && entitlement.expiresAt ? ` · ${curT.accountPage.validUntil(new Date(entitlement.expiresAt).toLocaleDateString(lang === 'vi' ? 'vi-VN' : 'en-US'))}` : ''}
+                  </p>
+                  <button className="secondary" onClick={() => void signOut()}><LogOut size={17} /> {curT.accountPage.logout}</button>
+                </>
+              ) : (
+                <>
+                  <p className="muted">{curT.accountPage.loginPrompt}</p>
+                  <button className="primary" onClick={() => setAuthOpen(true)}>{curT.accountPage.loginRegister}</button>
+                </>
+              )}
+            </section>
+
+            {session && (
+              <section className="settings-card">
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <h2 style={{ margin: 0 }}>{curT.accountPage.cloudBackupsHeading}</h2>
+                  {cloudBackups.length > 0 && (
+                    <button className="icon-button" title={curT.accountPage.deleteAllBackups} onClick={() => void handleDeleteAllCloudBackups()}>
+                      <Trash2 size={16} />
+                    </button>
+                  )}
+                </div>
+                <p className="muted" style={{ fontSize: '12px', margin: '4px 0 12px' }}>{curT.accountPage.cloudBackupsDesc}</p>
+                {loadingBackups ? (
+                  <p className="muted">Đang tải danh sách sao lưu…</p>
+                ) : cloudBackups.length ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto' }}>
+                    {cloudBackups.map(b => (
+                      <div key={b.id} className="backup-item">
+                        <div className="backup-info">
+                          <span className="backup-device">📱 {b.deviceName || 'Thiết bị'} · {(b.size / (1024 * 1024)).toFixed(1)} MB</span>
+                          <span className="backup-date">{new Date(b.updatedAt).toLocaleString(lang === 'vi' ? 'vi-VN' : 'en-US')}</span>
+                        </div>
+                        <button className="icon-button" onClick={() => void handleDeleteCloudBackup(b.id)} title="Xóa sao lưu này">
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="muted">{curT.accountPage.noCloudBackups}</p>
+                )}
+              </section>
+            )}
+
+            <section className="settings-card">
+              <h2>{curT.accountPage.autoSyncHeading}</h2>
+              <p>{online ? curT.accountPage.connectedCloud : curT.accountPage.offline}</p>
+              <p className="muted">{session ? (pendingCount ? curT.accountPage.pendingSync(pendingCount) : curT.accountPage.syncInfo) : curT.accountPage.guestSyncInfo}</p>
+              {session && (
+                <button className="secondary" onClick={() => void synchronize(session)} disabled={syncing}>
+                  <RotateCw size={17} className={syncing ? 'spin' : ''} /> {syncing ? curT.accountPage.syncing : curT.accountPage.syncNow}
+                </button>
+              )}
+            </section>
+
+            <section className="settings-card">
+              <h2>{curT.accountPage.backupRestoreHeading}</h2>
+              <p className="muted" style={{ fontSize: '12px', margin: '4px 0 14px' }}>
+                Xuất toàn bộ sách, tiến độ và ghi chú thành tệp sao lưu JSON để lưu trữ ngoại tuyến hoặc chuyển sang trình duyệt khác.
+              </p>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <button className="secondary" onClick={() => void handleExportBackup()}>
+                  <FileDown size={15} /> {curT.accountPage.exportBackup}
+                </button>
+                <button className="secondary" onClick={() => restoreInputRef.current?.click()}>
+                  <Upload size={15} /> {curT.accountPage.restoreBackup}
+                </button>
+              </div>
+            </section>
+
+            <section className="settings-card">
+              <h2>{curT.accountPage.comfortHeading}</h2>
+              <label className="range-label">{curT.accountPage.fontSize} <strong>{fontSize}%</strong><input type="range" min="80" max="170" step="10" value={fontSize} onChange={event => updateComfort({ fontSize: Number(event.target.value) })} /></label>
+              <div className="setting-group" style={{ margin: '14px 0 10px' }}><span className="setting-label">{curT.accountPage.typeface}</span><div className="toggle-row"><button className={`choice-chip ${fontFamily === 'serif' ? 'active' : ''}`} onClick={() => updateComfort({ fontFamily: 'serif' })}>{curT.accountPage.serifChoice}</button><button className={`choice-chip ${fontFamily === 'sans' ? 'active' : ''}`} onClick={() => updateComfort({ fontFamily: 'sans' })}>{curT.accountPage.sansChoice}</button><button className={`choice-chip ${fontFamily === 'mono' ? 'active' : ''}`} onClick={() => updateComfort({ fontFamily: 'mono' })}>{curT.accountPage.monoChoice}</button></div></div>
+              <div className="setting-group" style={{ margin: '14px 0 10px' }}><span className="setting-label">{curT.accountPage.align}</span><div className="toggle-row"><button className={`choice-chip ${textAlignment === 'left' ? 'active' : ''}`} onClick={() => updateComfort({ textAlignment: 'left' })}><AlignLeft size={14} /> {curT.accountPage.alignLeft}</button><button className={`choice-chip ${textAlignment === 'justify' ? 'active' : ''}`} onClick={() => updateComfort({ textAlignment: 'justify' })}><AlignJustify size={14} /> {curT.accountPage.alignJustify}</button></div></div>
+              <div className="setting-group" style={{ margin: '14px 0 10px' }}><span className="setting-label">{curT.accountPage.theme}</span><div className="theme-row">{(['paper', 'sepia', 'night'] as const).map(value => <button key={value} className={`theme-chip ${value} ${theme === value ? 'chosen' : ''}`} onClick={() => updateComfort({ theme: value })}>{value === 'paper' ? curT.accountPage.themePaper : value === 'sepia' ? curT.accountPage.themeSepia : curT.accountPage.themeNight}</button>)}</div></div>
+            </section>
+
+            {session && (
+              <section className="settings-card danger-zone-card">
+                <h2>{curT.accountPage.dangerZoneHeading}</h2>
+                <p className="muted" style={{ fontSize: '12px', margin: '6px 0 14px' }}>
+                  {curT.accountPage.deleteAccountWarning}
+                </p>
+                <button
+                  className="secondary"
+                  style={{ color: '#b91c1c', borderColor: '#fca5a5' }}
+                  onClick={() => setDeleteAccountOpen(true)}
+                >
+                  <ShieldAlert size={16} /> {curT.accountPage.deleteAccountBtn}
+                </button>
+              </section>
+            )}
+          </div>
+        </>}
       </div>
 
       <footer className="swiss-footer">
@@ -1209,35 +1675,30 @@ async function sha256Hex(file: Blob): Promise<string> {
         </div>
       </footer>
 
-      <input ref={fileInput} type="file" accept=".epub,.pdf,.txt,.md,.markdown,.html,.htm,.docx,.jpg,.jpeg,.png,.webp" hidden onChange={event => { const file = event.target.files?.[0]; if (file) void importFile(file); event.target.value = '' }} />
+      <input ref={fileInput} type="file" accept=".epub,.pdf,.cbz,.txt,.md,.markdown,.html,.htm,.docx,.jpg,.jpeg,.png,.webp" hidden onChange={event => { const file = event.target.files?.[0]; if (file) void importFile(file); event.target.value = '' }} />
+      <input ref={restoreInputRef} type="file" accept=".json,application/json" hidden onChange={event => { const file = event.target.files?.[0]; if (file) void handleRestoreBackup(file); event.target.value = '' }} />
     </main>
 
-    {(readerLoading || readerError) && <div className="overlay"><div className="loading-card"><button className="icon-button close-floating" onClick={() => { setReaderLoading(false); setReaderError('') }} aria-label="Đóng"><X size={20} /></button>{readerLoading ? <><div className="loader" /><h2>Đang mở sách…</h2><p>Đang chuẩn bị nội dung để đọc.</p></> : <><FileText size={32} /><h2>Chưa mở được tài liệu</h2><p>{readerError}</p><button className="primary" onClick={() => setReaderError('')}>Thử lại sau</button></>}</div></div>}
+    {(readerLoading || readerError) && <div className="overlay"><div className="loading-card"><button className="icon-button close-floating" onClick={() => { openRequestId.current++; setReaderLoading(false); setReaderError('') }} aria-label={lang === 'vi' ? 'Đóng' : 'Close'}><X size={20} /></button>{readerLoading ? <><div className="loader" /><h2>{lang === 'vi' ? 'Đang mở sách…' : 'Opening book…'}</h2><p>{lang === 'vi' ? 'Đang chuẩn bị nội dung để đọc.' : 'Preparing the document for reading.'}</p></> : <><FileText size={32} /><h2>{lang === 'vi' ? 'Chưa mở được tài liệu' : 'Unable to open document'}</h2><p>{readerError}</p><button className="primary" onClick={() => setReaderError('')}>{lang === 'vi' ? 'Đóng' : 'Close'}</button></>}</div></div>}
 
-    {reader && <div className={`reader-shell ${theme}`}><div className="reader-topbar"><button className="reader-back reader-home-btn" onClick={() => { closeReader(); setPage('home'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} aria-label={lang === 'vi' ? 'Trở về Trang chủ' : 'Home'} title={lang === 'vi' ? 'Trở về Trang chủ (Esc)' : 'Home (Esc)'}><Home size={18} /> <span>{lang === 'vi' ? 'Trang chủ' : 'Home'}</span></button><button className="reader-back" onClick={closeReader} aria-label="Quay lại tủ sách"><ArrowLeft size={19} /> <span>{lang === 'vi' ? 'Tủ sách' : 'Library'}</span></button><div className="reader-title"><strong>{reader.book.title}</strong><small>{bookLabel(reader.book)}</small></div><div className="reader-actions"><button className="stealth-topbar-pill" title={curT.stealth.btnTitle} aria-label={curT.stealth.btnLabel} onClick={() => setStealthActive(true)}><Briefcase size={15} /> <span>{lang === 'vi' ? 'Đọc ẩn (F2)' : 'Stealth (F2)'}</span></button><button className="icon-button" title="Mục lục sách" aria-label="Mục lục" onClick={() => setTocOpen(true)}><List size={20} /></button><button className="icon-button" title="Tùy chỉnh đọc & font" aria-label="Tùy chỉnh" onClick={() => setSettingsOpen(true)}><Type size={20} /></button><button className={`icon-button ${currentBookmarked ? 'active' : ''}`} title={currentBookmarked ? 'Bỏ dấu trang' : 'Thêm dấu trang'} aria-label={currentBookmarked ? 'Bỏ dấu trang' : 'Đánh dấu vị trí'} aria-pressed={currentBookmarked} onClick={() => void toggleBookmark()}><Bookmark size={20} fill={currentBookmarked ? 'currentColor' : 'none'} /></button><button className="icon-button" title="Ghi chú" aria-label="Thêm ghi chú" onClick={() => { setNoteText(''); setNoteOpen(true) }}><Highlighter size={20} /></button></div></div><div className="reader-body"><ReaderPane book={reader.book} bytes={reader.bytes} initial={reader.initial} fontSize={fontSize} fontFamily={fontFamily} lineHeight={lineHeight} textAlignment={textAlignment} readerWidth={readerWidth} theme={theme} onLocation={onLocation} onSelection={(text, locator) => setSelection({ text, locator })} onControls={setControls} onToc={setToc} navigateTarget={navigateTarget} annotations={readerAnnotations} /></div><div className="reader-footer"><button onClick={() => controls?.previous()} disabled={!controls} aria-label="Trang trước"><ChevronLeft size={21} /> Trước</button><span>{Math.round((location?.progression || 0) * 100)}% · {location?.chapterTitle || 'Đang đọc'}</span><button onClick={() => controls?.next()} disabled={!controls} aria-label="Trang sau">Sau <ChevronRight size={21} /></button></div></div>}
+    {reader && <div className={`reader-shell ${theme}`}><div className="reader-topbar"><button className="reader-back reader-home-btn" onClick={() => { closeReader(); setPage('home'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} aria-label={lang === 'vi' ? 'Trở về Trang chủ' : 'Home'} title={lang === 'vi' ? 'Trở về Trang chủ (Esc)' : 'Home (Esc)'}><Home size={18} /> <span>{lang === 'vi' ? 'Trang chủ' : 'Home'}</span></button><button className="reader-back" onClick={closeReader} aria-label={lang === 'vi' ? 'Quay lại tủ sách' : 'Back to library'}><ArrowLeft size={19} /> <span>{lang === 'vi' ? 'Tủ sách' : 'Library'}</span></button><div className="reader-title"><strong>{reader.book.title}</strong><small>{bookLabel(reader.book, lang)}</small></div><div className="reader-actions"><button className="stealth-topbar-pill" title={curT.stealth.btnTitle} aria-label={curT.stealth.btnLabel} onClick={() => setStealthActive(true)}><Briefcase size={15} /> <span>{lang === 'vi' ? 'Đọc ẩn (F2)' : 'Stealth (F2)'}</span></button><button className="icon-button" title={lang === 'vi' ? 'Mục lục sách' : 'Table of contents'} aria-label={lang === 'vi' ? 'Mục lục' : 'Table of contents'} onClick={() => setTocOpen(true)}><List size={20} /></button><button className="icon-button" title={lang === 'vi' ? 'Tùy chỉnh đọc & font' : 'Reading settings'} aria-label={lang === 'vi' ? 'Tùy chỉnh' : 'Settings'} onClick={() => setSettingsOpen(true)}><Type size={20} /></button><button className={`icon-button ${currentBookmarked ? 'active' : ''}`} title={currentBookmarked ? (lang === 'vi' ? 'Bỏ dấu trang' : 'Remove bookmark') : (lang === 'vi' ? 'Thêm dấu trang' : 'Add bookmark')} aria-label={currentBookmarked ? (lang === 'vi' ? 'Bỏ dấu trang' : 'Remove bookmark') : (lang === 'vi' ? 'Đánh dấu vị trí' : 'Bookmark position')} aria-pressed={currentBookmarked} onClick={() => void toggleBookmark()}><Bookmark size={20} fill={currentBookmarked ? 'currentColor' : 'none'} /></button><button className="icon-button" title={lang === 'vi' ? 'Ghi chú' : 'Note'} aria-label={lang === 'vi' ? 'Thêm ghi chú' : 'Add note'} onClick={() => { setNoteText(''); setNoteOpen(true) }}><Highlighter size={20} /></button></div></div><div className="reader-body"><Suspense fallback={<div className="reader-error">{lang === 'vi' ? 'Đang chuẩn bị trình đọc…' : 'Preparing reader…'}</div>}><ReaderPane book={reader.book} bytes={reader.bytes} initial={reader.initial} fontSize={fontSize} fontFamily={fontFamily} lineHeight={lineHeight} textAlignment={textAlignment} readerWidth={readerWidth} theme={theme} onLocation={onLocation} onSelection={(text, locator) => setSelection({ text, locator })} onControls={setControls} onToc={setToc} navigateTarget={navigateTarget} navigateProgression={stealthProgressRequest} annotations={readerAnnotations} /></Suspense></div><div className={`reader-footer ${controls ? 'has-controls' : 'progress-only'}`}>{controls && <button onClick={() => controls.previous()} aria-label={lang === 'vi' ? 'Trang trước' : 'Previous page'}><ChevronLeft size={21} /> {lang === 'vi' ? 'Trước' : 'Previous'}</button>}<span>{Math.round((location?.progression || 0) * 100)}% · {location?.chapterTitle || (lang === 'vi' ? 'Đang đọc' : 'Reading')}</span>{controls && <button onClick={() => controls.next()} aria-label={lang === 'vi' ? 'Trang sau' : 'Next page'}>{lang === 'vi' ? 'Sau' : 'Next'} <ChevronRight size={21} /></button>}</div></div>}
 
     {stealthActive && reader && (
-      <StealthReader
+      <Suspense fallback={null}><StealthReader
         book={reader.book}
         bytes={reader.bytes}
         lang={lang}
         initialProgression={location?.progression || 0}
-        onClose={() => setStealthActive(false)}
+        initialLocator={location?.locatorJson}
+        onClose={closeStealthReader}
         onExitHome={() => {
           setStealthActive(false)
           closeReader()
           setPage('home')
           window.scrollTo({ top: 0, behavior: 'smooth' })
         }}
-        onProgressChange={pct => {
-          const nextLoc: ReaderLocation = {
-            locatorJson: locationRef.current?.locatorJson || '',
-            progression: pct,
-            chapterTitle: locationRef.current?.chapterTitle || '',
-          }
-          onLocation(nextLoc)
-        }}
-      />
+        onProgressChange={onStealthProgressChange}
+      /></Suspense>
     )}
 
     {tocOpen && reader && <div className="modal-shade" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setTocOpen(false) }}><aside className="toc-drawer" role="dialog" aria-modal="true" aria-label="Mục lục sách"><div className="toc-header"><div><p className="eyebrow">MỤC LỤC SÁCH</p><h2>{reader.book.title}</h2></div><button className="icon-button" onClick={() => setTocOpen(false)} aria-label="Đóng mục lục"><X size={19} /></button></div><div className="toc-list">{toc.length ? <TocTree items={toc} onSelect={target => { setNavigateTarget(target); setTocOpen(false) }} /> : <p className="muted" style={{ padding: '20px', textAlign: 'center', fontSize: '13px' }}>Tài liệu không có cấu trúc mục lục sẵn.</p>}</div></aside></div>}
@@ -1291,8 +1752,115 @@ async function sha256Hex(file: Blob): Promise<string> {
       </div>
     </div>}</div></div>}
 
-    {authOpen && <AuthDialog onClose={() => setAuthOpen(false)} onSuccess={value => void authenticated(value)} />}
-    {selectedBook && <BookDetailsModal book={selectedBook} lang={lang} categories={categories} progress={Number(progressFor(records, selectedBook.id)?.payload.progression || 0)} isFavorite={favorites.has(selectedBook.id)} isOffline={selectedBook.source === 'local' || offlineIds.has(selectedBook.id)} offlineBusy={offlineBusy === selectedBook.id} onClose={() => setSelectedBook(null)} onRead={() => { const b = selectedBook; setSelectedBook(null); void openBook(b) }} onStealthRead={() => { const b = selectedBook; setSelectedBook(null); void openBook(b).then(ok => { if (ok) setStealthActive(true) }) }} onFavorite={selectedBook.source === 'local' ? undefined : () => void toggleFavorite(selectedBook)} onOffline={selectedBook.source !== 'local' && selectedBook.fileUrl ? () => void toggleOffline(selectedBook) : undefined} onDelete={selectedBook.source === 'local' || selectedBook.source === 'cloud' ? () => { const b = selectedBook; setSelectedBook(null); void deleteBook(b) } : undefined} />}
+    {editNameOpen && session && <div className="modal-shade"><div className="dialog" role="dialog" aria-modal="true" aria-labelledby="edit-name-title">
+      <button className="icon-button dialog-close" onClick={() => setEditNameOpen(false)} disabled={savingName} aria-label={curT.auth.close}><X size={19} /></button>
+      <h2 id="edit-name-title">{curT.accountPage.editDisplayName}</h2>
+      <form onSubmit={event => { event.preventDefault(); void handleUpdateDisplayName() }}>
+        <label htmlFor="display-name">{lang === 'vi' ? 'Tên hiển thị' : 'Display name'}</label>
+        <input id="display-name" value={editNameInput} onChange={event => setEditNameInput(event.target.value)} maxLength={80} required autoFocus />
+        <div className="dialog-actions"><button type="button" className="secondary" onClick={() => setEditNameOpen(false)} disabled={savingName}>{curT.auth.close}</button><button className="primary" disabled={savingName || !editNameInput.trim()}>{savingName ? curT.auth.processing : curT.accountPage.saveName}</button></div>
+      </form>
+    </div></div>}
+
+    {deleteAccountOpen && session && <div className="modal-shade"><div className="dialog" role="dialog" aria-modal="true" aria-labelledby="delete-account-title">
+      <h2 id="delete-account-title">{curT.accountPage.deleteAccountBtn}</h2>
+      <p>{curT.accountPage.deleteAccountWarning}</p>
+      <div className="dialog-actions"><button className="secondary" onClick={() => setDeleteAccountOpen(false)} disabled={deleteAccountBusy}>{lang === 'vi' ? 'Hủy' : 'Cancel'}</button><button className="primary" onClick={() => void handleDeleteAccount()} disabled={deleteAccountBusy}>{deleteAccountBusy ? curT.auth.processing : curT.accountPage.deleteAccountBtn}</button></div>
+    </div></div>}
+
+    {tagsCollectionsOpen && <div className="modal-shade"><div className="dialog" role="dialog" aria-modal="true" aria-labelledby="organization-title">
+      <button className="icon-button dialog-close" onClick={() => setTagsCollectionsOpen(false)} aria-label={curT.auth.close}><X size={19} /></button>
+      <h2 id="organization-title">{curT.accountPage.manageTagsCollections}</h2>
+      <div className="toggle-row"><button className={`choice-chip ${tagTab === 'tags' ? 'active' : ''}`} onClick={() => setTagTab('tags')}>{curT.filters.tagsGroup}</button><button className={`choice-chip ${tagTab === 'collections' ? 'active' : ''}`} onClick={() => setTagTab('collections')}>{curT.filters.collectionsGroup}</button></div>
+      <form onSubmit={event => { event.preventDefault(); void (tagTab === 'tags' ? handleCreateTag() : handleCreateCollection()).catch(error => setNotice(readableError(error))) }}>
+        <label htmlFor="organization-name">{tagTab === 'tags' ? curT.filters.tagsGroup : curT.filters.collectionsGroup}</label>
+        <input id="organization-name" value={tagTab === 'tags' ? newTagName : newCollectionName} onChange={event => tagTab === 'tags' ? setNewTagName(event.target.value) : setNewCollectionName(event.target.value)} maxLength={80} required />
+        <div className="dialog-actions"><button className="primary" disabled={!(tagTab === 'tags' ? newTagName : newCollectionName).trim()}><Plus size={16} />{lang === 'vi' ? 'Thêm' : 'Add'}</button></div>
+      </form>
+      <div style={{ maxHeight: '40vh', overflow: 'auto', marginTop: '12px' }}>
+        {(tagTab === 'tags' ? tags : collections).map(item => (
+          <div key={item.id} className="backup-item">
+            {editingItemId === item.id ? (
+              <form
+                onSubmit={e => {
+                  e.preventDefault()
+                  void (tagTab === 'tags' ? handleUpdateTag(item.id, editingItemName) : handleUpdateCollection(item.id, editingItemName)).then(() => setEditingItemId(null))
+                }}
+                style={{ display: 'flex', gap: '6px', width: '100%' }}
+              >
+                <input
+                  value={editingItemName}
+                  onChange={e => setEditingItemName(e.target.value)}
+                  autoFocus
+                  style={{ flex: 1, padding: '4px 8px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                />
+                <button type="submit" className="primary" style={{ padding: '4px 8px' }}><Check size={14} /></button>
+                <button type="button" className="secondary" style={{ padding: '4px 8px' }} onClick={() => setEditingItemId(null)}><X size={14} /></button>
+              </form>
+            ) : (
+              <>
+                <span style={{ fontWeight: 500 }}>{item.name}</span>
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  <button
+                    className="icon-button"
+                    title={lang === 'vi' ? 'Đổi tên' : 'Rename'}
+                    aria-label={`${lang === 'vi' ? 'Sửa' : 'Edit'} ${item.name}`}
+                    onClick={() => { setEditingItemId(item.id); setEditingItemName(item.name) }}
+                  >
+                    <Edit3 size={15} />
+                  </button>
+                  <button
+                    className="icon-button"
+                    title={lang === 'vi' ? 'Xóa' : 'Delete'}
+                    aria-label={`${lang === 'vi' ? 'Xóa' : 'Delete'} ${item.name}`}
+                    onClick={() => {
+                      if (confirm(`${lang === 'vi' ? 'Xóa' : 'Delete'} ${item.name}?`)) {
+                        void (tagTab === 'tags' ? handleDeleteTag(item.id) : handleDeleteCollection(item.id)).catch(error => setNotice(readableError(error)))
+                      }
+                    }}
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+    </div></div>}
+
+    {conflictModalOpen && session && <div className="modal-shade"><div className="dialog" role="dialog" aria-modal="true" aria-labelledby="conflict-title">
+      <button className="icon-button dialog-close" onClick={() => setConflictModalOpen(false)} aria-label={curT.auth.close}><X size={19} /></button>
+      <h2 id="conflict-title">{lang === 'vi' ? 'Xung đột đồng bộ' : 'Sync conflicts'}</h2>
+      <p className="muted">{lang === 'vi' ? 'Chọn phiên bản muốn giữ cho mỗi mục.' : 'Choose which version to keep for each item.'}</p>
+      <div style={{ maxHeight: '55vh', overflow: 'auto' }}>{conflicts.map(item => <section key={item.key}>
+        <p>{toText(item.operation.payload.text) || toText(item.operation.payload.name) || item.operation.kind}</p>
+        <div className="dialog-actions"><button className="secondary" onClick={() => void handleResolveConflict(item.key, 'take_remote')}>{lang === 'vi' ? 'Dùng bản cloud' : 'Use cloud version'}</button><button className="primary" onClick={() => void handleResolveConflict(item.key, 'keep_local')}>{lang === 'vi' ? 'Giữ bản trên máy' : 'Keep local version'}</button></div>
+      </section>)}</div>
+    </div></div>}
+
+    {authOpen && <AuthDialog lang={lang} onClose={() => setAuthOpen(false)} onSuccess={value => void authenticated(value)} />}
+    {selectedBook && <BookDetailsModal
+      book={selectedBook}
+      lang={lang}
+      categories={categories}
+      progress={Number(progressFor(records, selectedBook.id)?.payload.progression || 0)}
+      isFavorite={favorites.has(selectedBook.id)}
+      isOffline={selectedBook.source === 'local' || offlineIds.has(selectedBook.id)}
+      offlineBusy={offlineBusy === selectedBook.id}
+      allTags={tags}
+      allCollections={collections}
+      assignedTagIds={bookTags.get(selectedBook.id) || new Set()}
+      assignedCollectionIds={bookCollections.get(selectedBook.id) || new Set()}
+      onToggleTag={tagId => void handleToggleBookTag(selectedBook.id, tagId)}
+      onToggleCollection={colId => void handleToggleBookCollection(selectedBook.id, colId)}
+      onClose={() => setSelectedBook(null)}
+      onRead={() => { const b = selectedBook; setSelectedBook(null); void openBook(b) }}
+      onStealthRead={() => { const b = selectedBook; setSelectedBook(null); void openBook(b).then(ok => { if (ok) setStealthActive(true) }) }}
+      onFavorite={selectedBook.source === 'local' ? undefined : () => void toggleFavorite(selectedBook)}
+      onOffline={selectedBook.source !== 'local' && selectedBook.fileUrl ? () => void toggleOffline(selectedBook) : undefined}
+      onDelete={selectedBook.source === 'local' || selectedBook.source === 'cloud' ? () => { const b = selectedBook; setSelectedBook(null); void deleteBook(b) } : undefined}
+    />}
   </div>
 }
 
@@ -1319,6 +1887,12 @@ function BookDetailsModal({
   isFavorite,
   isOffline,
   offlineBusy,
+  allTags = [],
+  allCollections = [],
+  assignedTagIds = new Set(),
+  assignedCollectionIds = new Set(),
+  onToggleTag,
+  onToggleCollection,
   onClose,
   onRead,
   onStealthRead,
@@ -1333,6 +1907,12 @@ function BookDetailsModal({
   isFavorite: boolean
   isOffline: boolean
   offlineBusy?: boolean
+  allTags?: { id: string; name: string }[]
+  allCollections?: { id: string; name: string }[]
+  assignedTagIds?: Set<string>
+  assignedCollectionIds?: Set<string>
+  onToggleTag?: (tagId: string) => void
+  onToggleCollection?: (colId: string) => void
   onClose: () => void
   onRead: () => void
   onStealthRead?: () => void
@@ -1373,11 +1953,7 @@ function BookDetailsModal({
                 <BookOpen size={16} /> {progressPct > 0 ? curT.bookModal.continueReading : curT.bookModal.readBook}
               </button>
               {onStealthRead && (
-                <button
-                  className="secondary stealth-modal-btn"
-                  onClick={onStealthRead}
-                  title={lang === 'vi' ? 'Đọc ngụy trang giao diện Excel / VS Code công sở (Phím F2)' : 'Stealth Read disguised as Excel / VS Code (F2)'}
-                >
+                <button className="secondary stealth-modal-btn" onClick={onStealthRead} title={lang === 'vi' ? 'Đọc ngụy trang giao diện Excel / VS Code công sở (Phím F2)' : 'Stealth Read disguised as Excel / VS Code (F2)'}>
                   <Briefcase size={16} /> {lang === 'vi' ? 'Đọc ẩn (F2)' : 'Stealth (F2)'}
                 </button>
               )}
@@ -1403,17 +1979,110 @@ function BookDetailsModal({
           <h3>{lang === 'vi' ? 'Giới thiệu' : 'Overview'}</h3>
           <p>{book.description || (lang === 'vi' ? 'Chưa có phần giới thiệu chi tiết cho tác phẩm này. Bạn có thể mở đọc sách ngay để khám phá toàn bộ nội dung.' : 'No detailed description available for this work yet. You can open and read the book right away.')}</p>
         </div>
+        {(allTags.length > 0 || allCollections.length > 0) && (
+          <div className="book-details-tags-section">
+            {allTags.length > 0 && (
+              <div className="book-details-tag-group">
+                <span className="book-details-group-label"><Tag size={12} /> {lang === 'vi' ? 'Thẻ' : 'Tags'}</span>
+                <div className="book-details-tag-chips">
+                  {allTags.map(tag => (
+                    <button
+                      key={tag.id}
+                      className={`tag-chip${assignedTagIds.has(tag.id) ? ' active' : ''}`}
+                      onClick={() => onToggleTag?.(tag.id)}
+                      title={assignedTagIds.has(tag.id) ? (lang === 'vi' ? 'Bỏ thẻ' : 'Remove tag') : (lang === 'vi' ? 'Gán thẻ' : 'Assign tag')}
+                    >
+                      {assignedTagIds.has(tag.id) && <Check size={11} />} {tag.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {allCollections.length > 0 && (
+              <div className="book-details-tag-group">
+                <span className="book-details-group-label"><Layers size={12} /> {lang === 'vi' ? 'Bộ sưu tập' : 'Collections'}</span>
+                <div className="book-details-tag-chips">
+                  {allCollections.map(col => (
+                    <button
+                      key={col.id}
+                      className={`collection-chip${assignedCollectionIds.has(col.id) ? ' active' : ''}`}
+                      onClick={() => onToggleCollection?.(col.id)}
+                      title={assignedCollectionIds.has(col.id) ? (lang === 'vi' ? 'Bỏ khỏi bộ sưu tập' : 'Remove from collection') : (lang === 'vi' ? 'Thêm vào bộ sưu tập' : 'Add to collection')}
+                    >
+                      {assignedCollectionIds.has(col.id) && <Check size={11} />} {col.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
-function AuthDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess: (session: Session) => void }) {
+function AuthDialog({ lang, onClose, onSuccess }: { lang: Lang; onClose: () => void; onSuccess: (session: Session) => void }) {
   const [mode, setMode] = useState<AuthMode>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
+  const googleBtnRef = useRef<HTMLDivElement>(null)
+  const copy = t[lang].auth
+
+  useEffect(() => {
+    if (mode !== 'login' && mode !== 'register') return
+    let cancelled = false
+    function initGoogle() {
+      if (cancelled) return
+      const g = (window as unknown as Record<string, unknown>).google as { accounts: { id: { initialize: (opts: Record<string, unknown>) => void; renderButton: (el: HTMLElement, opts: Record<string, unknown>) => void } } } | undefined
+      if (!g?.accounts?.id) return
+      g.accounts.id.initialize({
+        client_id: '847491126060-3dikoskpsf80ibrnf799tivmpe8vj2bn.apps.googleusercontent.com',
+        callback: async (resp: { credential?: string }) => {
+          if (!resp.credential) return
+          setBusy(true); setMessage('')
+          try {
+            const session = await loginWithGoogle(resp.credential)
+            onSuccess(session)
+          } catch (err) {
+            setMessage(readableError(err))
+          } finally {
+            setBusy(false)
+          }
+        },
+      })
+      if (googleBtnRef.current) {
+        g.accounts.id.renderButton(googleBtnRef.current, {
+          type: 'standard',
+          theme: 'outline',
+          size: 'large',
+          text: mode === 'register' ? 'signup_with' : 'signin_with',
+          shape: 'rectangular',
+          width: 320,
+          locale: lang === 'vi' ? 'vi' : 'en',
+        })
+      }
+    }
+    // If GIS already loaded
+    if ((window as unknown as Record<string, unknown>).google) { initGoogle(); return }
+    // Otherwise inject the script and wait
+    const existing = document.getElementById('gsi-script')
+    if (!existing) {
+      const script = document.createElement('script')
+      script.id = 'gsi-script'
+      script.src = 'https://accounts.google.com/gsi/client'
+      script.async = true
+      script.defer = true
+      script.onload = initGoogle
+      document.head.appendChild(script)
+    } else {
+      existing.addEventListener('load', initGoogle)
+    }
+    return () => { cancelled = true }
+  }, [mode, lang, onSuccess])
+
   async function submit(event: React.FormEvent) {
     event.preventDefault(); setBusy(true); setMessage('')
     try {
@@ -1423,7 +2092,37 @@ function AuthDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess: (s
     } catch (error) { setMessage(readableError(error)) }
     finally { setBusy(false) }
   }
-  return <div className="modal-shade" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}><div className="dialog auth-dialog" role="dialog" aria-modal="true" aria-labelledby="auth-title"><button className="icon-button dialog-close" onClick={onClose} aria-label="Đóng"><X size={19} /></button><div className="auth-mark"><BookOpen size={25} /></div><p className="eyebrow">NO CAP ACCOUNT</p><h2 id="auth-title">{mode === 'login' ? 'Chào mừng quay lại.' : mode === 'register' ? 'Tạo không gian của bạn.' : 'Lấy lại quyền truy cập.'}</h2><p className="muted">{mode === 'forgot' ? 'Chúng tôi sẽ gửi hướng dẫn đặt lại mật khẩu nếu email tồn tại.' : 'Đăng nhập bằng tài khoản NoCap đang dùng trên Android.'}</p><form onSubmit={event => void submit(event)}><label>Email<input type="email" autoComplete="email" required value={email} onChange={event => setEmail(event.target.value)} placeholder="email@example.com" /></label>{mode !== 'forgot' && <label>Mật khẩu<input type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} minLength={mode === 'register' ? 12 : undefined} required value={password} onChange={event => setPassword(event.target.value)} placeholder={mode === 'register' ? 'Ít nhất 12 ký tự' : 'Nhập mật khẩu'} /></label>}{message && <p className="form-message" role="status">{message}</p>}<button className="primary wide" type="submit" disabled={busy}>{busy ? 'Đang xử lý…' : mode === 'login' ? 'Đăng nhập' : mode === 'register' ? 'Tạo tài khoản' : 'Gửi hướng dẫn'} <ArrowRight size={17} /></button></form><div className="auth-links">{mode !== 'login' && <button onClick={() => { setMode('login'); setMessage('') }}>Đăng nhập</button>}{mode !== 'register' && <button onClick={() => { setMode('register'); setMessage('') }}>Tạo tài khoản</button>}{mode === 'login' && <button onClick={() => { setMode('forgot'); setMessage('') }}>Quên mật khẩu?</button>}</div></div></div>
+
+  return (
+    <div className="modal-shade" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
+      <div className="dialog auth-dialog" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+        <button className="icon-button dialog-close" onClick={onClose} aria-label={copy.close}><X size={19} /></button>
+        <div className="auth-mark"><BookOpen size={25} /></div>
+        <p className="eyebrow">{copy.accountEyebrow}</p>
+        <h2 id="auth-title">{mode === 'login' ? copy.loginTitle : mode === 'register' ? copy.registerTitle : copy.forgotTitle}</h2>
+        <p className="muted">{mode === 'forgot' ? copy.forgotDescription : copy.description}</p>
+        {(mode === 'login' || mode === 'register') && (
+          <div className="auth-social-section">
+            <div className="google-btn-wrapper" ref={googleBtnRef} />
+          </div>
+        )}
+        {(mode === 'login' || mode === 'register') && (
+          <div className="auth-divider"><span>{lang === 'vi' ? 'hoặc dùng email' : 'or use email'}</span></div>
+        )}
+        <form onSubmit={event => void submit(event)}>
+          <label>Email<input type="email" autoComplete="email" required value={email} onChange={event => setEmail(event.target.value)} placeholder="email@example.com" /></label>
+          {mode !== 'forgot' && <label>{copy.password}<input type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} minLength={mode === 'register' ? 12 : undefined} required value={password} onChange={event => setPassword(event.target.value)} placeholder={mode === 'register' ? copy.newPasswordPlaceholder : copy.passwordPlaceholder} /></label>}
+          {message && <p className="form-message" role="status">{message}</p>}
+          <button className="primary wide" type="submit" disabled={busy}>{busy ? copy.processing : mode === 'login' ? copy.login : mode === 'register' ? copy.register : copy.sendInstructions} <ArrowRight size={17} /></button>
+        </form>
+        <div className="auth-links">
+          {mode !== 'login' && <button onClick={() => { setMode('login'); setMessage('') }}>{copy.login}</button>}
+          {mode !== 'register' && <button onClick={() => { setMode('register'); setMessage('') }}>{copy.register}</button>}
+          {mode === 'login' && <button onClick={() => { setMode('forgot'); setMessage('') }}>{copy.forgotPassword}</button>}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export default App

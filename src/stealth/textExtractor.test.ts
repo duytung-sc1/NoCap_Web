@@ -90,6 +90,22 @@ describe('textExtractor', () => {
     expect(extracted[1]).toContain('Văn bản truyện trích xuất sạch sẽ.')
   })
 
+  it('keeps the EPUB chapter href on generated stealth rows', async () => {
+    const JSZipModule = await import('jszip')
+    const JSZip = (JSZipModule.default || JSZipModule) as unknown as typeof import('jszip')
+    const zip = new JSZip()
+    zip.file('META-INF/container.xml', '<container><rootfile full-path="OEBPS/content.opf"/></container>')
+    zip.file('OEBPS/content.opf', '<package><manifest><item id="chapter" href="chapter.xhtml"/></manifest><spine><itemref idref="chapter"/></spine></package>')
+    zip.file('OEBPS/chapter.xhtml', '<html><body><h1>Chương thử nghiệm</h1><p>Nội dung có vị trí EPUB.</p></body></html>')
+    const buffer = await zip.generateAsync({ type: 'arraybuffer' })
+    const book: Book = { id: 'epub-locator', title: 'Locator EPUB', author: 'NoCap', format: 'EPUB', coverUrl: '' }
+
+    const rows = await import('./textExtractor').then(module => module.extractBookRows(book, buffer))
+
+    expect(rows[0].sourceHref).toBe('OEBPS/chapter.xhtml')
+    expect(rows[1].sourceHref).toBe('OEBPS/chapter.xhtml')
+  })
+
   describe('detectBookFormat', () => {
     it('detects PDF from %PDF magic bytes regardless of book title or missing format', () => {
       const pdfBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x35]).buffer
@@ -141,4 +157,3 @@ describe('textExtractor', () => {
     })
   })
 })
-

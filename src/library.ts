@@ -1,0 +1,17 @@
+import type { Book } from './types'
+
+/**
+ * Merge catalog, cloud and browser-backed books without rendering the same
+ * logical document more than once. Later sources win so a browser-backed copy
+ * can be opened immediately while retaining the stable cloud book id.
+ */
+export function mergeBooksById(...sources: Book[][]): Book[] {
+  const books = new Map<string, Book>()
+  for (const source of sources) {
+    for (const book of source) {
+      if (!book.id) continue
+      books.set(book.id, book)
+    }
+  }
+  return [...books.values()]
+}

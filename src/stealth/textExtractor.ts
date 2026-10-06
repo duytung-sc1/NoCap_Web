@@ -9,6 +9,12 @@ export interface StealthRow {
   variance: string
   timestamp: string
   chapterTitle?: string
+  sourceHref?: string
+}
+
+interface ExtractedParagraph {
+  text: string
+  sourceHref?: string
 }
 
 export const PANIC_CORPORATE_ROWS: StealthRow[] = [
@@ -61,6 +67,7 @@ export function isBinaryData(bytes: ArrayBuffer): boolean {
  */
 export function sanitizeSentence(text: string): string {
   // Strip control characters except newline and tab
+  // oxlint-disable-next-line no-control-regex -- These exact ranges are the control bytes being sanitized.
   const cleaned = text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, ' ').trim()
   // If text contains too many replacement characters or mojibake symbols, reject it
   const replacementMatches = cleaned.match(/[\uFFFD\uFFFE\uFFFF]/g)
@@ -260,7 +267,7 @@ export function buildStealthRows(sentences: string[], bookTitle?: string): Steal
 /**
  * Extract paragraphs from EPUB file directly using JSZip archive parsing
  */
-export async function extractFromEpub(bytes: ArrayBuffer): Promise<string[]> {
+async function extractEpubParagraphs(bytes: ArrayBuffer): Promise<ExtractedParagraph[]> {
   try {
     const JSZipModule = await import('jszip')
     const JSZip = (JSZipModule.default || JSZipModule) as unknown as { loadAsync: (data: ArrayBuffer) => Promise<import('jszip')> }
@@ -296,7 +303,7 @@ export async function extractFromEpub(bytes: ArrayBuffer): Promise<string[]> {
         .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
     }
 
-    const paragraphs: string[] = []
+    const paragraphs: ExtractedParagraph[] = []
 
     for (const filePath of htmlFiles) {
       let file = zip.file(filePath)
@@ -310,7 +317,7 @@ export async function extractFromEpub(bytes: ArrayBuffer): Promise<string[]> {
       try {
         const html = await file.async('string')
         const extracted = extractTextTags(html)
-        paragraphs.push(...extracted)
+        paragraphs.push(...extracted.map(text => ({ text, sourceHref: filePath })))
       } catch {
         // Skip corrupted chapter
       }
@@ -321,6 +328,10 @@ export async function extractFromEpub(bytes: ArrayBuffer): Promise<string[]> {
     console.error('Failed to extract EPUB:', err)
     return []
   }
+}
+
+export async function extractFromEpub(bytes: ArrayBuffer): Promise<string[]> {
+  return (await extractEpubParagraphs(bytes)).map(paragraph => paragraph.text)
 }
 
 /**
@@ -442,13 +453,14 @@ export function detectBookFormat(book: Book, bytes: ArrayBuffer): 'pdf' | 'docx'
 export async function extractBookRows(book: Book, bytes: ArrayBuffer): Promise<StealthRow[]> {
   const detected = detectBookFormat(book, bytes)
   let paragraphs: string[] = []
+  let epubParagraphs: ExtractedParagraph[] = []
 
   if (detected === 'pdf') {
     paragraphs = await extractFromPdf(bytes)
     if (!paragraphs.length && bytes.byteLength >= 4) {
       const head = new Uint8Array(bytes, 0, 4)
       if (head[0] === 0x50 && head[1] === 0x4b) {
-        paragraphs = await extractFromEpub(bytes)
+        epubParagraphs = await extractEpubParagraphs(bytes)
       }
     }
   } else if (detected === 'docx') {
@@ -459,10 +471,18 @@ export async function extractBookRows(book: Book, bytes: ArrayBuffer): Promise<S
     paragraphs = extractFromText(bytes, false)
   } else {
     // default epub
-    paragraphs = await extractFromEpub(bytes)
-    if (!paragraphs.length) {
+    epubParagraphs = await extractEpubParagraphs(bytes)
+    if (!epubParagraphs.length) {
       paragraphs = await extractFromDocx(bytes)
     }
+  }
+
+  if (epubParagraphs.length) {
+    const sentenceSegments = epubParagraphs.flatMap(paragraph =>
+      splitIntoSentences(paragraph.text).map(text => ({ text, sourceHref: paragraph.sourceHref })),
+    )
+    const rows = buildStealthRows(sentenceSegments.map(segment => segment.text), book.title)
+    return rows.map((row, index) => ({ ...row, sourceHref: sentenceSegments[index]?.sourceHref }))
   }
 
   // Double check: if still empty and buffer is not binary, try text

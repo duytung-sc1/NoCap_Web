@@ -7,6 +7,26 @@ export class ApiError extends Error {
   constructor(status: number, message: string) { super(message); this.status = status }
 }
 
+class RequestTimeoutError extends Error {}
+
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController()
+  const upstream = init.signal
+  const forwardAbort = () => controller.abort(upstream?.reason)
+  if (upstream?.aborted) forwardAbort()
+  else upstream?.addEventListener('abort', forwardAbort, { once: true })
+  const timer = globalThis.setTimeout(() => controller.abort(new RequestTimeoutError()), timeoutMs)
+  try {
+    return await fetch(input, { ...init, signal: controller.signal })
+  } catch (error) {
+    if (!upstream?.aborted && controller.signal.aborted) throw new RequestTimeoutError('Máy chủ phản hồi quá lâu. Vui lòng thử lại.')
+    throw error
+  } finally {
+    globalThis.clearTimeout(timer)
+    upstream?.removeEventListener('abort', forwardAbort)
+  }
+}
+
 async function parseError(response: Response): Promise<never> {
   const result = await response.json().catch(() => null) as { error?: { message?: string } } | null
   throw new ApiError(response.status, result?.error?.message || `Máy chủ trả về lỗi ${response.status}`)
@@ -17,8 +37,11 @@ export async function api<T>(path: string, options: RequestInit = {}, token?: st
   if (token) headers.set('Authorization', `Bearer ${token}`)
   if (options.body && !(options.body instanceof Blob)) headers.set('Content-Type', 'application/json')
   let response: Response
-  try { response = await fetch(`${API_BASE}${path}`, { ...options, headers, cache: 'no-store' }) }
-  catch { throw new Error('Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.') }
+  try { response = await fetchWithTimeout(`${API_BASE}${path}`, { ...options, headers, cache: 'no-store' }, 20000) }
+  catch (error) {
+    if (error instanceof RequestTimeoutError) throw error
+    throw new Error('Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.')
+  }
   if (!response.ok) return parseError(response)
   return response.json() as Promise<T>
 }
@@ -37,6 +60,39 @@ export async function register(email: string, password: string): Promise<Session
 
 export async function forgotPassword(email: string) {
   return api<{ message: string }>('/api/v1/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) })
+}
+
+export async function loginWithGoogle(idToken: string): Promise<Session> {
+  return api('/api/v1/auth/google', { method: 'POST', body: JSON.stringify({ idToken }) })
+}
+
+export async function updateProfile(token: string, patch: { displayName?: string; photoUrl?: string }): Promise<User> {
+  return api('/api/v1/me', { method: 'PATCH', body: JSON.stringify(patch) }, token)
+}
+
+export async function deleteAccount(token: string): Promise<{ message: string }> {
+  return api('/api/v1/me', { method: 'DELETE' }, token)
+}
+
+export type CloudBackupItem = {
+  id: string
+  version: number
+  chunks: string[]
+  size: number
+  updatedAt: string
+  deviceName: string
+}
+
+export async function getCloudBackups(token: string): Promise<{ backups: CloudBackupItem[] }> {
+  return api('/api/v1/cloud/backups', {}, token)
+}
+
+export async function deleteCloudBackup(token: string, id: string): Promise<{ success: boolean }> {
+  return api(`/api/v1/cloud/backups/${encodeURIComponent(id)}`, { method: 'DELETE' }, token)
+}
+
+export async function deleteAllCloudBackups(token: string): Promise<{ message: string }> {
+  return api('/api/v1/cloud/backup', { method: 'DELETE' }, token)
 }
 
 export async function getUser(token: string) {
@@ -69,7 +125,7 @@ export async function pushOperation(token: string, operation: SyncOperation) {
 export async function uploadBlob(token: string, hash: string, blob: Blob): Promise<{ hash: string }> {
   let response: Response
   try {
-    response = await fetch(`${API_BASE}/api/v1/sync/blobs/${hash}`, {
+    response = await fetchWithTimeout(`${API_BASE}/api/v1/sync/blobs/${hash}`, {
       method: 'PUT',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -78,8 +134,9 @@ export async function uploadBlob(token: string, hash: string, blob: Blob): Promi
       },
       body: blob,
       cache: 'no-store',
-    })
-  } catch {
+    }, 120000)
+  } catch (error) {
+    if (error instanceof RequestTimeoutError) throw error
     throw new Error('Không kết nối được máy chủ khi tải tệp lên. Kiểm tra mạng rồi thử lại.')
   }
   if (!response.ok) return parseError(response)
@@ -104,8 +161,11 @@ export async function loadBookBytes(book: Book, token?: string): Promise<ArrayBu
   } else throw new Error('Sách chưa có tệp để đọc.')
   const headers = token && book.fileUrl?.startsWith('nocap-private:') ? { Authorization: `Bearer ${token}` } : undefined
   let response: Response
-  try { response = await fetch(url, { headers, cache: 'no-store' }) }
-  catch { throw new Error('Không tải được tệp sách. Kiểm tra mạng rồi thử lại.') }
+  try { response = await fetchWithTimeout(url, { headers, cache: 'no-store' }, 60000) }
+  catch (error) {
+    if (error instanceof RequestTimeoutError) throw error
+    throw new Error('Không tải được tệp sách. Kiểm tra mạng rồi thử lại.')
+  }
   if (!response.ok) return parseError(response)
   const length = Number(response.headers.get('Content-Length') || 0)
   if (length > 250 * 1024 * 1024) throw new Error('Tệp quá lớn để mở trong trình duyệt.')

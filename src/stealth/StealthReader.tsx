@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Book } from '../types'
 import { t, type Lang } from '../i18n'
 import {
@@ -6,18 +6,31 @@ import {
   PANIC_CORPORATE_ROWS,
   type StealthRow
 } from './textExtractor'
+import {
+  buildDisplayEntries,
+  displayIndexForSource,
+  progressionFromRowIndex,
+  rowIndexFromLocator,
+  sourceIndexForDisplay,
+} from './navigation'
 import './StealthReader.css'
 
 export type DisguiseMode = 'excel' | 'vscode' | 'doc'
+
+export interface StealthPosition {
+  progression: number
+  sourceHref?: string
+}
 
 interface Props {
   book: Book
   bytes: ArrayBuffer
   lang: Lang
   initialProgression?: number
-  onClose: () => void
+  initialLocator?: string
+  onClose: (position?: StealthPosition) => void
   onExitHome?: () => void
-  onProgressChange?: (progression: number) => void
+  onProgressChange?: (position: StealthPosition) => void
 }
 
 export function StealthReader({
@@ -25,6 +38,7 @@ export function StealthReader({
   bytes,
   lang,
   initialProgression = 0,
+  initialLocator,
   onClose,
   onExitHome,
   onProgressChange,
@@ -43,21 +57,25 @@ export function StealthReader({
 
   const activeRowRef = useRef<HTMLTableRowElement | HTMLDivElement | null>(null)
   const autoScrollTimer = useRef<ReturnType<typeof setInterval> | null>(null)
+  const initialProgressionRef = useRef(initialProgression)
+  const initialLocatorRef = useRef(initialLocator)
+  const progressChangedRef = useRef(false)
+  const onProgressChangeRef = useRef(onProgressChange)
+  useEffect(() => { onProgressChangeRef.current = onProgressChange }, [onProgressChange])
+  useEffect(() => { initialProgressionRef.current = initialProgression }, [initialProgression])
+  useEffect(() => { initialLocatorRef.current = initialLocator }, [initialLocator])
 
   // Extract text on mount
   useEffect(() => {
     let alive = true
-    setLoading(true)
 
     void (async () => {
       try {
         const extracted = await extractBookRows(book, bytes)
         if (!alive) return
         setRows(extracted)
-        if (initialProgression > 0 && extracted.length > 0) {
-          const targetIndex = Math.floor(initialProgression * extracted.length)
-          setActiveRowIndex(Math.min(extracted.length - 1, Math.max(0, targetIndex)))
-        }
+        setActiveRowIndex(rowIndexFromLocator(extracted, initialLocatorRef.current, initialProgressionRef.current))
+        progressChangedRef.current = false
       } catch {
         if (!alive) return
         setRows([])
@@ -67,18 +85,17 @@ export function StealthReader({
     })()
 
     return () => { alive = false }
-  }, [book, bytes, initialProgression])
+  }, [book, bytes])
 
   // Filtered rows
-  const displayRows = useMemo(() => {
-    if (panic) return PANIC_CORPORATE_ROWS
-    if (!search.trim()) return rows
-    const q = search.toLowerCase()
-    return rows.filter(r => r.text.toLowerCase().includes(q) || r.id.toLowerCase().includes(q))
+  const displayEntries = useMemo(() => {
+    return buildDisplayEntries(rows, search, PANIC_CORPORATE_ROWS, panic)
   }, [panic, rows, search])
+  const displayRows = useMemo(() => displayEntries.map(entry => entry.row), [displayEntries])
+  const displayActiveRowIndex = displayIndexForSource(displayEntries, activeRowIndex)
 
   // Active row data
-  const currentRow = displayRows[activeRowIndex] || displayRows[0] || {
+  const currentRow = displayRows[displayActiveRowIndex] || displayRows[0] || {
     index: 1,
     id: 'SYS-1001',
     category: 'INIT',
@@ -90,15 +107,64 @@ export function StealthReader({
 
   // Notify parent of progress
   useEffect(() => {
-    if (panic || !rows.length || !onProgressChange) return
-    const pct = Math.min(1, Math.max(0, activeRowIndex / rows.length))
-    onProgressChange(pct)
-  }, [activeRowIndex, rows.length, panic, onProgressChange])
+    if (panic || !rows.length || !progressChangedRef.current) return
+    onProgressChangeRef.current?.({
+      progression: progressionFromRowIndex(activeRowIndex, rows.length),
+      sourceHref: rows[activeRowIndex]?.sourceHref,
+    })
+  }, [activeRowIndex, rows, panic])
+
+  const selectDisplayRow = useCallback((displayIndex: number) => {
+    setActiveRowIndex(previous => {
+      const sourceIndex = sourceIndexForDisplay(displayEntries, displayIndex, previous)
+      if (sourceIndex !== previous) progressChangedRef.current = true
+      return sourceIndex
+    })
+  }, [displayEntries])
+
+  const moveDisplayRow = useCallback((delta: number) => {
+    if (panic || displayEntries.length === 0) return
+    setActiveRowIndex(previous => {
+      const currentDisplayIndex = displayIndexForSource(displayEntries, previous)
+      const targetDisplayIndex = Math.min(displayEntries.length - 1, Math.max(0, currentDisplayIndex + delta))
+      const sourceIndex = sourceIndexForDisplay(displayEntries, targetDisplayIndex, previous)
+      if (sourceIndex !== previous) progressChangedRef.current = true
+      return sourceIndex
+    })
+  }, [displayEntries, panic])
+
+  const closeStealth = useCallback(() => {
+    const position = progressChangedRef.current
+      ? {
+          progression: progressionFromRowIndex(activeRowIndex, rows.length),
+          sourceHref: rows[activeRowIndex]?.sourceHref,
+        }
+      : undefined
+    onClose(position)
+  }, [activeRowIndex, onClose, rows])
+
+  const togglePanic = useCallback(() => {
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+    setPanic(previous => !previous)
+  }, [])
 
   // Keyboard navigation & Boss Key hotkeys
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const isInput = (e.target as HTMLElement)?.tagName === 'INPUT' || (e.target as HTMLElement)?.tagName === 'TEXTAREA'
+
+      // Boss keys must work even while the search field is focused.
+      if (e.key === 'F12' || (e.altKey && (e.key === 'p' || e.key === 'P'))) {
+        e.preventDefault()
+        togglePanic()
+        return
+      }
+
+      if (e.key === 'F2') {
+        e.preventDefault()
+        closeStealth()
+        return
+      }
 
       // If user is currently typing in search field
       if (isInput) {
@@ -106,13 +172,6 @@ export function StealthReader({
           (e.target as HTMLElement).blur()
           if (search) setSearch('')
         }
-        return
-      }
-
-      // F2: Toggle Stealth Mode (exit back to normal reader)
-      if (e.key === 'F2') {
-        e.preventDefault()
-        onClose()
         return
       }
 
@@ -124,50 +183,45 @@ export function StealthReader({
         } else if (onExitHome) {
           onExitHome()
         } else {
-          onClose()
+          closeStealth()
         }
         return
       }
 
-      // F12 or Alt+P: Panic Button Toggle (Boss Key disguise)
-      if (e.key === 'F12' || (e.altKey && (e.key === 'p' || e.key === 'P'))) {
-        e.preventDefault()
-        setPanic(prev => !prev)
-        return
-      }
+      if (panic) return
 
       // Down / Space / j: Next row
       if (e.key === 'ArrowDown' || e.key === ' ' || e.key === 'j') {
         e.preventDefault()
-        setActiveRowIndex(prev => Math.min(displayRows.length - 1, prev + 1))
+        moveDisplayRow(1)
         return
       }
 
       // Up / k: Previous row
       if (e.key === 'ArrowUp' || e.key === 'k') {
         e.preventDefault()
-        setActiveRowIndex(prev => Math.max(0, prev - 1))
+        moveDisplayRow(-1)
         return
       }
 
       // PageDown: Skip forward 15 rows
       if (e.key === 'PageDown') {
         e.preventDefault()
-        setActiveRowIndex(prev => Math.min(displayRows.length - 1, prev + 15))
+        moveDisplayRow(15)
         return
       }
 
       // PageUp: Skip back 15 rows
       if (e.key === 'PageUp') {
         e.preventDefault()
-        setActiveRowIndex(prev => Math.max(0, prev - 15))
+        moveDisplayRow(-15)
         return
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [displayRows.length, onClose, onExitHome, panic, search])
+  }, [closeStealth, moveDisplayRow, onExitHome, panic, search, togglePanic])
 
   // Auto-advance rows
   useEffect(() => {
@@ -176,14 +230,17 @@ export function StealthReader({
       autoScrollTimer.current = null
     }
 
-    if (autoScroll && !panic && displayRows.length > 0) {
+    if (autoScroll && !panic && displayEntries.length > 0) {
       autoScrollTimer.current = setInterval(() => {
-        setActiveRowIndex(prev => {
-          if (prev >= displayRows.length - 1) {
+        setActiveRowIndex(previous => {
+          const currentDisplayIndex = displayIndexForSource(displayEntries, previous)
+          if (currentDisplayIndex >= displayEntries.length - 1) {
             setAutoScroll(false)
-            return prev
+            return previous
           }
-          return prev + 1
+          const sourceIndex = sourceIndexForDisplay(displayEntries, currentDisplayIndex + 1, previous)
+          if (sourceIndex !== previous) progressChangedRef.current = true
+          return sourceIndex
         })
       }, autoScrollSpeed * 1000)
     }
@@ -191,7 +248,7 @@ export function StealthReader({
     return () => {
       if (autoScrollTimer.current) clearInterval(autoScrollTimer.current)
     }
-  }, [autoScroll, autoScrollSpeed, panic, displayRows.length])
+  }, [autoScroll, autoScrollSpeed, panic, displayEntries])
 
   // Auto-scroll the active row into viewport
   useEffect(() => {
@@ -201,7 +258,7 @@ export function StealthReader({
         block: 'nearest'
       })
     }
-  }, [activeRowIndex])
+  }, [displayActiveRowIndex])
 
   return (
     <div className="stealth-wrapper" style={{ opacity }}>
@@ -211,7 +268,7 @@ export function StealthReader({
           {/* Panic Button */}
           <button
             className={`stealth-chip-btn ${panic ? 'stealth-unpanic-btn' : 'stealth-panic-btn'}`}
-            onClick={() => setPanic(!panic)}
+            onClick={togglePanic}
             title={panic ? curT.unpanicBtn : curT.panicBtn}
           >
             {panic ? curT.unpanicBtn : curT.panicBtn}
@@ -277,7 +334,7 @@ export function StealthReader({
             {curT.opacityLabel}: {Math.round(opacity * 100)}%
             <input
               type="range"
-              min="0.3"
+              min="0.1"
               max="1"
               step="0.05"
               value={opacity}
@@ -290,7 +347,7 @@ export function StealthReader({
             type="button"
             className="stealth-chip-btn stealth-home-btn"
             style={{ fontWeight: 600, background: '#107c41', color: '#fff', borderColor: '#107c41' }}
-            onClick={onExitHome || onClose}
+            onClick={() => { if (onExitHome) onExitHome(); else closeStealth() }}
             title={lang === 'vi' ? 'Thoát ra Trang chủ (Esc)' : 'Exit to Home (Esc)'}
           >
             🏠 {curT.exitHome || (lang === 'vi' ? 'Trang chủ (Esc)' : 'Home (Esc)')}
@@ -300,7 +357,7 @@ export function StealthReader({
           <button
             className="stealth-chip-btn"
             style={{ fontWeight: 600, borderColor: '#0078d4' }}
-            onClick={onClose}
+            onClick={closeStealth}
             title={curT.exitStealth}
           >
             ✕ {curT.exitStealth} (F2)
@@ -313,9 +370,9 @@ export function StealthReader({
         <ExcelView
           rows={displayRows}
           currentRow={currentRow}
-          activeRowIndex={activeRowIndex}
+          activeRowIndex={displayActiveRowIndex}
           activeRowRef={activeRowRef}
-          onSelectRow={setActiveRowIndex}
+          onSelectRow={selectDisplayRow}
           fontSize={fontSize}
           panic={panic}
           loading={loading}
@@ -329,9 +386,9 @@ export function StealthReader({
       {mode === 'vscode' && (
         <VsCodeView
           rows={displayRows}
-          activeRowIndex={activeRowIndex}
+          activeRowIndex={displayActiveRowIndex}
           activeRowRef={activeRowRef}
-          onSelectRow={setActiveRowIndex}
+          onSelectRow={selectDisplayRow}
           fontSize={fontSize}
           panic={panic}
           loading={loading}
@@ -344,9 +401,9 @@ export function StealthReader({
         <DocView
           bookTitle={book.title}
           rows={displayRows}
-          activeRowIndex={activeRowIndex}
+          activeRowIndex={displayActiveRowIndex}
           activeRowRef={activeRowRef}
-          onSelectRow={setActiveRowIndex}
+          onSelectRow={selectDisplayRow}
           fontSize={fontSize}
           panic={panic}
           loading={loading}
@@ -470,8 +527,9 @@ function ExcelView({
           <input
             type="text"
             placeholder={curT.searchPrompt}
-            value={search}
-            onChange={e => onSearchChange(e.target.value)}
+            value={panic ? '' : search}
+            readOnly={panic}
+            onChange={e => { if (!panic) onSearchChange(e.target.value) }}
             style={{ height: '22px', fontSize: '11px', padding: '0 6px', border: '1px solid #c8c6c4', borderRadius: '2px', width: '180px' }}
           />
         </div>
@@ -809,4 +867,3 @@ function DocView({
     </div>
   )
 }
-
