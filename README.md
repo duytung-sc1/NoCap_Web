@@ -93,6 +93,17 @@ The Excel, VS Code and Word views have no visible NoCap control bar. Open
 settings with **F1**, the Excel/Word **View** menu, or VS Code's **Manage** gear.
 All controls, including panic and exit, are also available there without a keyboard.
 
+The Excel view follows the desktop Home ribbon layout: alphabetic column
+headers, a frozen field-label row, a selected-cell outline, name box/formula
+bar, sheet tabs and a separate status/zoom bar. Enter an existing cell address
+(for example, `C25`) in the name box to jump to that reading row. Filtering
+preserves original worksheet row numbers and the underlying book position.
+Font, size, bold/italic/underline, alignment, text wrapping, copy, find and
+50–200% zoom work locally. The remaining spreadsheet tools and sheet names
+are visual disguises, not a spreadsheet editor; they never change the book.
+Narrow windows can scroll the ribbon and use the bottom horizontal scrollbar.
+Visual reference: [Microsoft's Excel formatting ribbon](https://support.microsoft.com/en-us/excel/format-text-in-cells).
+
 | Shortcut | Action |
 | --- | --- |
 | F2 | Enter Stealth (Pro required) / return to normal reading |

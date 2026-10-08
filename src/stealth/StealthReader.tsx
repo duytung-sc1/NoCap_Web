@@ -16,6 +16,7 @@ import {
 import './StealthReader.css'
 import { stealthShortcut } from './shortcuts'
 import { DisguiseFullscreen } from './fullscreen'
+import { ExcelView } from './ExcelView'
 
 export type DisguiseMode = 'excel' | 'vscode' | 'doc'
 
@@ -90,7 +91,7 @@ export function StealthReader({
 
   useEffect(() => {
     const originalTitle = document.title
-    const title = mode === 'excel' ? 'Q4_Consolidated_Financial_Model_v4.2.xlsx — Excel'
+    const title = mode === 'excel' ? 'Q4_Consolidated_Financial_Model.xlsx — Excel'
       : mode === 'vscode' ? 'analytics_stream.ts — Visual Studio Code' : 'Enterprise Data Pipeline Reference — Word'
     document.title = title
     return () => { if (document.title === title) document.title = originalTitle }
@@ -227,7 +228,7 @@ export function StealthReader({
         case 'dismiss-help': setHelpOpen(false); break
         case 'fullscreen': toggleFullscreen(); break
         case 'exit-fullscreen': exitFullscreen(); break
-        case 'clear-search': target?.blur(); setSearch(''); break
+        case 'clear-search': target?.blur(); if (target?.matches('[data-stealth-search]')) setSearch(''); break
         case 'mode': setMode(action.mode); break
         case 'auto-scroll': setAutoScroll(previous => !previous); break
         case 'move': moveDisplayRow(action.delta); break
@@ -338,6 +339,9 @@ export function StealthReader({
           search={search}
           onSearchChange={setSearch}
           onFontSizeChange={setFontSize}
+          onToggleFullscreen={toggleFullscreen}
+          onClose={closeStealth}
+          fullscreen={fullscreen}
           onOpenSettings={() => setHelpOpen(true)}
         />
       )}
@@ -412,7 +416,7 @@ export interface StealthTranslations {
   disguiseLabel: string
 }
 
-/* ================== EXCEL VIEW COMPONENT ================== */
+/* ================== SHARED VIEW PROPS ================== */
 interface SubViewProps {
   rows: StealthRow[]
   activeRowIndex: number
@@ -423,187 +427,6 @@ interface SubViewProps {
   loading: boolean
   curT: StealthTranslations
   lang?: Lang
-}
-
-function ExcelView({
-  rows,
-  currentRow,
-  activeRowIndex,
-  activeRowRef,
-  onSelectRow,
-  fontSize,
-  panic,
-  loading,
-  curT,
-  lang = 'vi',
-  search,
-  onSearchChange,
-  onFontSizeChange,
-  onOpenSettings,
-}: SubViewProps & {
-  currentRow: StealthRow
-  search: string
-  onSearchChange: (val: string) => void
-  onFontSizeChange: (size: number) => void
-  onOpenSettings: () => void
-}) {
-  const WINDOW_SIZE = 70
-  const startIdx = Math.max(0, activeRowIndex - 20)
-  const endIdx = Math.min(rows.length, startIdx + WINDOW_SIZE)
-  const windowedRows = rows.slice(startIdx, endIdx)
-
-  return (
-    <div className="excel-container">
-      {/* Title bar */}
-      <div className="excel-titlebar">
-        <div className="excel-title-left">
-          <span className="excel-autosave-badge">AutoSave • On</span>
-          <span className="excel-filename">Q4_Consolidated_Financial_Model_v4.2.xlsx - Saved to OneDrive</span>
-        </div>
-        <div style={{ fontSize: '11px', opacity: 0.9 }}>
-          {panic ? 'Protected View' : `Row ${activeRowIndex + 1} of ${rows.length}`}
-        </div>
-      </div>
-
-      {/* Ribbon tabs */}
-      <div className="excel-ribbon-tabs">
-        <div className="excel-ribbon-tab active">Home</div>
-        <div className="excel-ribbon-tab">Insert</div>
-        <div className="excel-ribbon-tab">Page Layout</div>
-        <div className="excel-ribbon-tab">Formulas</div>
-        <div className="excel-ribbon-tab">Data</div>
-        <div className="excel-ribbon-tab">Review</div>
-        <button type="button" className="excel-ribbon-tab" onClick={onOpenSettings}>View</button>
-        <div className="excel-ribbon-tab">Automate</div>
-      </div>
-
-      {/* Ribbon tools */}
-      <div className="excel-ribbon-tools">
-        <div className="excel-tool-group">
-          <select className="excel-font-select" defaultValue="Aptos">
-            <option>Aptos</option>
-            <option>Calibri</option>
-            <option>Segoe UI</option>
-          </select>
-          <select className="excel-font-select" aria-label={curT.fontSizeLabel} value={fontSize} onChange={event => onFontSizeChange(Number(event.target.value))}>
-            <option value="10">10</option>
-            <option value="11">11</option>
-            <option value="12">12</option>
-            <option value="13">13</option>
-            <option value="14">14</option>
-            <option value="15">15</option>
-            <option value="16">16</option>
-          </select>
-        </div>
-        <div className="excel-tool-group">
-          <strong>B</strong> <em>I</em> <u>U</u>
-        </div>
-        <div className="excel-tool-group">
-          <span>Alignment: Left</span>
-        </div>
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <input
-            type="text"
-            placeholder={curT.searchPrompt}
-            value={panic ? '' : search}
-            readOnly={panic}
-            onChange={e => { if (!panic) onSearchChange(e.target.value) }}
-            style={{ height: '22px', fontSize: '11px', padding: '0 6px', border: '1px solid #c8c6c4', borderRadius: '2px', width: '180px' }}
-          />
-        </div>
-      </div>
-
-      {/* Formula Bar */}
-      <div className="excel-formula-bar">
-        <div className="excel-name-box">C{activeRowIndex + 1}</div>
-        <div className="excel-fx-icon">fx</div>
-        <div className="excel-formula-input" title={currentRow.text}>
-          {panic
-            ? `=CONCATENATE("AUDIT_MEMO: ", "${currentRow.text}")`
-            : `=XLOOKUP(C${activeRowIndex + 1}, NARRATIVE_STREAM, "${currentRow.text.slice(0, 100)}...") : ${currentRow.text}`}
-        </div>
-      </div>
-
-      {/* Table Grid */}
-      <div className="excel-grid-container">
-        {loading ? (
-          <div style={{ padding: '30px', textAlign: 'center', color: '#605e5c', fontSize: '12px' }}>
-            <p>Connecting to OLAP Analytical Database…</p>
-            <p style={{ opacity: 0.7 }}>Loading workbook segments…</p>
-          </div>
-        ) : (
-          <table className="excel-table" style={{ fontSize: `${fontSize}px` }}>
-            <thead>
-              <tr>
-                <th className="excel-th" style={{ width: '44px' }}>#</th>
-                <th className="excel-th" style={{ width: '110px' }}>A (REC_ID)</th>
-                <th className="excel-th" style={{ width: '130px' }}>B (KPI_CATEGORY)</th>
-                <th className="excel-th">C (ANALYTICS_MEMO / NARRATIVE)</th>
-                <th className="excel-th" style={{ width: '110px' }}>D (STATUS)</th>
-                <th className="excel-th" style={{ width: '90px' }}>E (VARIANCE)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {startIdx > 0 && (
-                <tr>
-                  <td colSpan={6} style={{ textAlign: 'center', background: '#f8fafc', color: '#64748b', fontSize: '11px', padding: '6px', cursor: 'pointer' }} onClick={() => onSelectRow(Math.max(0, activeRowIndex - 35))}>
-                    {lang === 'vi'
-                      ? `▲ Đang hiển thị từ dòng ${startIdx + 1}. Bấm để cuộn lên (${startIdx} dòng trước)...`
-                      : `▲ Showing from row ${startIdx + 1}. Click to scroll up (${startIdx} rows earlier)...`}
-                  </td>
-                </tr>
-              )}
-              {windowedRows.map((row, offset) => {
-                const actualIndex = startIdx + offset
-                const isSelected = actualIndex === activeRowIndex
-                return (
-                  <tr
-                    key={`${actualIndex}-${row.id}`}
-                    ref={isSelected ? (activeRowRef as React.RefObject<HTMLTableRowElement>) : null}
-                    className={`excel-tr ${isSelected ? 'selected' : ''}`}
-                    onClick={() => onSelectRow(actualIndex)}
-                  >
-                    <td className="excel-row-num">{actualIndex + 1}</td>
-                    <td className="excel-td id-col">{row.id}</td>
-                    <td className="excel-td cat-col">{row.category}</td>
-                    <td className="excel-td text-col">{row.text}</td>
-                    <td className="excel-td status-col">{row.status}</td>
-                    <td className="excel-td var-col">{row.variance}</td>
-                  </tr>
-                )
-              })}
-              {endIdx < rows.length && (
-                <tr>
-                  <td colSpan={6} style={{ textAlign: 'center', background: '#f8fafc', color: '#64748b', fontSize: '11px', padding: '6px', cursor: 'pointer' }} onClick={() => onSelectRow(Math.min(rows.length - 1, activeRowIndex + 35))}>
-                    {lang === 'vi'
-                      ? `▼ Còn ${rows.length - endIdx} dòng tiếp theo. Bấm để xem tiếp...`
-                      : `▼ ${rows.length - endIdx} more rows ahead. Click to load more...`}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      {/* Excel Sheet Tabs at Bottom */}
-      <div className="excel-footer-tabs">
-        <div className="excel-tabs-list">
-          <div className="excel-sheet-tab active">📊 {curT.excelSheetMain}</div>
-          <div className="excel-sheet-tab">📈 {curT.excelSheetAudit}</div>
-          <div className="excel-sheet-tab">📋 {curT.excelSheetMetrics}</div>
-          <div className="excel-sheet-tab" style={{ cursor: 'pointer', fontWeight: 'bold' }}>+</div>
-        </div>
-        <div className="excel-status-info">
-          <button style={{ background: '#ffffff', border: '1px solid #d1d1d1', borderRadius: '3px', padding: '1px 6px', fontSize: '10px', cursor: 'pointer' }} onClick={() => onSelectRow(Math.max(0, activeRowIndex - 20))}>{lang === 'vi' ? '◄ Trước' : '◄ Prev'}</button>
-          <button style={{ background: '#ffffff', border: '1px solid #d1d1d1', borderRadius: '3px', padding: '1px 6px', fontSize: '10px', cursor: 'pointer' }} onClick={() => onSelectRow(Math.min(rows.length - 1, activeRowIndex + 20))}>{lang === 'vi' ? 'Sau ►' : 'Next ►'}</button>
-          <span>{lang === 'vi' ? `Dòng: ${activeRowIndex + 1}/${rows.length}` : `Row: ${activeRowIndex + 1}/${rows.length}`}</span>
-          <span>Ready</span>
-          <span>100%</span>
-        </div>
-      </div>
-    </div>
-  )
 }
 
 /* ================== VS CODE VIEW COMPONENT ================== */
