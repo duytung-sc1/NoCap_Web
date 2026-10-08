@@ -315,6 +315,7 @@ export function StealthReader({
         {fullscreenError && <p role="alert">{curT.fullscreenUnavailable}</p>}
         <div className="stealth-settings-actions">
           <button type="button" onClick={toggleFullscreen}>{fullscreen ? curT.exitFullscreenLabel : curT.fullscreenLabel} (F10)</button>
+          <button type="button" onClick={togglePanic}>{panic ? curT.unpanicBtn : curT.panicBtn}</button>
           <button type="button" onClick={closeStealth}>{curT.exitStealth}</button>
           <button type="button" onClick={() => { if (onExitHome) onExitHome(); else closeStealth() }}>{curT.exitHome}</button>
           <button type="button" onClick={() => setHelpOpen(false)}>{curT.dismissSettings}</button>
@@ -358,6 +359,7 @@ export function StealthReader({
 
       {mode === 'doc' && (
         <DocView
+          onOpenSettings={() => setHelpOpen(true)}
           rows={displayRows}
           activeRowIndex={displayActiveRowIndex}
           activeRowRef={activeRowRef}
@@ -767,6 +769,7 @@ function VsCodeView({
 
 /* ================== TECHNICAL DOC / WORD VIEW COMPONENT ================== */
 function DocView({
+  onOpenSettings,
   rows,
   activeRowIndex,
   activeRowRef,
@@ -775,7 +778,7 @@ function DocView({
   panic,
   loading,
   lang = 'vi',
-}: SubViewProps) {
+}: SubViewProps & { onOpenSettings: () => void }) {
   const WINDOW_SIZE = 50
   const startIdx = Math.max(0, activeRowIndex - 15)
   const endIdx = Math.min(rows.length, startIdx + WINDOW_SIZE)
@@ -783,6 +786,7 @@ function DocView({
 
   return (
     <div className="doc-container">
+      <div className="doc-view-menu"><span>Word</span><button type="button" onClick={onOpenSettings}>View</button></div>
       <div className="doc-paper" style={{ fontSize: `${fontSize}px` }}>
         {/* Document Header */}
         <div className="doc-header-block">

@@ -90,7 +90,8 @@ changes remain in the automatic sync queue; local-only files stay local.
 ## Stealth Reading controls
 
 The Excel, VS Code and Word views have no visible NoCap control bar. Open
-settings with **F1**, Excel's **View** tab, or VS Code's **Manage** gear.
+settings with **F1**, the Excel/Word **View** menu, or VS Code's **Manage** gear.
+All controls, including panic and exit, are also available there without a keyboard.
 
 | Shortcut | Action |
 | --- | --- |
