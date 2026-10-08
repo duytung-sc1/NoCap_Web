@@ -2,7 +2,8 @@
 
 NoCap’s browser client, developed alongside the Android app. Production:
 https://ntlab.id.vn (Cloudflare Pages). The frontend uses the existing NoCap
-Cloudflare Worker and does not deploy the backend or Android application.
+Cloudflare Worker for accounts, storage and sync. Public HTTPS imports use a
+same-origin Pages Function; deploying the web does not deploy the backend or Android application.
 
 ## Run locally
 
@@ -31,7 +32,7 @@ npx wrangler login
 npm run deploy
 ```
 
-Deployment uploads `dist` to the `nocap-web` Pages project. It does not commit
+Deployment uploads `dist` and `functions/` to the `nocap-web` Pages project. It does not commit
 or push Git changes. Custom-domain caching must respect the response headers,
 especially for HTML and `sw.js`, so installed clients can receive updates.
 Authenticated API requests bypass service-worker caching and use `no-store`.
@@ -49,6 +50,14 @@ No admin credentials or payment-confirmation secrets belong in this bundle.
   A heading without a valid destination never navigates to a guessed page.
 - Import files into the current guest/account profile. Signed-in imports upload
   to private R2 storage. Guest files stay in the current browser.
+- **Import document → From HTTPS link** downloads a public document or extracts
+  readable article text from HTML, then uses the same file import/storage path.
+  EPUB, PDF, CBZ, DOCX, TXT/Markdown, HTML, JPG, PNG and WebP are supported.
+  The feature is free, supports progress and cancellation, and allows 250 MB
+  files (8 MB maximum for HTML article extraction). Authentication-only pages,
+  private-network destinations and HTTPS-to-HTTP redirects are rejected.
+  Signed URL query parameters are used only for the download, not synced as
+  source metadata. Remote cookies/headers are never forwarded.
 - **Download file** saves the original document to the device. It is not an
   offline-mode toggle. Previously opened/imported content may remain in browser
   storage, but that storage can be cleared or evicted and is not a backup.
@@ -100,5 +109,10 @@ changes remain in the automatic sync queue; local-only files stay local.
   fallbacks are supported, but visual positions should be checked on both clients.
 - Local `/dev-book/:id` proxies bounded catalog downloads for development.
   Production downloads use the backend’s document route.
+- `/api/import` uses the same handler in Vite dev/preview and Pages production.
+  It validates DNS and each of at most five HTTPS redirects, streams a bounded
+  response, and returns no-store headers. Only that route runs a Pages Function.
+  See [Pages Functions](https://developers.cloudflare.com/pages/functions/get-started/)
+  and [Worker streams](https://developers.cloudflare.com/workers/runtime-apis/streams/).
 - Browser sessions and cached files are scoped to the origin and account. Files
   under localhost or a temporary tunnel do not automatically appear on production.

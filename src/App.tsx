@@ -25,6 +25,7 @@ import { addAnnotationReview, annotationId, deleteAnnotation, rateAnnotationRevi
 import { allowsPro, proAccessExpiresAt, verifyProAccess, type ProFeature } from './entitlements'
 import { readingActivity } from './readingStats'
 import { translate } from './uiText'
+import { ImportDocumentDialog } from './ImportDocumentDialog'
 type ShelfFilter = 'all' | 'reading' | 'favorites' | 'completed' | 'local'
 type AuthMode = 'login' | 'register' | 'forgot'
 type Theme = 'paper' | 'sepia' | 'night'
@@ -124,6 +125,7 @@ function App() {
   const [readerError, setReaderError] = useState('')
   const [notice, setNotice] = useState('')
   const [authOpen, setAuthOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [pendingCount, setPendingCount] = useState(0)
@@ -276,6 +278,7 @@ function App() {
 
   useEffect(() => {
     setEditingAnnotation(null); setDeletingAnnotation(null); setAnnotationError(''); setProRequiredFeature(null)
+    setImportOpen(false)
     setStealthGrant(null)
     setReviewOpen(false); setReviewQueue([]); setReviewIndex(0)
   }, [profile])
@@ -834,13 +837,15 @@ async function sha256Hex(file: Blob): Promise<string> {
   return Array.from(new Uint8Array(digestBuffer), b => b.toString(16).padStart(2, '0')).join('')
 }
 
-  async function importFile(file: File) {
+  async function importFile(file: File, sourceUrl?: string): Promise<boolean> {
+    if (profileRef.current !== profile) return false
     const extension = file.name.split('.').pop()?.toLowerCase() || ''
-    if (!['epub', 'pdf', 'cbz', 'txt', 'md', 'markdown', 'html', 'htm', 'docx', 'jpg', 'jpeg', 'png', 'webp'].includes(extension)) { setNotice(translate("Hỗ trợ EPUB, PDF, CBZ, TXT, Markdown, HTML, DOCX, JPG, PNG và WebP.", lang)); return }
-    if (!file.size || file.size > 250 * 1024 * 1024) { setNotice(translate("Tệp trống hoặc vượt giới hạn 250 MB.", lang)); return }
+    if (!['epub', 'pdf', 'cbz', 'txt', 'md', 'markdown', 'html', 'htm', 'docx', 'jpg', 'jpeg', 'png', 'webp'].includes(extension)) { setNotice(translate("Hỗ trợ EPUB, PDF, CBZ, TXT, Markdown, HTML, DOCX, JPG, PNG và WebP.", lang)); return false }
+    if (!file.size || file.size > 250 * 1024 * 1024) { setNotice(translate("Tệp trống hoặc vượt giới hạn 250 MB.", lang)); return false }
     setNotice(translate("Đang tính mã băm và chuẩn bị tài liệu...", lang))
     try {
       const hash = await sha256Hex(file)
+      if (profileRef.current !== profile) return false
       const isCloud = !!session
       const bookId = `web-${crypto.randomUUID()}`
       const book: Book = {
@@ -855,7 +860,8 @@ async function sha256Hex(file: Blob): Promise<string> {
       }
       await saveFile({ key: `${profile}:${book.id}`, profile, book, data: file, addedAt: ms() })
       await refreshLocal(profile)
-      if (profileRef.current !== profile) return
+      if (profileRef.current !== profile) return false
+      setQuery(''); setCategory('all'); setShelfFilter('all'); setOrganizationFilter('all')
       setPage('library')
 
       if (isCloud && session) {
@@ -893,8 +899,8 @@ async function sha256Hex(file: Blob): Promise<string> {
             published_date: null,
             format: extension.toUpperCase(),
             media_type: mediaType,
-            source_type: 'LOCAL_FILE',
-            source_url: null,
+            source_type: sourceUrl ? 'REMOTE_URL' : 'LOCAL_FILE',
+            source_url: sourceUrl || null,
             is_in_inbox: 1,
             inbox_added_at: now,
             is_pinned: 0,
@@ -918,10 +924,12 @@ async function sha256Hex(file: Blob): Promise<string> {
       } else {
         setNotice(translate("Đã thêm tài liệu vào trình duyệt này. Đăng nhập để tự động sao lưu lên Cloud.", lang))
       }
+      return true
     } catch {
       if (profileRef.current === profile) setNotice(lang === 'vi'
         ? 'Không lưu được tệp. Bộ nhớ trình duyệt có thể đang bị gián đoạn hoặc không đủ dung lượng.'
         : 'Could not save the file. Browser storage may be temporarily unavailable or out of space.')
+      return false
     }
   }
 
@@ -1380,7 +1388,7 @@ async function sha256Hex(file: Blob): Promise<string> {
             <button className="pill-btn primary-pill" onClick={() => setPage('catalog')}>
               {curT.hero.exploreBtn} <ArrowRight size={16} />
             </button>
-            <button className="pill-btn invert-pill" onClick={() => fileInput.current?.click()}>
+            <button className="pill-btn invert-pill" onClick={() => setImportOpen(true)}>
               <Plus size={16} /> {curT.banners.library.addDoc}
             </button>
             <button
@@ -1550,7 +1558,7 @@ async function sha256Hex(file: Blob): Promise<string> {
               <p>{page === 'catalog' ? curT.banners.catalog.desc : curT.banners.library.desc}</p>
             </div>
             <div className="banner-action" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              <button className="light-button" onClick={() => fileInput.current?.click()}><Plus size={16} /> {curT.banners.catalog.addDoc}</button>
+              <button className="light-button" onClick={() => setImportOpen(true)}><Plus size={16} /> {curT.banners.catalog.addDoc}</button>
               {page === 'library' && (
                 <>
                   <button className="light-button" onClick={() => setTagsCollectionsOpen(true)}><Tag size={15} /> {curT.accountPage.manageTagsCollections}</button>
@@ -1761,6 +1769,7 @@ async function sha256Hex(file: Blob): Promise<string> {
       </footer>
 
       <input ref={fileInput} type="file" accept=".epub,.pdf,.cbz,.txt,.md,.markdown,.html,.htm,.docx,.jpg,.jpeg,.png,.webp" hidden onChange={event => { const file = event.target.files?.[0]; if (file) void importFile(file); event.target.value = '' }} />
+      {importOpen && <ImportDocumentDialog lang={lang} onClose={() => setImportOpen(false)} onPickFile={() => fileInput.current?.click()} onImport={importFile} />}
     </main>
 
     {(readerLoading || readerError) && <div className="overlay"><div className="loading-card"><button className="icon-button close-floating" onClick={() => { openRequestId.current++; setReaderLoading(false); setReaderError('') }} aria-label={lang === 'vi' ? 'Đóng' : 'Close'}><X size={20} /></button>{readerLoading ? <><div className="loader" /><h2>{lang === 'vi' ? 'Đang mở sách…' : 'Opening book…'}</h2><p>{lang === 'vi' ? 'Đang chuẩn bị nội dung để đọc.' : 'Preparing the document for reading.'}</p></> : <><FileText size={32} /><h2>{lang === 'vi' ? 'Chưa mở được tài liệu' : 'Unable to open document'}</h2><p>{readerError}</p><button className="primary" onClick={() => setReaderError('')}>{lang === 'vi' ? 'Đóng' : 'Close'}</button></>}</div></div>}

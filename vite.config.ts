@@ -2,6 +2,7 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import { defineConfig, type Plugin } from 'vite'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { localHttpsImport } from './server/localHttpsImport.ts'
 
 const apiBase = 'https://nocap-ebook-api.buiminhhien001.workers.dev'
 
@@ -49,7 +50,7 @@ function localCatalogBooks(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), localCatalogBooks(), VitePWA({
+  plugins: [react(), localCatalogBooks(), localHttpsImport(), VitePWA({
     registerType: 'autoUpdate',
     includeAssets: ['nocap.svg', 'nocap-192.png', 'nocap-512.png'],
     manifest: {

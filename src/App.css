@@ -1939,3 +1939,17 @@ body, .main-area {
 .overlay, .modal-shade { z-index: 140; }
 /* Keep the upgrade prompt above book details and reader settings. */
 .pro-required-shade { z-index: 150; }
+
+.import-document-dialog { width: min(540px, calc(100vw - 32px)); max-height: 90dvh; overflow-y: auto; }
+.import-document-dialog > p, .import-document-dialog form > p { line-height: 1.6; }
+.import-source-options { display: grid; gap: 12px; margin: 24px 0; }
+.import-source-option { display: flex; align-items: center; gap: 16px; text-align: left; padding: 18px; background: #f5faf8; border: 1px solid #c7ddd7; color: #173c36; border-radius: 12px; }
+.import-source-option:hover { border-color: #147d70; background: #edf8f5; }
+.import-source-option:focus-visible { outline: 2px solid #147d70; outline-offset: 3px; }
+.import-source-option span { display: grid; gap: 5px; }
+.import-source-option small, .import-help { color: #536573; font-size: 13px; }
+.import-document-dialog input { width: 100%; min-width: 0; box-sizing: border-box; margin-top: 8px; }
+.import-document-dialog .dialog-actions { flex-wrap: wrap; }
+.import-document-dialog .primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.import-progress { display: grid; gap: 8px; padding: 16px; border: 1px solid #c7ddd7; border-radius: 10px; background: #edf8f5; margin: 16px 0; }
+.import-progress progress { width: 100%; accent-color: #147d70; }
