@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, useCallback, type CSSProperties } from 'react'
 import './IntroExperience.css'
+import { getStoredLang } from './i18n'
+import { translate } from './uiText'
 
 const introStorageKey = 'nocap_intro_seen_v1'
 
@@ -8,6 +10,7 @@ type IntroPhase = 'closed' | 'opening' | 'flipping' | 'revealed' | 'zooming' | '
 function shouldShowIntro(): boolean {
   try {
     const forceReplay = new URLSearchParams(window.location.search).get('intro') === '1'
+    if (!forceReplay && window.location.pathname !== '/') return false
     return forceReplay || localStorage.getItem(introStorageKey) !== 'true'
   } catch {
     return false
@@ -15,6 +18,12 @@ function shouldShowIntro(): boolean {
 }
 
 export function IntroExperience() {
+  const [lang, setLang] = useState(getStoredLang)
+  useEffect(() => {
+    const update = () => setLang(getStoredLang())
+    window.addEventListener('nocap-language-changed', update)
+    return () => window.removeEventListener('nocap-language-changed', update)
+  }, [])
   const [visible, setVisible] = useState(shouldShowIntro)
   const [phase, setPhase] = useState<IntroPhase>('closed')
   const [isHyper, setIsHyper] = useState(false)
@@ -143,9 +152,10 @@ export function IntroExperience() {
           type="button"
           className="intro-skip-btn"
           onClick={skipIntro}
-          aria-label="Bỏ qua phần giới thiệu"
+          aria-label={translate("Bỏ qua phần giới thiệu", lang)}
         >
-          Bỏ qua
+
+          {translate("Bỏ qua", lang)}
         </button>
 
         {/* 3D Stage */}
@@ -156,7 +166,7 @@ export function IntroExperience() {
             style={{
               '--sheet-duration': sheetDuration,
             } as CSSProperties}
-            title={phase === 'closed' ? 'Nhấp vào bìa sách để mở' : undefined}
+            title={phase === 'closed' ? translate("Nhấp vào bìa sách để mở", lang) : undefined}
           >
             {/* Ground Depth Shadow */}
             <div className="intro-book-shadow" />
@@ -207,16 +217,18 @@ export function IntroExperience() {
               <div className="intro-spread-l">
                 <div className="intro-crease-l" />
                 <div className="intro-spread-header">
-                  <span>TẬP I • TIỂU LUẬN</span>
+                  <span>{translate("TẬP I • TIỂU LUẬN", lang)}</span>
                   <span>TRANG 01</span>
                 </div>
                 <div>
-                  <span className="intro-dropped-cap">N</span>
+                  <span className="intro-dropped-cap">{lang === 'vi' ? 'N' : 'H'}</span>
                   <p className="intro-prose-text">
-                    ơi đây, từng con chữ không còn là dữ liệu khô khan mà trở thành những bậc thang dẫn vào chiều sâu của tư duy. Trong một thế giới tràn ngập tiếng ồn, sự tĩnh lặng của trang giấy chính là sự xa xỉ quý giá nhất.
+
+                    {translate("ơi đây, từng con chữ không còn là dữ liệu khô khan mà trở thành những bậc thang dẫn vào chiều sâu của tư duy. Trong một thế giới tràn ngập tiếng ồn, sự tĩnh lặng của trang giấy chính là sự xa xỉ quý giá nhất.", lang)}
                   </p>
                   <p className="intro-prose-text" style={{ marginTop: '10px' }}>
-                    Khi lật từng trang sách, bạn không chỉ đọc một câu chuyện, mà đang tìm lại chính mình trong từng khoảnh khắc chiêm nghiệm thuần khiết.
+
+                    {translate("Khi lật từng trang sách, bạn không chỉ đọc một câu chuyện, mà đang tìm lại chính mình trong từng khoảnh khắc chiêm nghiệm thuần khiết.", lang)}
                   </p>
                 </div>
                 <div style={{ marginTop: '20px', paddingTop: '8px', borderTop: '1px solid rgba(0,0,0,0.06)', display: 'flex', justifyContent: 'space-between', fontSize: '7px', color: '#8c8273', fontFamily: 'monospace' }}>
@@ -258,67 +270,67 @@ export function IntroExperience() {
               {/* 6 Rapid Cascading 90 FPS Flipping Sheets */}
               <div className="intro-flip-sheet idx-0">
                 <div className="intro-sheet-face front">
-                  <div className="intro-spread-header"><span>CHƯƠNG II</span><span>§ 02</span></div>
-                  <p className="intro-prose-text">"Trang sách mở rộng biên độ của tâm thức..."</p>
+                  <div className="intro-spread-header"><span>{translate("CHƯƠNG II", lang)}</span><span>§ 02</span></div>
+                  <p className="intro-prose-text">{translate("\"Trang sách mở rộng biên độ của tâm thức...\"", lang)}</p>
                 </div>
                 <div className="intro-sheet-face back">
-                  <div className="intro-spread-header"><span>GHI CHÚ</span><span>§ 03</span></div>
-                  <p className="intro-prose-text">"Dòng thời gian trôi qua nhẹ nhàng như dòng suối nhỏ..."</p>
+                  <div className="intro-spread-header"><span>{translate("GHI CHÚ", lang)}</span><span>§ 03</span></div>
+                  <p className="intro-prose-text">{translate("\"Dòng thời gian trôi qua nhẹ nhàng như dòng suối nhỏ...\"", lang)}</p>
                 </div>
               </div>
 
               <div className="intro-flip-sheet idx-1">
                 <div className="intro-sheet-face front">
-                  <div className="intro-spread-header"><span>CHƯƠNG III</span><span>§ 04</span></div>
-                  <p className="intro-prose-text">"Mỗi con đường là một cuộc phiêu lưu bất tận..."</p>
+                  <div className="intro-spread-header"><span>{translate("CHƯƠNG III", lang)}</span><span>§ 04</span></div>
+                  <p className="intro-prose-text">{translate("\"Mỗi con đường là một cuộc phiêu lưu bất tận...\"", lang)}</p>
                 </div>
                 <div className="intro-sheet-face back">
-                  <div className="intro-spread-header"><span>PHỤ LỤC</span><span>§ 05</span></div>
-                  <p className="intro-prose-text">"Ánh sáng của tri thức xóa nhòa bóng tối mơ hồ..."</p>
+                  <div className="intro-spread-header"><span>{translate("PHỤ LỤC", lang)}</span><span>§ 05</span></div>
+                  <p className="intro-prose-text">{translate("\"Ánh sáng của tri thức xóa nhòa bóng tối mơ hồ...\"", lang)}</p>
                 </div>
               </div>
 
               <div className="intro-flip-sheet idx-2">
                 <div className="intro-sheet-face front">
-                  <div className="intro-spread-header"><span>CHƯƠNG IV</span><span>§ 06</span></div>
-                  <p className="intro-prose-text">"Sự hiểu biết đem lại nguồn sức mạnh tĩnh tại..."</p>
+                  <div className="intro-spread-header"><span>{translate("CHƯƠNG IV", lang)}</span><span>§ 06</span></div>
+                  <p className="intro-prose-text">{translate("\"Sự hiểu biết đem lại nguồn sức mạnh tĩnh tại...\"", lang)}</p>
                 </div>
                 <div className="intro-sheet-face back">
-                  <div className="intro-spread-header"><span>TƯ DUY</span><span>§ 07</span></div>
-                  <p className="intro-prose-text">"Lắng nghe những rung động tinh tế nhất..."</p>
+                  <div className="intro-spread-header"><span>{translate("TƯ DUY", lang)}</span><span>§ 07</span></div>
+                  <p className="intro-prose-text">{translate("\"Lắng nghe những rung động tinh tế nhất...\"", lang)}</p>
                 </div>
               </div>
 
               <div className="intro-flip-sheet idx-3">
                 <div className="intro-sheet-face front">
-                  <div className="intro-spread-header"><span>CHƯƠNG V</span><span>§ 08</span></div>
-                  <p className="intro-prose-text">"Vượt qua những giới hạn định kiến thông thường..."</p>
+                  <div className="intro-spread-header"><span>{translate("CHƯƠNG V", lang)}</span><span>§ 08</span></div>
+                  <p className="intro-prose-text">{translate("\"Vượt qua những giới hạn định kiến thông thường...\"", lang)}</p>
                 </div>
                 <div className="intro-sheet-face back">
-                  <div className="intro-spread-header"><span>TRIẾT HỌC</span><span>§ 09</span></div>
-                  <p className="intro-prose-text">"Khát vọng vươn tới chân trời tự do..."</p>
+                  <div className="intro-spread-header"><span>{translate("TRIẾT HỌC", lang)}</span><span>§ 09</span></div>
+                  <p className="intro-prose-text">{translate("\"Khát vọng vươn tới chân trời tự do...\"", lang)}</p>
                 </div>
               </div>
 
               <div className="intro-flip-sheet idx-4">
                 <div className="intro-sheet-face front">
-                  <div className="intro-spread-header"><span>CHƯƠNG VI</span><span>§ 10</span></div>
-                  <p className="intro-prose-text">"Hội ngộ những tâm hồn đồng điệu..."</p>
+                  <div className="intro-spread-header"><span>{translate("CHƯƠNG VI", lang)}</span><span>§ 10</span></div>
+                  <p className="intro-prose-text">{translate("\"Hội ngộ những tâm hồn đồng điệu...\"", lang)}</p>
                 </div>
                 <div className="intro-sheet-face back">
-                  <div className="intro-spread-header"><span>KẾT NỐI</span><span>§ 11</span></div>
-                  <p className="intro-prose-text">"Chạm vào tinh hoa của nhân loại..."</p>
+                  <div className="intro-spread-header"><span>{translate("KẾT NỐI", lang)}</span><span>§ 11</span></div>
+                  <p className="intro-prose-text">{translate("\"Chạm vào tinh hoa của nhân loại...\"", lang)}</p>
                 </div>
               </div>
 
               <div className="intro-flip-sheet idx-5">
                 <div className="intro-sheet-face front">
-                  <div className="intro-spread-header"><span>CHƯƠNG VII</span><span>§ 12</span></div>
-                  <p className="intro-prose-text">"Hành trình vạn dặm khởi đầu từ một trang sách..."</p>
+                  <div className="intro-spread-header"><span>{translate("CHƯƠNG VII", lang)}</span><span>§ 12</span></div>
+                  <p className="intro-prose-text">{translate("\"Hành trình vạn dặm khởi đầu từ một trang sách...\"", lang)}</p>
                 </div>
                 <div className="intro-sheet-face back">
-                  <div className="intro-spread-header"><span>VĨ THANH</span><span>§ 13</span></div>
-                  <p className="intro-prose-text">"Vòng tuần hoàn không bao giờ ngưng nghỉ..."</p>
+                  <div className="intro-spread-header"><span>{translate("VĨ THANH", lang)}</span><span>§ 13</span></div>
+                  <p className="intro-prose-text">{translate("\"Vòng tuần hoàn không bao giờ ngưng nghỉ...\"", lang)}</p>
                 </div>
               </div>
 
@@ -330,7 +342,7 @@ export function IntroExperience() {
             {phase === 'closed' && (
               <div className="intro-click-badge">
                 <span className="intro-click-dot" />
-                <span>Nhấp vào bìa sách để mở</span>
+                <span>{translate("Nhấp vào bìa sách để mở", lang)}</span>
               </div>
             )}
           </div>

@@ -1,9 +1,10 @@
-# NoCap Web (local preview)
+# NoCap Web
 
-Reader website for the existing NoCap Cloudflare Worker. This project lives
-beside `ebook-simulator` and `ebook-backend`; it does not deploy or change either.
+NoCap’s browser client, developed alongside the Android app. Production:
+https://ntlab.id.vn (Cloudflare Pages). The frontend uses the existing NoCap
+Cloudflare Worker and does not deploy the backend or Android application.
 
-## Run on this computer
+## Run locally
 
 Requires Node.js 22+.
 
@@ -14,97 +15,87 @@ npm run dev
 ```
 
 Open http://127.0.0.1:5173. The default API is
-`https://nocap-ebook-api.buiminhhien001.workers.dev`. To use QA, create an
-untracked `.env.local` with `VITE_API_BASE_URL` set to the QA Worker.
-
-`npm run build`, `npm run lint`, and `npm test` are the local gates.
-
-## Deploy to Cloudflare Pages
-
-The production frontend is hosted at https://nocap-web.pages.dev and uses the
-existing production API. Deployment uploads the current working tree, including
-uncommitted changes; it does not commit or push Git changes.
+`https://nocap-ebook-api.buiminhhien001.workers.dev`. For a QA backend, set
+`VITE_API_BASE_URL` in an untracked `.env.local`.
 
 ```powershell
-cd "D:\du an\nocap-web"
-npx wrangler login
 npm test
 npm run lint
+npm run build
+```
+
+## Deploy
+
+```powershell
+npx wrangler login
 npm run deploy
 ```
 
-`wrangler.jsonc` identifies the Pages project and the `dist` build directory.
-No API credentials are included in the frontend bundle. Service-worker and HTML
-responses revalidate on update; hashed assets use long-lived caching. Local
-browser data belongs to each URL separately, so files saved under localhost or a
-temporary tunnel are not automatically present on the Pages domain.
+Deployment uploads `dist` to the `nocap-web` Pages project. It does not commit
+or push Git changes. Custom-domain caching must respect the response headers,
+especially for HTML and `sw.js`, so installed clients can receive updates.
+Authenticated API requests bypass service-worker caching and use `no-store`.
+No admin credentials or payment-confirmation secrets belong in this bundle.
 
-## Try offline reading locally
+## Navigation and documents
 
-The service worker is generated for the built preview, not the Vite development
-server. Run:
+- `/`, `/explore`, `/library`, `/memory`, `/stats`, `/account`.
+- `/books/:id` opens book details; `/read/:id` opens the reader. Browser history
+  and direct links use the same routes.
+- `/privacy` and `/terms` serve the public legal pages.
+- Read EPUB, PDF, CBZ, DOCX, HTML, TXT/Markdown, JPG, PNG and WebP.
+- PDF includes selectable text, highlight rectangles, page resume, and outline
+  destinations resolved from named/explicit references, including nested entries.
+  A heading without a valid destination never navigates to a guessed page.
+- Import files into the current guest/account profile. Signed-in imports upload
+  to private R2 storage. Guest files stay in the current browser.
+- **Download file** saves the original document to the device. It is not an
+  offline-mode toggle. Previously opened/imported content may remain in browser
+  storage, but that storage can be cleared or evicted and is not a backup.
 
-```powershell
-npm run build
-npm run preview -- --host 127.0.0.1
-```
+## Reading Memory and plans
 
-Open `http://127.0.0.1:4173` while online. In the catalog, use the download
-button on a book and wait for “Đã tải sách để đọc offline”. Reload once while
-online to let the service worker control the page. Then disconnect the network
-or stop the preview server, reload the same URL, and open the downloaded book.
-Its public metadata and content remain available in this browser. Bookmarks,
-notes, and reading progress remain local until sync can retry online.
+| Feature | Free | Pro |
+| --- | --- | --- |
+| Reading, bookmarks, highlights, note editing/deletion | Yes | Yes |
+| Markdown export | Yes | Yes |
+| Manually add an individual note to the review schedule | Yes | Yes |
+| Basic scheduled review | Yes | Yes |
+| Automatically generate review cards from saved notes | No | Yes |
+| PDF/Anki note export and quick review | No | Android only; not yet implemented on Web |
 
-Only books explicitly downloaded for offline use are available without a
-connection. Public catalog downloads are shared across profiles on this browser;
-private cloud downloads remain scoped to the signed-in account. Because the
-session is stored only for the current browser session, private account content
-cannot be reopened after closing the browser until login is available again.
-Browser storage can be cleared or evicted, so it is not a backup.
+The policy follows Android `EntitlementPolicy` and `ReadingMemoryScreen`:
+Markdown/basic review are free; automatic card generation is
+`ADVANCED_READING_MEMORY`. Web checks the server entitlement before automatic
+creation. It must belong to the current account, have an accepted status, remain
+unexpired and have been verified within 24 hours. SePay monthly/yearly plans
+are quoted by the backend; only the backend confirms payment.
 
-## Available now
+Reading Memory edits preserve the annotation identity, quotation and locator.
+Deleting an annotation tombstones its linked review cards as well. Account
+changes remain in the automatic sync queue; local-only files stay local.
 
-- Browse/search/filter the current public catalog.
-- Email/password login, registration, password reset, guest mode and account
-  isolation. Browser sessions live in `sessionStorage` and expire with the
-  server session; no admin credentials are included.
-- Import EPUB, PDF, DOCX, HTML, TXT, Markdown, JPG, PNG and WebP to this browser's IndexedDB, scoped to
-  the current guest/account profile. Imported files are local to this browser.
-- Installable PWA shell and opt-in offline downloads for public catalog books;
-  private cloud downloads are isolated by account. The catalog is cached for
-  offline browsing and the service worker never caches authenticated API calls.
-- Read EPUB, PDF, DOCX, HTML, text/Markdown and image documents, keep local progress, set
-  bookmarks and highlights, and reopen a saved annotation at its locator.
-- Persist reader theme, font, spacing and alignment globally and per book using
-  the same preference records as Android.
-- Pull/push all 13 Android sync record kinds. The incremental cursor is kept in
-  IndexedDB, offline changes retry online, and conflicting local edits remain
-  available for review.
-- Use Reading Memory with persisted spaced-repetition scheduling compatible
-  with Android, Markdown export, and reading-session statistics.
-- Show the signed-in account's server-authoritative Free/Pro state without
-  exposing a purchase flow while web billing remains unavailable.
-- Authenticated download of cloud-only private documents already created by
-  Android. Web imports for a signed-in account are uploaded to private storage.
+## Other behavior
 
-## Current boundaries
+- Email/password and Google sign-in; profile rename and account deletion.
+  Google OAuth origins must include the domain used to access the web app.
+- Tags/collections, per-book reader preferences, original-file downloads.
+- Automatic sync of Android-compatible records, live WebSocket updates,
+  cross-tab notifications and explicit conflict resolution.
+- Vietnamese/English interface, including notifications and reader dialogs.
+  Book content and user-authored names/notes retain their original language.
+- Reading statistics distinguish total active days from the current consecutive
+  streak. Yesterday’s streak remains current until today ends without reading.
+- Book details do not show fabricated ratings. A real ratings system is not
+  currently implemented.
 
-- The Google Web OAuth client and accepted audience are not configured. Use an
-  existing email/password account for this local preview. Google-only accounts
-  need a separate Web client and backend audience configuration.
-- Guest imports remain only in this browser. Browser storage is not a backup.
-- EPUB CFI generated by epub.js can differ from Readium's Android locator; web
-  resumes the same chapter and attempts the saved CFI, but exact visual position
-  must be verified on both clients.
-- Gutenberg EPUB files lack browser CORS headers. Vite's `/dev-book/:id` route
-  proxies catalogued Gutenberg files only for local development. Deployment
-  needs an equivalent bounded source route or ingestion to NoCap R2.
-- PDF supports page resume; full text selection in PDF is not yet available.
-- Android image/CBZ readers, backup/restore controls, account rename/deletion,
-  tags/collections management and Google sign-in are not yet exposed on web.
-- The existing authenticated live-sync socket cannot accept an Authorization
-  header from a browser WebSocket. Web foreground polling and focus/online
-  refresh are used until the backend offers a browser-safe live transport.
-- Cloud sync conflicts keep the local edit and pending operation for review;
-  this preview reports their count but does not offer a resolution editor.
+## Boundaries
+
+- This client is not a replacement for Android’s PDF/Anki export or quick-review
+  modes. Advanced features need an active server-verified Pro entitlement.
+- EPUB CFI from epub.js can differ from Readium on Android. Chapter/progression
+  fallbacks are supported, but visual positions should be checked on both clients.
+- Local `/dev-book/:id` proxies bounded catalog downloads for development.
+  Production downloads use the backend’s document route.
+- Browser sessions and cached files are scoped to the origin and account. Files
+  under localhost or a temporary tunnel do not automatically appear on production.

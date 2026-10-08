@@ -1,7 +1,53 @@
 import { describe, expect, it, vi } from 'vitest'
-import { API_BASE, loadBookBytes } from './api'
+import { API_BASE, loadBookBytes, createSePayOrder, getSePayOrder, getSePayPlans } from './api'
 import { androidRecordId } from './sync'
 import type { Book } from './types'
+
+describe('SePay checkout API', () => {
+  it('fetches server quotes and sends only the selected yearly plan, never a client price', async () => {
+    const yearly = { id: 'YEARLY', amount: 352800, planDays: 365, discountPercent: 40, regularAmount: 588000, currency: 'VND' }
+    const fetchMock = vi.fn().mockResolvedValueOnce(Response.json({ plans: [yearly] }))
+      .mockResolvedValueOnce(Response.json({ id: 'annual-order', amount: yearly.amount, planDays: 365 }))
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      expect((await getSePayPlans('test-token')).plans[0]).toEqual(yearly)
+      expect(fetchMock.mock.calls[0][0]).toBe(`${API_BASE}/api/v1/billing/sepay/plans`)
+      expect((await createSePayOrder('test-token', 'YEARLY')).amount).toBe(352800)
+      expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ plan: 'YEARLY' })
+      for (const [, options] of fetchMock.mock.calls) {
+        expect(options.cache).toBe('no-store')
+        expect(new Headers(options.headers).get('Authorization')).toBe('Bearer test-token')
+      }
+    } finally { vi.unstubAllGlobals() }
+  })
+  it('lets the backend set payment amount and bank details, with authenticated uncached requests', async () => {
+    const order = { id: 'order-1', status: 'PENDING', amount: 49000, bank: { code: 'TEST' } }
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(order)))
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      expect(await createSePayOrder('test-token')).toEqual(order)
+      const [url, options] = fetchMock.mock.calls[0]
+      expect(url).toBe(`${API_BASE}/api/v1/billing/sepay/order`)
+      expect(options.method).toBe('POST')
+      expect(options.body).toBe('{}')
+      expect(new Headers(options.headers).get('Authorization')).toBe('Bearer test-token')
+      expect(options.cache).toBe('no-store')
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it('reads only the requested order and preserves server errors', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ id: 'order/1', status: 'PAID' })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: { message: 'SePay chưa được cấu hình' } }), { status: 503 }))
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      expect((await getSePayOrder('test-token', 'order/1')).status).toBe('PAID')
+      expect(fetchMock.mock.calls[0][0]).toBe(`${API_BASE}/api/v1/billing/sepay/orders/order%2F1`)
+      expect(new Headers(fetchMock.mock.calls[0][1].headers).get('Authorization')).toBe('Bearer test-token')
+      expect(fetchMock.mock.calls[0][1].cache).toBe('no-store')
+      await expect(createSePayOrder('test-token')).rejects.toThrow('SePay chưa được cấu hình')
+    } finally { vi.unstubAllGlobals() }
+  })
+})
 
 describe('loadBookBytes routing', () => {
   it('routes gutenberg and external books to worker catalog file endpoint', async () => {
@@ -50,6 +96,7 @@ describe('loadBookBytes routing', () => {
     const [calledUrl, options] = fetchMock.mock.calls[0]
     expect(calledUrl).toBe(`${API_BASE}/api/v1/sync/blobs/${hash}`)
     expect(options.headers.Authorization).toBe('Bearer secret-token')
+    expect(options.cache).toBe('no-store')
 
     vi.unstubAllGlobals()
   })
@@ -111,6 +158,23 @@ describe('loadBookBytes routing', () => {
     const delSnapRes = await deleteCloudBackup('secret-token', 'snap-1')
     expect(delSnapRes.success).toBe(true)
 
+    for (const [, options] of fetchMock.mock.calls) expect(options.cache).toBe('no-store')
+
     vi.unstubAllGlobals()
+  })
+
+  it('bypasses HTTP cache for login and account reads even when a caller requests caching', async () => {
+    const { api, login, getUser } = await import('./api')
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(Response.json({ token: 'session-token', user: { id: 'u1' } })))
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      await login('user@example.test', 'test-password')
+      await getUser('session-token')
+      await api('/api/v1/me', { cache: 'force-cache' }, 'session-token')
+      for (const [, options] of fetchMock.mock.calls) expect(options.cache).toBe('no-store')
+      expect(fetchMock.mock.calls[0][1].headers.has('Authorization')).toBe(false)
+      expect(fetchMock.mock.calls[1][1].headers.get('Authorization')).toBe('Bearer session-token')
+      expect(fetchMock.mock.calls.every(([url]) => !String(url).includes('session-token'))).toBe(true)
+    } finally { vi.unstubAllGlobals() }
   })
 })

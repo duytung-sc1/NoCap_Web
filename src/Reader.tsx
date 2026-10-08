@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import DOMPurify from 'dompurify'
 import { getDocument, GlobalWorkerOptions, TextLayer, type PDFDocumentProxy, type RenderTask } from 'pdfjs-dist'
 import 'pdfjs-dist/web/pdf_viewer.css'
@@ -17,12 +17,18 @@ import atkinsonLatinExtBold from '@fontsource/atkinson-hyperlegible/files/atkins
 import atkinsonLatinBold from '@fontsource/atkinson-hyperlegible/files/atkinson-hyperlegible-latin-700-normal.woff2?url'
 import type { Book, FontFamily, ReaderAnnotation, ReaderLocation, ReaderWidth, TextAlignment, TocItem } from './types'
 import { detectReaderFormat } from './readerFormat'
+import { synchronizeEpubScroll, waitForEpubTargetFonts, type EpubScrollManager } from './epubScroll'
+import { archiveLocator, archivePageIndex, clampProgression, epubProgression, findSpineHref, normalizedPdfRects, pdfTextOffsets, rangeFromOffsets, rangeOffsets, sectionTextProgression, type PdfRect } from './readerPositions'
 import type Rendition from 'epubjs/types/rendition'
 import type Contents from 'epubjs/types/contents'
+import { pdfOutline } from './pdfOutline'
+import { translate } from './uiText'
+import type { Lang } from './i18n'
 
 GlobalWorkerOptions.workerSrc = workerUrl
 
 type Props = {
+  lang?: Lang
   book: Book
   bytes: ArrayBuffer
   initial?: string
@@ -53,17 +59,6 @@ export function ReaderPane(props: Props) {
 
 function parseInitial(value?: string): Record<string, unknown> | null {
   try { return value ? JSON.parse(value) as Record<string, unknown> : null } catch { return null }
-}
-
-function findSpineHref(spine: unknown, targetHref?: string): string | undefined {
-  if (!targetHref) return undefined
-  const cleanTarget = targetHref.replace(/^\/+/, '').split('#')[0]
-  const items = (spine as { items?: Array<{ href?: string }> })?.items || []
-  const exact = items.find(item => item.href === cleanTarget || item.href === targetHref)
-  if (exact?.href) return exact.href
-  const ends = items.find(item => item.href && (item.href.endsWith(cleanTarget) || cleanTarget.endsWith(item.href)))
-  if (ends?.href) return ends.href
-  return cleanTarget
 }
 
 function fontStack(family?: FontFamily): string {
@@ -97,7 +92,50 @@ const epubFontFaces = [
   ['Atkinson Hyperlegible', 'normal', '700', atkinsonLatinBold, latinRange],
 ].map(([family, style, weight, url, range]) => `@font-face{font-family:"${family}";font-style:${style};font-display:swap;font-weight:${weight};src:url("${url}") format("woff2");unicode-range:${range};}`).join('')
 
-function EpubPane({ bytes, initial, fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme, onLocation, onSelection, onControls, onToc, navigateTarget, navigateProgression, annotations = [] }: Props) {
+function applyEpubComfort(view: Rendition, comfort: Pick<Props, 'fontSize' | 'fontFamily' | 'lineHeight' | 'textAlignment' | 'readerWidth' | 'theme'>) {
+  const { fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme } = comfort
+  view.themes.fontSize(`${fontSize * 0.18}px`)
+  const palette = theme === 'night' ? { color: '#e8edf7', background: '#111b2b' } : theme === 'sepia' ? { color: '#443627', background: '#f3e9d3' } : { color: '#172033', background: '#fffdf8' }
+  view.themes.default({
+    body: {
+      color: `${palette.color} !important`,
+      background: `${palette.background} !important`,
+      'font-family': `${fontStack(fontFamily)} !important`,
+      'line-height': `${lineHeight || 1.65} !important`,
+      'text-align': `${textAlignment || 'left'} !important`,
+      'max-width': `${readingMeasure(readerWidth)} !important`,
+      'margin-left': 'auto !important',
+      'margin-right': 'auto !important',
+    },
+  })
+}
+
+async function displayEpubLocation(view: Rendition, target: string | undefined, isCurrent: () => boolean, readiness: WeakMap<Document, Promise<void>>) {
+  await view.display(target)
+  if (!isCurrent()) return
+  const section = target ? view.book.spine.get(target) : view.book.spine.first()
+  const contents = view.getContents() as unknown as Contents[]
+  // Continuous rendering may destroy an offscreen document while it loads.
+  // Its fonts.ready can stay pending forever; only await the target frame's
+  // explicit font load, then measure its text synchronously below.
+  await waitForEpubTargetFonts(contents, section?.index, readiness)
+  if (!isCurrent()) return
+  // Content/theme hooks run after epub.js's first iframe measurement. Expand
+  // the views to their final text metrics before anchoring the requested CFI.
+  type Frame = { expand: () => void; element: HTMLElement; locationOf: (target: string) => { top: number; left: number } }
+  const manager = (view as unknown as { manager: EpubScrollManager & { views: { all: () => Frame[]; find: (section: unknown) => Frame | undefined } } }).manager
+  for (const frame of manager.views.all()) frame.expand()
+  const frame = section && manager.views.find(section)
+  if (frame) {
+    const position = target ? frame.locationOf(target) : { top: 0, left: 0 }
+    manager.scrollTo(frame.element.offsetLeft + position.left, frame.element.offsetTop + position.top, true)
+    view.reportLocation()
+  }
+}
+
+function EpubPane({ lang = 'vi', bytes, initial, fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme, onLocation, onSelection, onControls, onToc, navigateTarget, navigateProgression, annotations = [] }: Props) {
+  const langRef = useRef(lang)
+  useEffect(() => { langRef.current = lang }, [lang])
   const host = useRef<HTMLDivElement>(null)
   const rendition = useRef<Rendition | null>(null)
   const bookRef = useRef<import('epubjs/types/book').default | null>(null)
@@ -108,8 +146,11 @@ function EpubPane({ bytes, initial, fontSize, fontFamily, lineHeight, textAlignm
   const renderedAnnotations = useRef<string[]>([])
   const locationsReady = useRef(false)
   const requestedProgression = useRef<number | null>(null)
+  const contentReadiness = useRef(new WeakMap<Document, Promise<void>>())
+  const comfortRef = useRef({ fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme })
   const [renditionVersion, setRenditionVersion] = useState(0)
   const [error, setError] = useState('')
+  useEffect(() => { comfortRef.current = { fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme } }, [fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme])
   useEffect(() => {
     locationRef.current = onLocation
     selectionRef.current = onSelection
@@ -120,7 +161,10 @@ function EpubPane({ bytes, initial, fontSize, fontFamily, lineHeight, textAlignm
   useEffect(() => {
     if (!navigateTarget || !rendition.current) return
     const target = findSpineHref(bookRef.current?.spine, navigateTarget) || navigateTarget
-    void rendition.current.display(target)
+    const current = rendition.current
+    let active = true
+    void displayEpubLocation(current, target, () => active, contentReadiness.current).catch(() => {})
+    return () => { active = false }
   }, [navigateTarget])
 
   useEffect(() => {
@@ -165,6 +209,7 @@ function EpubPane({ bytes, initial, fontSize, fontFamily, lineHeight, textAlignm
   useEffect(() => {
     if (!host.current) return
     setError('')
+    locationsReady.current = false
     requestedProgression.current = null
     let alive = true
     let book: import('epubjs/types/book').default | null = null
@@ -182,7 +227,7 @@ function EpubPane({ bytes, initial, fontSize, fontFamily, lineHeight, textAlignm
           type RawToc = { id?: string; href: string; label?: string; subitems?: RawToc[] }
           const formatToc = (list: RawToc[]): TocItem[] => list.map(item => ({
             id: item.id || item.href,
-            label: (item.label || '').trim() || 'Chương',
+            label: (item.label || '').trim() || translate("Chương", langRef.current),
             href: item.href,
             subitems: item.subitems?.length ? formatToc(item.subitems) : undefined,
           }))
@@ -190,13 +235,33 @@ function EpubPane({ bytes, initial, fontSize, fontFamily, lineHeight, textAlignm
         }).catch(() => {})
         view = book.renderTo(host.current, { width: '100%', height: '100%', flow: 'scrolled-doc', manager: 'continuous', allowScriptedContent: false })
         rendition.current = view
-        view.hooks.content.register((contents: Contents) => {
+        await view.started
+        if (!alive) return
+        synchronizeEpubScroll((view as unknown as { manager: EpubScrollManager }).manager)
+        // Set typography before display measures any spine views.
+        applyEpubComfort(view, comfortRef.current)
+        view.hooks.render.register((frame: { contents: Contents }) => {
+          const contents = frame.contents
           const document = contents.document
-          if (!document?.head || document.getElementById('nocap-reader-fonts')) return
-          const style = document.createElement('style')
-          style.id = 'nocap-reader-fonts'
-          style.textContent = epubFontFaces
-          document.head.appendChild(style)
+          // render hooks start synchronously, before display() resolves; content
+          // hooks start later. Track the actual theme/font work for this frame.
+          const ready = (async () => {
+            if (!document?.head) return
+            if (!document.getElementById('nocap-reader-fonts')) {
+              const style = document.createElement('style')
+              style.id = 'nocap-reader-fonts'
+              style.textContent = epubFontFaces
+              document.head.appendChild(style)
+            }
+            view!.themes.inject(contents)
+            view!.themes.overrides(contents)
+            const comfort = comfortRef.current
+            if (comfort.fontFamily !== 'mono') {
+              await document.fonts.load(`${comfort.fontSize * 0.18}px "${comfort.fontFamily === 'sans' ? 'Atkinson Hyperlegible' : 'Literata Variable'}"`, document.body.textContent || 'NoCap').catch(() => [])
+            }
+          })()
+          contentReadiness.current.set(document, ready)
+          return ready
         })
         view.on('relocated', (location: { start?: { cfi?: string; href?: string; percentage?: number; index?: number }; end?: unknown }) => {
           const start = location.start
@@ -206,8 +271,14 @@ function EpubPane({ bytes, initial, fontSize, fontFamily, lineHeight, textAlignm
             ? (book.spine as unknown as { get: (cfi: string) => { href?: string; index?: number } }).get(start.cfi)
             : undefined
           const sectionIndex = Number.isFinite(section?.index) ? section!.index! : (start.index || 0)
-          const sectionProgression = Number.isFinite(start.percentage) ? start.percentage! : 0
-          let totalProgression = (sectionIndex + sectionProgression) / spineLength
+          let sectionProgression = 0
+          try {
+            // epub.js's runtime returns Contents[], despite its bundled type.
+            const contents = (view?.getContents() as unknown as Contents[] | undefined)?.find(content => content.sectionIndex === sectionIndex)
+            const root = contents?.document.body
+            if (contents && root) sectionProgression = sectionTextProgression(root, contents.range(start.cfi))
+          } catch { /* keep the beginning of the section for non-text resources */ }
+          let totalProgression = epubProgression(sectionIndex, spineLength, sectionProgression, start.percentage, locationsReady.current).total
           if (locationsReady.current && book?.locations) {
             try {
               const locatedProgression = book.locations.percentageFromCfi(start.cfi)
@@ -280,39 +351,31 @@ function EpubPane({ bytes, initial, fontSize, fontFamily, lineHeight, textAlignm
             else await view.display()
           } catch { await view.display() }
         } else if (locations?.cfi) {
-          try { await view.display(locations.cfi) }
+          try { await displayEpubLocation(view, locations.cfi, () => alive, contentReadiness.current) }
           catch { await view.display() }
         } else if (saved?.href) {
           const targetHref = findSpineHref(book?.spine, saved.href as string)
           try {
-            await view.display(targetHref)
             const prog = typeof locations?.progression === 'number' ? locations.progression : undefined
-            if (typeof prog === 'number' && prog > 0) {
-              setTimeout(() => {
-                if (!host.current) return
-                const iframe = host.current.querySelector('iframe')
-                if (iframe?.contentWindow && iframe.contentDocument) {
-                  const doc = iframe.contentDocument
-                  const innerMax = Math.max(doc.body.scrollHeight, doc.documentElement.scrollHeight) - iframe.clientHeight
-                  if (innerMax > 0) {
-                    iframe.contentWindow.scrollTo({ top: innerMax * prog, behavior: 'instant' as ScrollBehavior })
-                    return
-                  }
-                }
-                const maxScroll = host.current.scrollHeight - host.current.clientHeight
-                if (maxScroll > 0) {
-                  host.current.scrollTo({ top: maxScroll * prog, behavior: 'instant' as ScrollBehavior })
-                }
-              }, 250)
+            const section = book.spine.get(targetHref)
+            let target = targetHref
+            if (section && typeof prog === 'number' && prog > 0) {
+              await section.load(book.load.bind(book))
+              const root = section.document?.querySelector('body')
+              if (root) {
+                const range = rangeFromOffsets(root, Math.floor((root.textContent?.length || 0) * clampProgression(prog)))
+                if (range) target = section.cfiFromRange(range)
+              }
             }
+            if (alive) await displayEpubLocation(view, target, () => alive, contentReadiness.current)
           } catch {
             await view.display()
           }
         } else {
-          await view.display()
+          await displayEpubLocation(view, undefined, () => alive, contentReadiness.current)
         }
         if (alive) setRenditionVersion(value => value + 1)
-      } catch { if (alive) setError('Không mở được EPUB này. Tệp có thể bị hỏng hoặc không đúng định dạng.') }
+      } catch { if (alive) setError(translate("Không mở được EPUB này. Tệp có thể bị hỏng hoặc không đúng định dạng.", langRef.current)) }
     }
     void open()
     return () => { alive = false; rendition.current = null; locationsReady.current = false; view?.destroy(); book?.destroy() }
@@ -321,20 +384,7 @@ function EpubPane({ bytes, initial, fontSize, fontFamily, lineHeight, textAlignm
   useEffect(() => {
     const view = rendition.current
     if (!view) return
-    view.themes.fontSize(`${fontSize * 0.18}px`)
-    const palette = theme === 'night' ? { color: '#e8edf7', background: '#111b2b' } : theme === 'sepia' ? { color: '#443627', background: '#f3e9d3' } : { color: '#172033', background: '#fffdf8' }
-    view.themes.default({
-      body: {
-        color: `${palette.color} !important`,
-        background: `${palette.background} !important`,
-        'font-family': `${fontStack(fontFamily)} !important`,
-        'line-height': `${lineHeight || 1.65} !important`,
-        'text-align': `${textAlignment || 'left'} !important`,
-        'max-width': `${readingMeasure(readerWidth)} !important`,
-        'margin-left': 'auto !important',
-        'margin-right': 'auto !important',
-      },
-    })
+    applyEpubComfort(view, { fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme })
   }, [fontSize, theme, fontFamily, lineHeight, textAlignment, readerWidth, renditionVersion])
 
   useEffect(() => {
@@ -371,13 +421,20 @@ function EpubPane({ bytes, initial, fontSize, fontFamily, lineHeight, textAlignm
     }
   }, [annotations, renditionVersion])
 
-  return error ? <div className="reader-error">{error}</div> : <div ref={host} className="epub-host" aria-label="Nội dung EPUB" />
+  // epub.js compensates for inserted/removed spine views itself. Browser
+  // scroll anchoring would apply the same offset twice and skip chapter starts.
+  return error ? <div className="reader-error">{error}</div> : <div ref={host} className="epub-host" style={{ overflowAnchor: 'none' }} aria-label={translate("Nội dung EPUB", lang)} />
 }
 
-function PdfPane({ bytes, initial, onLocation, onSelection, onControls, onToc, navigateTarget, navigateProgression, annotations = [] }: Props) {
+function PdfPane({ lang = 'vi', bytes, initial, onLocation, onSelection, onControls, onToc, navigateTarget, navigateProgression, annotations = [] }: Props) {
+  const langRef = useRef(lang)
+  useEffect(() => { langRef.current = lang }, [lang])
   const canvas = useRef<HTMLCanvasElement>(null)
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null)
   const textLayerDiv = useRef<HTMLDivElement>(null)
+  const [textLayerVersion, setTextLayerVersion] = useState(0)
+  const [pdfHighlights, setPdfHighlights] = useState<{ page: number; rects: Array<PdfRect & { id: string; color: string }> }>({ page: 0, rects: [] })
+  const [renderWidth, setRenderWidth] = useState(800)
   const [dimensions, setDimensions] = useState<{ width: number; height: number }>({ width: 800, height: 1100 })
   const [page, setPage] = useState(() => {
     const saved = parseInitial(initial)
@@ -386,6 +443,20 @@ function PdfPane({ bytes, initial, onLocation, onSelection, onControls, onToc, n
   const [error, setError] = useState('')
   const onTocRef = useRef(onToc)
   useEffect(() => { onTocRef.current = onToc }, [onToc])
+
+  useEffect(() => {
+    const parent = canvas.current?.parentElement?.parentElement
+    if (!parent) return
+    const resize = () => {
+      const style = getComputedStyle(parent)
+      const width = parent.clientWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0)
+      setRenderWidth(Math.min(960, Math.max(1, width)))
+    }
+    resize()
+    const observer = new ResizeObserver(resize)
+    observer.observe(parent)
+    return () => observer.disconnect()
+  }, [document])
 
   useEffect(() => {
     if (!navigateTarget) return
@@ -423,17 +494,11 @@ function PdfPane({ bytes, initial, onLocation, onSelection, onControls, onToc, n
       setDocument(pdf)
       void pdf.getOutline().then(outline => {
         if (!active || !outline || !outline.length || !onTocRef.current) return
-        type RawOutline = { title?: string; dest?: unknown; items?: RawOutline[] }
-        const formatPdfToc = (items: RawOutline[], prefix = ''): TocItem[] => items.map((item, idx) => ({
-          id: `${prefix}pdf-item-${idx}`,
-          label: (item.title || `Mục ${idx + 1}`).trim(),
-          href: typeof item.dest === 'string' ? item.dest : `page:${idx + 1}`,
-          subitems: item.items?.length ? formatPdfPdf(item.items, `${prefix}${idx}-`) : undefined,
-        }))
-        const formatPdfPdf = formatPdfToc
-        onTocRef.current(formatPdfToc(outline))
+        void pdfOutline(pdf, outline, index => `${translate('Mục', langRef.current)} ${index}`).then(items => {
+          if (active) onTocRef.current?.(items)
+        }).catch(() => {})
       }).catch(() => {})
-    }).catch(() => { if (active) setError('Không mở được PDF này. Tệp có thể bị hỏng hoặc được bảo vệ.') })
+    }).catch(() => { if (active) setError(translate("Không mở được PDF này. Tệp có thể bị hỏng hoặc được bảo vệ.", langRef.current)) })
     return () => { active = false; void task.destroy() }
   }, [bytes])
 
@@ -441,9 +506,10 @@ function PdfPane({ bytes, initial, onLocation, onSelection, onControls, onToc, n
     if (!document || !canvas.current) return
     let active = true
     let render: RenderTask | null = null
+    let textLayer: TextLayer | null = null
     void document.getPage(page).then(async pdfPage => {
       if (!active || !canvas.current) return
-      const width = Math.min(960, canvas.current.parentElement?.clientWidth || 800)
+      const width = renderWidth
       const unscaled = pdfPage.getViewport({ scale: 1 })
       const viewport = pdfPage.getViewport({ scale: width / unscaled.width })
       setDimensions({ width: viewport.width, height: viewport.height })
@@ -461,27 +527,36 @@ function PdfPane({ bytes, initial, onLocation, onSelection, onControls, onToc, n
         textLayerDiv.current.innerHTML = ''
         textLayerDiv.current.style.width = `${viewport.width}px`
         textLayerDiv.current.style.height = `${viewport.height}px`
+        // PDF.js 6 text-layer CSS needs these variables to match the canvas.
+        // Without them text silently inherits 16px and highlight bounds drift.
+        textLayerDiv.current.style.setProperty('--total-scale-factor', String(viewport.scale * viewport.userUnit))
+        textLayerDiv.current.style.setProperty('--scale-round-x', '1px')
+        textLayerDiv.current.style.setProperty('--scale-round-y', '1px')
         const textContent = await pdfPage.getTextContent()
         if (!active || !textLayerDiv.current) return
-        const textLayer = new TextLayer({
+        textLayer = new TextLayer({
           textContentSource: textContent,
           container: textLayerDiv.current,
           viewport,
         })
         await textLayer.render()
+        if (active) setTextLayerVersion(value => value + 1)
       }
-    }).catch(error => { if (active && error?.name !== 'RenderingCancelledException') setError('Không hiển thị được trang PDF này.') })
+    }).catch(error => { if (active && error?.name !== 'RenderingCancelledException') setError(translate("Không hiển thị được trang PDF này.", langRef.current)) })
     const progression = document.numPages > 1 ? (page - 1) / (document.numPages - 1) : 1
-    onLocation({ locatorJson: JSON.stringify({ type: 'PDF', version: 1, pageIndex: page - 1, pageNumber: page, progression, selectedText: '', startOffset: 0, endOffset: 0 }), progression, chapterTitle: `Trang ${page}` })
-    return () => { active = false; render?.cancel() }
-  }, [document, page, onLocation])
+    onLocation({ locatorJson: JSON.stringify({ type: 'PDF', version: 1, pageIndex: page - 1, pageNumber: page, progression, selectedText: '', startOffset: 0, endOffset: 0 }), progression, chapterTitle: `${translate('Trang', langRef.current)} ${page}` })
+    return () => { active = false; render?.cancel(); textLayer?.cancel() }
+  }, [document, page, onLocation, renderWidth])
 
   useEffect(() => { onControls({ previous: () => setPage(value => Math.max(1, value - 1)), next: () => setPage(value => Math.min(document?.numPages || value, value + 1)) }) }, [document, onControls])
 
   const handleSelection = () => {
     const sel = window.getSelection()
     const text = sel?.toString().trim() || ''
-    if (text && document) {
+    const root = textLayerDiv.current
+    const range = sel?.rangeCount ? sel.getRangeAt(0) : null
+    const offsets = root && range ? rangeOffsets(root, range) : null
+    if (text && document && root && range && offsets) {
       const progression = document.numPages > 1 ? (page - 1) / (document.numPages - 1) : 1
       const locatorJson = JSON.stringify({
         type: 'PDF',
@@ -490,6 +565,9 @@ function PdfPane({ bytes, initial, onLocation, onSelection, onControls, onToc, n
         pageNumber: page,
         progression,
         selectedText: text,
+        startOffset: offsets.start,
+        endOffset: offsets.end,
+        rects: normalizedPdfRects(range.getClientRects(), root.getBoundingClientRect()),
       })
       onSelection(text, locatorJson)
     }
@@ -506,6 +584,28 @@ function PdfPane({ bytes, initial, onLocation, onSelection, onControls, onToc, n
     })
   }, [annotations, page])
 
+  useEffect(() => {
+    const root = textLayerDiv.current
+    if (!root || !textLayerVersion) return
+    let active = true
+    const pageRect = root.getBoundingClientRect()
+    const rects = pageHighlights.flatMap(annotation => {
+      try {
+        const loc = JSON.parse(annotation.locatorJson) as { rects?: PdfRect[]; selectedText?: string; startOffset?: number; endOffset?: number }
+        const offsets = pdfTextOffsets(root.textContent || '', loc.selectedText || annotation.text, loc.startOffset, loc.endOffset)
+        const range = offsets && rangeFromOffsets(root, offsets.start, offsets.end)
+        const rects = range ? normalizedPdfRects(range.getClientRects(), pageRect) : (loc.rects || []).filter(rect =>
+          [rect.left, rect.top, rect.width, rect.height].every(Number.isFinite) && rect.left >= 0 && rect.top >= 0 && rect.width > 0 && rect.height > 0 && rect.left + rect.width <= 1.001 && rect.top + rect.height <= 1.001,
+        )
+        return rects.map((rect, index) => ({ ...rect, id: `${annotation.id}:${index}`, color: annotation.color }))
+      } catch { return [] }
+    })
+    queueMicrotask(() => { if (active) setPdfHighlights({ page, rects }) })
+    return () => { active = false }
+  }, [page, pageHighlights, textLayerVersion])
+
+  const highlightColors: Record<string, string> = { YELLOW: '#fde047', GREEN: '#86efac', BLUE: '#93c5fd', PINK: '#f9a8d4', PURPLE: '#c4b5fd', ORANGE: '#fdba74' }
+
   return error ? (
     <div className="reader-error">{error}</div>
   ) : (
@@ -520,6 +620,9 @@ function PdfPane({ bytes, initial, onLocation, onSelection, onControls, onToc, n
         }}
       >
         <canvas ref={canvas} />
+        <div aria-hidden="true" className="pdf-highlight-overlay" style={{ position: 'absolute', inset: 0, pointerEvents: 'none', mixBlendMode: 'multiply' }}>
+          {(pdfHighlights.page === page ? pdfHighlights.rects : []).map(rect => <span key={rect.id} style={{ position: 'absolute', left: `${rect.left * 100}%`, top: `${rect.top * 100}%`, width: `${rect.width * 100}%`, height: `${rect.height * 100}%`, background: highlightColors[rect.color.toUpperCase()] || highlightColors.YELLOW, opacity: 0.4 }} />)}
+        </div>
         <div
           ref={textLayerDiv}
           className="textLayer pdf-text-layer"
@@ -537,13 +640,15 @@ function PdfPane({ bytes, initial, onLocation, onSelection, onControls, onToc, n
           ))}
         </div>
       )}
-      <p>Trang {page} / {document?.numPages || '…'}</p>
+      <p>{translate("Trang", lang)} {page} / {document?.numPages || '…'}</p>
     </div>
   )
 }
 
-function CbzPane({ bytes, initial, onLocation, onControls, onToc, navigateTarget, navigateProgression }: Props) {
-  const [pages, setPages] = useState<string[]>([])
+function CbzPane({ lang = 'vi', bytes, initial, onLocation, onControls, onToc, navigateTarget, navigateProgression }: Props) {
+  const langRef = useRef(lang)
+  useEffect(() => { langRef.current = lang }, [lang])
+  const [pages, setPages] = useState<Array<{ url: string; name: string }>>([])
   const [page, setPage] = useState(1)
   const [mode, setMode] = useState<'single' | 'webtoon'>('single')
   const [error, setError] = useState('')
@@ -554,7 +659,7 @@ function CbzPane({ bytes, initial, onLocation, onControls, onToc, navigateTarget
 
   useEffect(() => {
     let active = true
-    let createdUrls: string[] = []
+    const createdUrls: string[] = []
     void (async () => {
       try {
         const JSZip = (await import('jszip')).default
@@ -569,25 +674,22 @@ function CbzPane({ bytes, initial, onLocation, onControls, onToc, navigateTarget
           }
         })
         entries.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
-        if (!entries.length) throw new Error('Không tìm thấy tệp ảnh nào trong tệp truyện tranh CBZ.')
+        if (!entries.length) throw new Error(translate("Không tìm thấy tệp ảnh nào trong tệp truyện tranh CBZ.", langRef.current))
 
-        const urls = await Promise.all(
-          entries.map(async e => {
-            const blob = await e.file.async('blob')
-            return URL.createObjectURL(blob)
-          })
-        )
-        if (!active) {
-          urls.forEach(u => URL.revokeObjectURL(u))
-          return
+        const loadedPages: Array<{ url: string; name: string }> = []
+        for (const entry of entries) {
+          const blob = await entry.file.async('blob')
+          if (!active) return
+          const url = URL.createObjectURL(blob)
+          createdUrls.push(url)
+          loadedPages.push({ url, name: entry.name })
         }
-        createdUrls = urls
-        setPages(urls)
+        setPages(loadedPages)
         setLoading(false)
 
         if (onTocRef.current) {
           onTocRef.current(
-            urls.map((_, idx) => ({
+            loadedPages.map((_, idx) => ({
               id: `cbz-p-${idx + 1}`,
               label: `Trang ${idx + 1}`,
               href: `page:${idx + 1}`,
@@ -595,8 +697,9 @@ function CbzPane({ bytes, initial, onLocation, onControls, onToc, navigateTarget
           )
         }
       } catch (err) {
+        createdUrls.forEach(url => URL.revokeObjectURL(url))
         if (active) {
-          setError(err instanceof Error ? err.message : 'Không mở được tệp CBZ.')
+          setError(err instanceof Error ? err.message : translate("Không mở được tệp CBZ.", langRef.current))
           setLoading(false)
         }
       }
@@ -611,50 +714,57 @@ function CbzPane({ bytes, initial, onLocation, onControls, onToc, navigateTarget
   useEffect(() => {
     if (!pages.length) return
     const saved = parseInitial(initial)
-    let target = 1
-    if (saved?.type === 'CBZ') {
-      const p = Number(saved.pageNumber) || Number(saved.pageIndex) + 1
-      if (Number.isFinite(p) && p >= 1 && p <= pages.length) target = p
-    } else if (typeof saved?.progression === 'number') {
-      target = Math.round(saved.progression * (pages.length - 1)) + 1
-    }
-    setPage(Math.max(1, Math.min(pages.length, target)))
-  }, [pages.length, initial])
+    const target = archivePageIndex(saved, pages.map(entry => entry.name)) + 1
+    queueMicrotask(() => setPage(target))
+  }, [pages, initial])
+
+  const scrollToPage = useCallback((target: number) => {
+    const host = hostRef.current
+    const image = host?.querySelector<HTMLImageElement>(`[data-page-number="${target}"]`)
+    if (host && image) host.scrollTo({ top: host.scrollTop + image.getBoundingClientRect().top - host.getBoundingClientRect().top })
+  }, [])
+  const goToPage = useCallback((target: number) => {
+    const next = Math.max(1, Math.min(pages.length, target))
+    setPage(next)
+    if (mode === 'webtoon') scrollToPage(next)
+  }, [mode, pages.length, scrollToPage])
+
+  // Align when switching modes; scrolling itself never snaps back to a page.
+  const pageRef = useRef(page)
+  useEffect(() => { pageRef.current = page }, [page])
+  useEffect(() => {
+    if (mode !== 'webtoon') return
+    const frame = requestAnimationFrame(() => scrollToPage(pageRef.current))
+    return () => cancelAnimationFrame(frame)
+  }, [mode, pages.length, scrollToPage])
 
   useEffect(() => {
     if (!navigateTarget || !pages.length) return
     if (navigateTarget.startsWith('page:')) {
       const p = parseInt(navigateTarget.replace('page:', ''), 10)
-      if (p >= 1 && p <= pages.length) setPage(p)
+      if (p >= 1 && p <= pages.length) queueMicrotask(() => goToPage(p))
     }
-  }, [navigateTarget, pages.length])
+  }, [navigateTarget, pages.length, goToPage])
 
   useEffect(() => {
     if (!navigateProgression || !pages.length) return
-    const p = Math.round(navigateProgression.progression * (pages.length - 1)) + 1
-    setPage(Math.max(1, Math.min(pages.length, p)))
-  }, [navigateProgression, pages.length])
+    const p = Math.max(1, Math.ceil(clampProgression(navigateProgression.progression) * pages.length))
+    queueMicrotask(() => goToPage(p))
+  }, [navigateProgression, pages.length, goToPage])
 
   useEffect(() => {
     if (!pages.length) return
-    const progression = pages.length > 1 ? (page - 1) / (pages.length - 1) : 1
-    const locatorJson = JSON.stringify({
-      type: 'CBZ',
-      version: 1,
-      pageIndex: page - 1,
-      pageNumber: page,
-      progression,
-    })
-    onLocation({ locatorJson, progression, chapterTitle: `Trang ${page} / ${pages.length}` })
-  }, [page, pages.length, onLocation])
+    const locator = archiveLocator(page - 1, pages.map(entry => entry.name))
+    onLocation({ locatorJson: JSON.stringify(locator), progression: locator.progression, chapterTitle: `Trang ${page} / ${pages.length}` })
+  }, [page, pages, onLocation])
 
   useEffect(() => {
     if (!pages.length) return
     onControls({
-      previous: () => setPage(p => Math.max(1, p - 1)),
-      next: () => setPage(p => Math.min(pages.length, p + 1)),
+      previous: () => goToPage(pageRef.current - 1),
+      next: () => goToPage(pageRef.current + 1),
     })
-  }, [pages.length, onControls])
+  }, [pages.length, onControls, goToPage])
 
   useEffect(() => {
     if (mode !== 'webtoon' || !hostRef.current) return
@@ -674,7 +784,7 @@ function CbzPane({ bytes, initial, onLocation, onControls, onToc, navigateTarget
   }, [mode, pages.length])
 
   if (error) return <div className="reader-error">{error}</div>
-  if (loading) return <div className="reader-loading"><div className="loader" /><p>Đang giải nén truyện tranh…</p></div>
+  if (loading) return <div className="reader-loading"><div className="loader" /><p>{translate("Đang giải nén truyện tranh…", lang)}</p></div>
 
   return (
     <div className="cbz-host" ref={hostRef}>
@@ -683,13 +793,15 @@ function CbzPane({ bytes, initial, onLocation, onControls, onToc, navigateTarget
           className={`choice-chip ${mode === 'single' ? 'active' : ''}`}
           onClick={() => setMode('single')}
         >
-          Trang đơn
+
+          {translate("Trang đơn", lang)}
         </button>
         <button
           className={`choice-chip ${mode === 'webtoon' ? 'active' : ''}`}
           onClick={() => setMode('webtoon')}
         >
-          Cuộn dọc (Webtoon)
+
+          {translate("Cuộn dọc (Webtoon)", lang)}
         </button>
       </div>
 
@@ -697,8 +809,8 @@ function CbzPane({ bytes, initial, onLocation, onControls, onToc, navigateTarget
         <div className="cbz-single">
           <div className="cbz-image-wrap">
             <img
-              src={pages[page - 1]}
-              alt={`Trang ${page}`}
+              src={pages[page - 1]?.url}
+              alt={`${translate('Trang', lang)} ${page}`}
               onClick={e => {
                 const rect = e.currentTarget.getBoundingClientRect()
                 const isRight = e.clientX - rect.left > rect.width / 2
@@ -707,16 +819,17 @@ function CbzPane({ bytes, initial, onLocation, onControls, onToc, navigateTarget
               }}
             />
           </div>
-          <p className="cbz-page-indicator">Trang {page} / {pages.length}</p>
+          <p className="cbz-page-indicator">{translate("Trang", lang)} {page} / {pages.length}</p>
         </div>
       ) : (
         <div className="cbz-webtoon">
-          {pages.map((url, idx) => (
+          {pages.map((entry, idx) => (
             <img
               key={idx}
-              src={url}
+              src={entry.url}
               alt={`Trang ${idx + 1}`}
               className="cbz-webtoon-img"
+              data-page-number={idx + 1}
               loading="lazy"
             />
           ))}
@@ -726,7 +839,7 @@ function CbzPane({ bytes, initial, onLocation, onControls, onToc, navigateTarget
   )
 }
 
-function ImagePane({ book, bytes, onLocation, onControls, theme }: Props) {
+function ImagePane({ lang = 'vi', book, bytes, onLocation, onControls, theme }: Props) {
   const [error, setError] = useState('')
   const url = useMemo(() => {
     const type = String(book.format || '').toLowerCase().includes('png') ? 'image/png'
@@ -740,11 +853,13 @@ function ImagePane({ book, bytes, onLocation, onControls, theme }: Props) {
     onControls(null)
   }, [book.title, onControls, onLocation])
   return error ? <div className="reader-error">{error}</div> : <div className={`image-host ${theme}`}>
-    {url && <img src={url} alt={book.title} onError={() => setError('Không hiển thị được ảnh này. Tệp có thể bị hỏng hoặc không đúng định dạng.')} />}
+    {url && <img src={url} alt={book.title} onError={() => setError(translate("Không hiển thị được ảnh này. Tệp có thể bị hỏng hoặc không đúng định dạng.", lang))} />}
   </div>
 }
 
-function TextPane({ bytes, initial, fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme, onLocation, onSelection, onControls, onToc, navigateTarget, navigateProgression, annotations = [], format }: Props & { format: 'text' | 'html' | 'docx' }) {
+function TextPane({ lang = 'vi', bytes, initial, fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme, onLocation, onSelection, onControls, onToc, navigateTarget, navigateProgression, annotations = [], format }: Props & { format: 'text' | 'html' | 'docx' }) {
+  const langRef = useRef(lang)
+  useEffect(() => { langRef.current = lang }, [lang])
   const host = useRef<HTMLDivElement>(null)
   const [content, setContent] = useState('')
   const [error, setError] = useState('')
@@ -794,12 +909,12 @@ function TextPane({ bytes, initial, fontSize, fontFamily, lineHeight, textAlignm
           if (headings.length && onTocRef.current) {
             onTocRef.current(headings.map((h, idx) => ({
               id: h.id,
-              label: h.textContent?.trim() || `Phần ${idx + 1}`,
+              label: h.textContent?.trim() || `${translate('Phần', langRef.current)} ${idx + 1}`,
               href: `#${h.id}`,
             })))
           }
         }
-      } catch { if (active) setError('Không đọc được nội dung tài liệu này.') }
+      } catch { if (active) setError(translate("Không đọc được nội dung tài liệu này.", langRef.current)) }
     }
     void decode()
     return () => { active = false }

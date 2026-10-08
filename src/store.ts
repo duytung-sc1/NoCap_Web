@@ -119,6 +119,48 @@ export async function getPendingItem(key: string) { return withDatabase(database
 export async function savePending(value: PendingOperation) { await withDatabase(database => database.put('pending', value)) }
 export async function removePending(key: string) { await withDatabase(database => database.delete('pending', key)) }
 
+/** Apply a validated backup atomically, using target-account versions rather
+ * than versions copied from a different account's snapshot. */
+export async function applyLibraryRestore(
+  profile: string,
+  records: Array<{ record: SyncRecord; sync: boolean }>,
+  files: LocalFile[],
+  offlineBooks: OfflineBook[],
+) {
+  await withDatabase(async database => {
+    const transaction = database.transaction(['files', 'records', 'pending', 'offlineBooks'], 'readwrite')
+    try {
+      for (const file of files) await transaction.objectStore('files').put(file)
+      for (const file of offlineBooks) await transaction.objectStore('offlineBooks').put(file)
+      for (const { record, sync } of records) {
+        const current = await transaction.objectStore('records').get(record.key)
+        const value = { ...record, version: current?.version || 0 }
+        await transaction.objectStore('records').put(value)
+        if (!sync || !profile.startsWith('ACCOUNT:')) continue
+        const pending = await transaction.objectStore('pending').get(record.key)
+        // Preserve an already-submitted operation's identity. syncNow will
+        // reconcile this newer local payload after the original receipt.
+        if (pending?.attempted) continue
+        await transaction.objectStore('pending').put({
+          key: record.key, profile, attempted: false,
+          needsBlobUpload: record.kind === 'catalog_books' && !record.deleted && typeof record.payload.file_url === 'string' && record.payload.file_url.startsWith('nocap-private:'),
+          operation: {
+            opId: pending?.operation.opId || crypto.randomUUID(),
+            kind: record.kind, id: record.id, baseVersion: current?.version || 0,
+            deleted: record.deleted, payload: record.payload,
+            recreate: current?.deleted && !record.deleted ? true : undefined,
+          },
+        })
+      }
+      await transaction.done
+    } catch (error) {
+      try { transaction.abort() } catch { /* the transaction already aborted */ }
+      await transaction.done.catch(() => {})
+      throw error
+    }
+  })
+}
+
 export function readSession(): import('./types').Session | null {
   try {
     const value = JSON.parse(sessionStorage.getItem('nocap-session') || 'null')

@@ -1,6 +1,8 @@
+import { getStoredLang, type Lang } from './i18n'
+import { localizeErrorMessage, translate } from './uiText'
 import { md5 } from '@noble/hashes/legacy.js'
-import { API_BASE, getChanges, getUser, pushOperation, ApiError } from './api'
-import { getPending, getPendingItem, getRecord, getRecords, getSyncCursor, keyFor, removePending, savePending, saveRecord, saveSyncCursor } from './store'
+import { API_BASE, getChanges, getUser, pushOperation, uploadBlob, ApiError } from './api'
+import { getFile, getPending, getPendingItem, getRecord, getRecords, getSyncCursor, keyFor, removePending, savePending, saveRecord, saveSyncCursor } from './store'
 import { SYNC_KINDS, type PendingOperation, type Session, type SyncKind, type SyncOperation, type SyncRecord } from './types'
 
 const encoder = new TextEncoder()
@@ -28,6 +30,14 @@ const pendingKey = (profile: string, kind: SyncKind, id: string) => keyFor(profi
 
 export async function localRecords(profile: string): Promise<SyncRecord[]> { return getRecords(profile) }
 
+async function uploadRestoredFile(profile: string, token: string, operation: SyncOperation, needsUpload?: boolean) {
+  const fileUrl = operation.payload.file_url
+  if (!needsUpload || operation.kind !== 'catalog_books' || operation.deleted || typeof fileUrl !== 'string' || !/^nocap-private:[a-f0-9]{64}$/.test(fileUrl)) return
+  const file = await getFile(profile, String(operation.payload.id || ''))
+  if (!file) throw new Error('Thiếu tệp gốc để đồng bộ tài liệu đã khôi phục. Hãy nhập lại tệp.')
+  await uploadBlob(token, fileUrl.slice('nocap-private:'.length), file.data)
+}
+
 export async function mutate(profile: string, kind: SyncKind, id: string, payload: Record<string, unknown>, deleted = false, localOnly = false) {
   const key = recordKey(profile, kind, id)
   const current = await getRecord(key)
@@ -40,9 +50,9 @@ export async function mutate(profile: string, kind: SyncKind, id: string, payloa
   if (pending?.attempted) return
   const operation: SyncOperation = {
     opId: pending?.operation.opId || crypto.randomUUID(), kind, id,
-    baseVersion: current?.version || 0, deleted, payload,
+    baseVersion: current?.version || 0, deleted, payload, recreate: pending?.operation.recreate,
   }
-  await savePending({ key: pendingKey(profile, kind, id), profile, operation, attempted: false })
+  await savePending({ key: pendingKey(profile, kind, id), profile, operation, attempted: false, needsBlobUpload: pending?.needsBlobUpload })
 }
 
 export async function syncNow(session: Session): Promise<{ conflicts: number; changes: number }> {
@@ -50,8 +60,16 @@ export async function syncNow(session: Session): Promise<{ conflicts: number; ch
   // Reject a revoked or expired session before mutating local sync state.
   await getUser(session.token)
   let conflicts = 0
-  for (const item of await getPending(profile)) {
+  const operations = await getPending(profile)
+  const priority = (item: PendingOperation) => item.operation.kind === 'categories' ? 0 : item.operation.kind === 'catalog_books' ? 1 : 2
+  operations.sort((a, b) => priority(a) - priority(b))
+  for (const item of operations) {
     if (item.conflicted) { conflicts++; continue }
+    // A restored private document must exist in this account's blob storage
+    // before another device receives its catalog record. Failed uploads leave
+    // the operation pending, so an offline restore can retry when back online.
+    await uploadRestoredFile(profile, session.token, item.operation, item.needsBlobUpload)
+    item.needsBlobUpload = false
     await savePending({ ...item, attempted: true })
     const result = await pushOperation(session.token, item.operation)
     const receipt = result.receipts[0]
@@ -65,6 +83,10 @@ export async function syncNow(session: Session): Promise<{ conflicts: number; ch
       if (changedAgain) {
         await saveRecord({ ...current, version: latest.version })
         await mutate(profile, current.kind, current.id, current.payload, current.deleted)
+        if (current.kind === 'catalog_books' && current.payload.file_url !== item.operation.payload.file_url) {
+          const queued = await getPendingItem(item.key)
+          if (queued) await savePending({ ...queued, needsBlobUpload: true })
+        }
       } else await saveRecord({ key, profile, kind: item.operation.kind, id: item.operation.id, version: latest.version, deleted: !!latest.deleted, payload: latest.payload })
     } else {
       conflicts++
@@ -93,9 +115,9 @@ export async function syncNow(session: Session): Promise<{ conflicts: number; ch
   throw new Error('Có quá nhiều thay đổi để tải một lần. Vui lòng đồng bộ lại.')
 }
 
-export function readableError(error: unknown): string {
-  if (error instanceof ApiError && error.status === 401) return 'Phiên đăng nhập đã hết hạn. Đăng nhập lại để đồng bộ.'
-  return error instanceof Error ? error.message : 'Không hoàn tất được thao tác. Vui lòng thử lại.'
+export function readableError(error: unknown, lang: Lang = getStoredLang()): string {
+  if (error instanceof ApiError && error.status === 401 && !error.message.includes('mật khẩu') && !error.message.toLowerCase().includes('password')) return translate('Phiên đăng nhập đã hết hạn. Đăng nhập lại để đồng bộ.', lang)
+  return localizeErrorMessage(error instanceof Error ? error.message : 'Không hoàn tất được thao tác. Vui lòng thử lại.', lang)
 }
 
 export function getDeviceId(): string {
@@ -122,6 +144,7 @@ export function broadcastSyncRequired(profile: string) {
 }
 
 export function connectLiveSync(session: Session, deviceId: string, onSyncRequired: () => void): () => void {
+  const connectionId = crypto.randomUUID()
   let active = true
   let ws: WebSocket | null = null
   let pingTimer: ReturnType<typeof setInterval> | null = null
@@ -138,36 +161,40 @@ export function connectLiveSync(session: Session, deviceId: string, onSyncRequir
   syncBroadcastChannel?.addEventListener('message', onChannelMessage)
 
   const connect = () => {
-    if (!active) return
+    if (!active || session.expiresAt <= Date.now() / 1000) return
     try {
-      const wsUrl = `${API_BASE.replace(/^http/, 'ws')}/api/v1/sync/live?token=${encodeURIComponent(session.token)}&device=${encodeURIComponent(deviceId)}`
-      ws = new WebSocket(wsUrl)
-      ws.onopen = () => {
+      const wsUrl = `${API_BASE.replace(/^http/, 'ws')}/api/v1/sync/live?token=${encodeURIComponent(session.token)}&device=${encodeURIComponent(deviceId)}&connection=${connectionId}`
+      const socket = new WebSocket(wsUrl)
+      ws = socket
+      socket.onopen = () => {
+        if (!active || ws !== socket) return
         backoffMs = 2000
         if (pingTimer) clearInterval(pingTimer)
         pingTimer = setInterval(() => {
-          if (ws?.readyState === WebSocket.OPEN) {
-            try { ws.send('ping') } catch {}
+          if (socket.readyState === WebSocket.OPEN) {
+            try { socket.send('ping') } catch {}
           }
         }, 25000)
       }
-      ws.onmessage = (event) => {
+      socket.onmessage = (event) => {
+        if (!active || ws !== socket) return
         try {
           const msg = JSON.parse(event.data) as { type?: string }
-          if (msg.type === 'sync_required') {
+          if (msg.type === 'sync_required' || msg.type === 'ready') {
             onSyncRequired()
           }
         } catch {}
       }
-      ws.onclose = () => {
+      socket.onclose = (event) => {
+        if (ws !== socket) return
         if (pingTimer) clearInterval(pingTimer)
-        if (active) {
+        if (active && event.code !== 1008 && !(event.code === 1000 && event.reason === 'Replaced by a newer connection')) {
           reconnectTimer = setTimeout(connect, backoffMs)
           backoffMs = Math.min(30000, backoffMs * 1.5)
         }
       }
-      ws.onerror = () => {
-        try { ws?.close() } catch {}
+      socket.onerror = () => {
+        try { socket.close() } catch {}
       }
     } catch {
       if (active) {
@@ -242,9 +269,12 @@ export async function resolveConflict(
       baseVersion,
       payload: local?.payload || item.operation.payload,
       deleted: local?.deleted ?? item.operation.deleted,
+      recreate: !!remote?.deleted && !(local?.deleted ?? item.operation.deleted) ? true : undefined,
     }
+    const needsBlobUpload = item.needsBlobUpload || refreshedOp.payload.file_url !== item.operation.payload.file_url
+    await uploadRestoredFile(profile, session.token, refreshedOp, needsBlobUpload)
     // Persist the new ID before pushing so a lost response can be retried safely.
-    await savePending({ ...item, operation: refreshedOp, attempted: true, conflicted: true })
+    await savePending({ ...item, operation: refreshedOp, attempted: true, conflicted: true, needsBlobUpload: false })
     const pushRes = await pushOperation(session.token, refreshedOp)
     const receipt = pushRes.receipts[0]
     if (receipt && receipt.status === 'APPLIED' && receipt.current) {

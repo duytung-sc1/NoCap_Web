@@ -184,8 +184,14 @@
 
 .book-details-modal{position:relative;width:min(100%,620px);max-height:90vh;overflow-y:auto;background:#fff;border-radius:20px;padding:30px;box-shadow:0 30px 100px rgba(0,0,0,0.3)}
 .book-details-top{display:flex;gap:24px;margin-bottom:24px}
-.book-details-cover{width:140px;height:200px;flex:none;border-radius:10px;overflow:hidden;background:#1a283e;box-shadow:0 8px 24px rgba(0,0,0,0.15)}
+.book-details-cover{position:relative;width:140px;height:200px;flex:none;border-radius:10px;overflow:hidden;background:#1a283e;box-shadow:0 8px 24px rgba(0,0,0,0.15)}
 .book-details-cover img{width:100%;height:100%;object-fit:cover}
+.payment-dialog{max-height:90dvh;overflow:auto}
+.payment-qr{display:block;width:200px;max-width:100%;height:auto;margin:16px auto;background:#fff}
+.payment-status{font-weight:700;color:var(--accent)}
+.payment-details{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px 16px;font-size:13px}
+.payment-details dt{color:#687b8c}
+.payment-details dd{margin:0;overflow-wrap:anywhere}
 .book-details-info{flex:1;min-width:0;display:flex;flex-direction:column}
 .book-details-title{font-family:'Literata Variable',serif;font-size:22px;font-weight:700;color:#1c2940;line-height:1.3;margin:0 0 8px}
 .book-details-author{font-size:14px;color:#697d92;margin-bottom:14px}
@@ -1251,7 +1257,8 @@ body, .main-area {
   display: grid;
   gap: 12px;
 }
-.swiss-footer-links button {
+.swiss-footer-links button,
+.swiss-footer-links a {
   background: transparent;
   border: 0;
   padding: 0;
@@ -1261,8 +1268,10 @@ body, .main-area {
   cursor: pointer;
   text-align: left;
   transition: color 120ms ease;
+  text-decoration: none;
 }
-.swiss-footer-links button:hover {
+.swiss-footer-links button:hover,
+.swiss-footer-links a:hover {
   color: #ffffff;
 }
 .swiss-footer-bottom {
@@ -1481,13 +1490,16 @@ body, .main-area {
     min-height: 92px;
     padding: 8px 12px;
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: auto auto minmax(0, 1fr);
     grid-template-rows: auto auto;
     gap: 6px 10px;
   }
 
   .reader-home-btn {
-    display: none;
+    display: inline-flex;
+    width: 36px;
+    min-height: 36px;
+    justify-content: center;
   }
 
   .reader-back {
@@ -1895,4 +1907,29 @@ body, .main-area {
   color: #312e81;
   font-weight: 600;
 }
+/* Theme previews keep readable text regardless of the active reader theme. */
+.theme-chip.paper { background: #fff; color: #203047; }
 
+.pro-plan-options { border: 0; padding: 0; margin: 20px 0 12px; display: flex; flex-wrap: wrap; gap: 12px; min-width: 0; }
+.pro-plan-options legend { margin-bottom: 10px; font-weight: 700; }
+.pro-plan-option { display: flex; align-items: flex-start; gap: 10px; flex: 1 1 170px; padding: 16px; border: 1px solid #cbd5d9; border-radius: 12px; background: #fff; color: #203047; cursor: pointer; }
+.pro-plan-option.selected { border-color: #147d70; box-shadow: 0 0 0 1px #147d70; background: #edf8f5; }
+.pro-plan-option:focus-within { outline: 2px solid #147d70; outline-offset: 3px; }
+.pro-plan-option input { width: 18px; height: 18px; margin: 3px 0 0; accent-color: #147d70; flex: 0 0 auto; }
+.pro-plan-copy { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
+.pro-plan-discount { background: #147d70; color: #fff; border-radius: 999px; padding: 3px 8px; font-size: 12px; font-weight: 700; }
+.pro-plan-price { display: flex; flex-direction: column; gap: 4px; flex-basis: 100%; font-size: 20px; overflow-wrap: anywhere; }
+.pro-plan-price del { font-size: 13px; color: #536573; }
+
+.memory-item-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; flex-shrink: 0; }
+.memory-item-actions .text-button { white-space: normal; }
+.dialog { background-color: #fff; color: #203047; color-scheme: only light; }
+.annotation-dialog .selection-preview { max-height: 200px; overflow: auto; overflow-wrap: anywhere; }
+.annotation-dialog textarea { width: 100%; box-sizing: border-box; resize: vertical; }
+.annotation-dialog fieldset { border: 0; padding: 0; margin: 16px 0; }
+.annotation-dialog legend { margin-bottom: 8px; }
+.danger-action { color: #b42318; }
+.primary.danger-action { background: #b42318; color: #fff; }
+.toc-list button:disabled { opacity: .7; cursor: default; }
+.pro-benefits { font-size: .85rem; line-height: 1.6; }
+@media (max-width: 600px) { .memory-item { flex-wrap: wrap; } .memory-item-actions { width: 100%; justify-content: flex-start; } }

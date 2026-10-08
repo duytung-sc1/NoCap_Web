@@ -104,6 +104,8 @@ export async function logout(token: string) {
 }
 
 export type Entitlement = {
+  userId?: string
+  updatedAt?: number
   plan: 'FREE' | 'PRO'
   status?: string
   expiresAt?: number | null
@@ -112,6 +114,38 @@ export type Entitlement = {
 
 export async function getEntitlement(token: string) {
   return api<Entitlement>('/api/v1/entitlement', {}, token)
+}
+
+export type SePayOrder = {
+  id: string
+  status: 'PENDING' | 'PROCESSING' | 'PAID' | 'EXPIRED'
+  amount: number
+  currency: 'VND'
+  planDays?: number
+  paymentContent: string
+  expiresAt: number
+  paidAt?: number | null
+  entitlementExpiresAt?: number | null
+  bank: { code: string; name: string; accountNumber: string; accountHolder: string; vietQrBankId: string }
+  qrUrl: string
+}
+
+export type SePayPlanId = 'MONTHLY' | 'YEARLY'
+export type SePayPlan = {
+  id: SePayPlanId; amount: number; planDays: number; currency: 'VND'
+  discountPercent: number; regularAmount: number
+}
+
+export async function getSePayPlans(token: string): Promise<{ plans: SePayPlan[] }> {
+  return api('/api/v1/billing/sepay/plans', {}, token)
+}
+
+export async function createSePayOrder(token: string, plan?: SePayPlanId): Promise<SePayOrder> {
+  return api('/api/v1/billing/sepay/order', { method: 'POST', body: JSON.stringify(plan ? { plan } : {}) }, token)
+}
+
+export async function getSePayOrder(token: string, id: string): Promise<SePayOrder> {
+  return api(`/api/v1/billing/sepay/orders/${encodeURIComponent(id)}`, {}, token)
 }
 
 export async function getChanges(token: string, cursor: number) {

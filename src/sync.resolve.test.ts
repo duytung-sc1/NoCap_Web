@@ -63,3 +63,11 @@ it('rejects a conflict owned by another profile', async () => {
   expect(getChanges).not.toHaveBeenCalled()
   expect(await getPending(profile)).toHaveLength(1)
 })
+
+it('explicitly recreates an observed cloud tombstone when choosing the local version', async () => {
+  const { session, operation, key } = await conflict()
+  vi.mocked(getChanges).mockResolvedValueOnce({ changes: [{ seq: 1, kind: operation.kind, id: operation.id, version: 5, deleted: 1, payload: {} }], cursor: 1, hasMore: false })
+  vi.mocked(pushOperation).mockImplementationOnce(async (_token, op) => ({ receipts: [{ opId: op.opId, status: 'APPLIED', current: { version: 6, deleted: 0, payload: op.payload } }] }))
+  await resolveConflict(session, key, 'keep_local')
+  expect(vi.mocked(pushOperation).mock.calls[0][1]).toMatchObject({ baseVersion: 5, recreate: true, deleted: false })
+})

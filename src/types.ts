@@ -48,9 +48,10 @@ export type SyncOperation = {
   id: string
   baseVersion: number
   deleted: boolean
+  recreate?: boolean
   payload: Record<string, unknown>
 }
-export type PendingOperation = { key: string; profile: string; operation: SyncOperation; attempted: boolean; conflicted?: boolean }
+export type PendingOperation = { key: string; profile: string; operation: SyncOperation; attempted: boolean; conflicted?: boolean; needsBlobUpload?: boolean }
 export type LocalFile = { key: string; profile: string; book: Book; data: Blob; addedAt: number }
 
 export type ReaderLocation = { locatorJson: string; progression: number; chapterTitle: string }

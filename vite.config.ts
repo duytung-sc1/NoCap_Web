@@ -8,6 +8,12 @@ const apiBase = 'https://nocap-ebook-api.buiminhhien001.workers.dev'
 // Gutenberg does not send browser CORS headers for EPUB downloads. This route
 // exists only in the local dev server and accepts IDs from NoCap's catalog.
 function localCatalogBooks(): Plugin {
+  const legal = (request: IncomingMessage, _response: ServerResponse, next: () => void) => {
+    const aliases: Record<string, string> = { '/privacy': '/privacy-policy.html', '/terms': '/terms-of-service.html' }
+    const path = request.url?.split('?')[0].replace(/\/$/, '') || ''
+    if (aliases[path]) request.url = aliases[path]
+    next()
+  }
   const handle = async (request: IncomingMessage, response: ServerResponse, next: () => void) => {
     const match = request.url?.match(/^\/dev-book\/([^/?]+)(?:\?.*)?$/)
     if (!match) return next()
@@ -37,8 +43,8 @@ function localCatalogBooks(): Plugin {
   }
   return {
     name: 'nocap-local-catalog-books',
-    configureServer(server) { server.middlewares.use(handle) },
-    configurePreviewServer(server) { server.middlewares.use(handle) },
+    configureServer(server) { server.middlewares.use(legal); server.middlewares.use(handle) },
+    configurePreviewServer(server) { server.middlewares.use(legal); server.middlewares.use(handle) },
   }
 }
 
@@ -59,7 +65,13 @@ export default defineConfig({
       globPatterns: ['**/*.{js,css,html,svg,png,mjs,woff,woff2}'],
       maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
       navigateFallback: '/index.html',
-      navigateFallbackDenylist: [/^\/api\//, /^\/dev-book\//],
+      navigateFallbackDenylist: [/^\/api\//, /^\/dev-book\//, /^\/auth\/(reset|verify)(\/|$)/, /^\/(privacy|terms)(\/|$)/, /^\/(privacy-policy|terms-of-service)(\.html)?$/],
+      // API/auth responses bypass Cache Storage, even if runtime caching is added later.
+      runtimeCaching: [{
+        urlPattern: ({ request, url }) => request.headers.has('Authorization') || url.pathname.startsWith('/api/') || /^\/auth\/(reset|verify)\/?$/.test(url.pathname),
+        handler: 'NetworkOnly',
+        options: { fetchOptions: { cache: 'no-store' } },
+      }],
     },
   })],
   server: { host: '127.0.0.1', port: 5173 },
