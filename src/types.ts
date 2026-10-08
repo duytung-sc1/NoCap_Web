@@ -14,6 +14,7 @@ export type Book = {
 
 export type Category = { id: string; name: string; displayOrder?: number }
 export type User = { id: string; email: string; displayName?: string; emailVerified: boolean; photoUrl?: string }
+/** Authentication expiry is Unix seconds; billing timestamps use milliseconds. */
 export type Session = { token: string; expiresAt: number; user: User }
 
 export const SYNC_KINDS = [

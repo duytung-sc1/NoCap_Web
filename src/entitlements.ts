@@ -6,7 +6,7 @@ export const freeFeatures = ['LOCAL_READING', 'NOTES', 'BOOKMARKS', 'HIGHLIGHTS'
 
 /** Matches Android: account-bound, active, unexpired and recently verified. */
 export function allowsPro(entitlement: Entitlement | null, session: Session | null, now = Date.now()): boolean {
-  return !!session && session.expiresAt > now && !!entitlement && entitlement.userId === session.user.id && entitlement.plan === 'PRO' &&
+  return !!session && session.expiresAt * 1000 > now && !!entitlement && entitlement.userId === session.user.id && entitlement.plan === 'PRO' &&
     ['ACTIVE', 'IN_GRACE_PERIOD', 'CANCELED'].includes(entitlement.status || '') && Number(entitlement.expiresAt) > now &&
     Number(entitlement.updatedAt) <= now + 300_000 && now - Number(entitlement.updatedAt) <= 86_400_000 && Number(entitlement.updatedAt) > 0
 }
@@ -34,5 +34,5 @@ export async function verifyProAccess(options: {
 }
 
 export function proAccessExpiresAt(entitlement: Entitlement, session: Session): number {
-  return Math.min(session.expiresAt, Number(entitlement.expiresAt), Number(entitlement.updatedAt) + 86_400_001)
+  return Math.min(session.expiresAt * 1000, Number(entitlement.expiresAt), Number(entitlement.updatedAt) + 86_400_001)
 }

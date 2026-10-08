@@ -2,6 +2,39 @@ import { describe, expect, it, vi } from 'vitest'
 import { API_BASE, loadBookBytes, createSePayOrder, getSePayOrder, getSePayPlans } from './api'
 import { androidRecordId } from './sync'
 import type { Book } from './types'
+import { allowsPro, proAccessExpiresAt, verifyProAccess } from './entitlements'
+import { readSession, saveSession } from './store'
+
+it('preserves Pro access through login and session restore with backend timestamp units', async () => {
+  const now = Date.parse('2026-10-08T09:00:00Z')
+  // auth.issueSession returns Unix seconds; billing.current returns milliseconds.
+  const auth = { token: 'qa-session', expiresAt: Math.floor(now / 1000) + 30 * 86400, user: { id: 'qa-pro', email: 'pro@example.test', emailVerified: true } }
+  const entitlement = { userId: auth.user.id, plan: 'PRO', status: 'ACTIVE', purchaseSource: 'ADMIN_TEST', expiresAt: now + 30 * 86400 * 1000, updatedAt: now }
+  const storage = new Map<string, string>()
+  const fetchMock = vi.fn().mockResolvedValueOnce(Response.json(auth)).mockResolvedValueOnce(Response.json(entitlement))
+  vi.useFakeTimers()
+  vi.setSystemTime(now)
+  vi.stubGlobal('fetch', fetchMock)
+  vi.stubGlobal('sessionStorage', { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value), removeItem: (key: string) => storage.delete(key) })
+  try {
+    const { login, getEntitlement } = await import('./api')
+    saveSession(await login(auth.user.email, 'qa-only-password'))
+    const restored = readSession()
+    expect(restored).toEqual(auth)
+    const access = await verifyProAccess({ getSession: () => readSession(), entitlement: null, refresh: getEntitlement })
+    expect(access.status).toBe('allowed')
+    if (access.status !== 'allowed') throw new Error('Valid Pro session was rejected')
+    expect(allowsPro(access.entitlement, restored)).toBe(true)
+    expect(proAccessExpiresAt(access.entitlement, access.session) - now).toBe(86_400_001)
+    expect(new Headers(fetchMock.mock.calls[1][1].headers).get('Authorization')).toBe('Bearer qa-session')
+    vi.setSystemTime(now + 30 * 86400 * 1000)
+    expect(readSession()).toBeNull()
+    expect(allowsPro(access.entitlement, restored)).toBe(false)
+  } finally {
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+  }
+})
 
 describe('SePay checkout API', () => {
   it('fetches server quotes and sends only the selected yearly plan, never a client price', async () => {
