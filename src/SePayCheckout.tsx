@@ -105,7 +105,7 @@ export function SePayCheckout({ session, entitlement, lang, onSignIn, onPaid }: 
   return <section className="settings-card">
     <h2>NoCap Pro · SePay</h2>
     <p className="muted">{vi ? 'Thanh toán chuyển khoản bằng mã QR. NoCap tự xác nhận và cập nhật gói sau khi nhận được giao dịch.' : 'Pay by bank-transfer QR. NoCap confirms the transfer and updates your plan automatically.'}</p>
-    <div className="pro-benefits"><p>{vi ? 'Free: đọc sách, ghi chú, xuất Markdown và ôn tập từng thẻ.' : 'Free: reading, notes, Markdown export and individual review cards.'}</p><p>{vi ? 'Pro: tạo thẻ ôn tự động trên Web và các tính năng Pro tương ứng trên Android. Xuất PDF/Anki hiện có trên Android.' : 'Pro: automatic review-card generation on Web and corresponding Pro features on Android. PDF/Anki export is currently available on Android.'}</p></div>
+    <div className="pro-benefits"><p>{vi ? 'Free: đọc sách, ghi chú, xuất Markdown và ôn tập từng thẻ.' : 'Free: reading, notes, Markdown export and individual review cards.'}</p><p>{vi ? 'Pro: Đọc ẩn và tạo thẻ ôn tự động trên Web và các tính năng Pro tương ứng trên Android. Xuất PDF/Anki hiện có trên Android.' : 'Pro: Stealth Reading and automatic review-card generation on Web and corresponding Pro features on Android. PDF/Anki export is currently available on Android.'}</p></div>
     <fieldset className="pro-plan-options">
       <legend>{vi ? 'Chọn thời hạn Pro' : 'Choose your Pro plan'}</legend>
       {(['MONTHLY', 'YEARLY'] as const).map(id => {

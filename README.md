@@ -61,13 +61,16 @@ No admin credentials or payment-confirmation secrets belong in this bundle.
 | Markdown export | Yes | Yes |
 | Manually add an individual note to the review schedule | Yes | Yes |
 | Basic scheduled review | Yes | Yes |
+| Stealth Reading (Excel, VS Code, office-document disguises) on Web | No | Yes |
 | Automatically generate review cards from saved notes | No | Yes |
 | PDF/Anki note export and quick review | No | Android only; not yet implemented on Web |
 
 The policy follows Android `EntitlementPolicy` and `ReadingMemoryScreen`:
 Markdown/basic review are free; automatic card generation is
 `ADVANCED_READING_MEMORY`. Web checks the server entitlement before automatic
-creation. It must belong to the current account, have an accepted status, remain
+creation and every Stealth Reading entry point (book cards, details, settings,
+reader toolbar and F2). Stealth access ends when the account or entitlement
+expires; normal reading remains available. It must belong to the current account, have an accepted status, remain
 unexpired and have been verified within 24 hours. SePay monthly/yearly plans
 are quoted by the backend; only the backend confirms payment.
 

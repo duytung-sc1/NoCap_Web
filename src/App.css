@@ -1933,3 +1933,9 @@ body, .main-area {
 .toc-list button:disabled { opacity: .7; cursor: default; }
 .pro-benefits { font-size: .85rem; line-height: 1.6; }
 @media (max-width: 600px) { .memory-item { flex-wrap: wrap; } .memory-item-actions { width: 100%; justify-content: flex-start; } }
+
+/* The site header/drawer must not intercept reader controls or dialogs. */
+.reader-shell { z-index: 130; }
+.overlay, .modal-shade { z-index: 140; }
+/* Keep the upgrade prompt above book details and reader settings. */
+.pro-required-shade { z-index: 150; }
