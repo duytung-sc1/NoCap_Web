@@ -87,6 +87,33 @@ Reading Memory edits preserve the annotation identity, quotation and locator.
 Deleting an annotation tombstones its linked review cards as well. Account
 changes remain in the automatic sync queue; local-only files stay local.
 
+## Stealth Reading controls
+
+The Excel, VS Code and Word views have no visible NoCap control bar. Open
+settings with **F1**, Excel's **View** tab, or VS Code's **Manage** gear.
+
+| Shortcut | Action |
+| --- | --- |
+| F2 | Enter Stealth (Pro required) / return to normal reading |
+| F10 or Alt+F | Toggle real fullscreen, hiding browser tabs and address bar |
+| F12 or Alt+P | Replace book content with work data / resume reading |
+| Alt+1 / Alt+2 / Alt+3 | Excel / VS Code / Word |
+| Up / Down / Space / J / K | Move one row |
+| Page Up / Page Down | Move 15 rows |
+| Alt+A | Toggle automatic row advancement |
+| Alt+Left / Alt+Right | Decrease / increase seconds per row (2–20; default 6) |
+| Alt+Up / Alt+Down | Increase / decrease text size (10–16px; default 12) |
+| Alt+[ / Alt+] | Decrease / increase opacity (10–100%; default 100%) |
+| F1 | Open / close settings and shortcut help |
+| Escape | Leave fullscreen; then dismiss settings/filter/panic; otherwise Home |
+
+Fullscreen requires a user action and browser support. When denied, settings
+offer F11 as a browser fallback; normal reading still works. Closing Stealth or
+revoking Pro exits only fullscreen owned by this view. Navigation shortcuts do
+not interfere with typing, selecting a font size, or Ctrl/Cmd browser shortcuts.
+Auto-advance pauses while settings or panic mode are open. Panic mode closes
+settings and restores full opacity without changing the saved reading position.
+
 ## Other behavior
 
 - Email/password and Google sign-in; profile rename and account deletion.

@@ -5,7 +5,7 @@
   inset: 0;
   z-index: 99999;
   width: 100vw;
-  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   background-color: #ffffff;
@@ -15,91 +15,53 @@
   overflow: hidden;
 }
 
-/* Discreet Control Bar in Stealth Mode */
-.stealth-control-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 4px 12px;
-  background: #f3f2f1;
-  border-bottom: 1px solid #d1d1d1;
-  font-size: 11px;
-  color: #494544;
-  height: 32px;
-  flex-shrink: 0;
+/* Controls appear only when explicitly opened, never above the disguise. */
+.stealth-wrapper:focus { outline: none; }
+.stealth-wrapper:fullscreen { width: 100%; height: 100%; }
+.stealth-settings {
+  width: min(620px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+  overflow: auto;
+  border: 1px solid #c8c6c4;
+  border-radius: 6px;
+  padding: 20px;
+  background: #fff;
+  color: #323130;
+  font: 13px/1.5 "Segoe UI", Arial, sans-serif;
+  box-shadow: 0 12px 48px rgb(0 0 0 / 25%);
 }
-
-.stealth-control-left, .stealth-control-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.stealth-chip-btn {
-  background: #ffffff;
+.stealth-settings::backdrop { background: rgb(0 0 0 / 35%); }
+.stealth-settings-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.stealth-settings h2 { margin: 0; font: 600 18px/1.4 "Segoe UI", Arial, sans-serif; }
+.stealth-settings p { margin: 12px 0; }
+.stealth-settings button, .stealth-settings select {
   border: 1px solid #c8c6c4;
   border-radius: 3px;
-  padding: 2px 8px;
-  font-size: 11px;
-  cursor: pointer;
+  padding: 6px 10px;
   color: #323130;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  transition: all 0.15s ease;
-}
-
-.stealth-chip-btn:hover {
-  background: #edebe9;
-  border-color: #a19f9d;
-}
-
-.stealth-chip-btn.active {
-  background: #107c41;
-  color: #ffffff;
-  border-color: #107c41;
-  font-weight: 600;
-}
-
-.stealth-panic-btn {
-  background: #d83b01 !important;
-  color: #ffffff !important;
-  border-color: #d83b01 !important;
-  font-weight: 700;
-  animation: pulse-panic 2s infinite;
-}
-
-@keyframes pulse-panic {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.85; }
-}
-
-.stealth-unpanic-btn {
-  background: #107c41 !important;
-  color: #ffffff !important;
-  border-color: #107c41 !important;
-  font-weight: 700;
-}
-
-.stealth-slider-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: #605e5c;
-}
-
-.stealth-slider-label input[type="range"] {
-  width: 60px;
-  height: 4px;
+  background: #f3f2f1;
+  font: inherit;
   cursor: pointer;
 }
+.stealth-settings button:hover { background: #edebe9; }
+.stealth-settings button:focus-visible, .stealth-settings input:focus-visible, .stealth-settings select:focus-visible { outline: 2px solid #107c41; outline-offset: 2px; }
+.stealth-shortcut-list { margin: 16px 0; }
+.stealth-shortcut-list > div { display: grid; grid-template-columns: 190px 1fr; gap: 16px; padding: 3px 0; }
+.stealth-shortcut-list dd { margin: 0; }
+.stealth-shortcut-list kbd { font: 12px/1.6 Consolas, monospace; }
+.stealth-settings-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; border-top: 1px solid #ddd; padding-top: 16px; }
+.stealth-settings-fields label { display: flex; flex-direction: column; gap: 6px; }
+.stealth-settings-fields .stealth-settings-checkbox { flex-direction: row; align-items: center; }
+.stealth-settings-fields input[type="range"] { width: 100%; accent-color: #107c41; }
+.stealth-settings-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+.stealth-settings [role="alert"] { color: #a4262c; }
 
 /* ================= EXCEL MODE ================= */
 .excel-container {
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
   width: 100%;
   background: #ffffff;
   overflow: hidden;
@@ -147,6 +109,11 @@
 }
 
 .excel-ribbon-tab {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
   padding: 6px 14px;
   font-size: 12px;
   color: rgba(255, 255, 255, 0.85);
@@ -377,6 +344,7 @@
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
   width: 100%;
   background: #1e1e1e;
   color: #d4d4d4;
@@ -571,6 +539,7 @@
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
   width: 100%;
   background: #e9ecef;
   color: #212529;
@@ -642,4 +611,21 @@
   flex: 1;
   color: #212529;
   text-align: justify;
+}
+
+.vscode-activity-settings {
+  margin-top: auto;
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  border: 0;
+  background: transparent;
+  color: #aaa;
+  font-size: 24px;
+  cursor: pointer;
+}
+.vscode-activity-settings:hover { color: #fff; }
+@media (max-width: 540px) {
+  .stealth-shortcut-list > div { grid-template-columns: 140px 1fr; gap: 8px; }
+  .stealth-settings-fields { grid-template-columns: 1fr; }
 }

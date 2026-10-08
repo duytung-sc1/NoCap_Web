@@ -14,6 +14,8 @@ import {
   sourceIndexForDisplay,
 } from './navigation'
 import './StealthReader.css'
+import { stealthShortcut } from './shortcuts'
+import { DisguiseFullscreen } from './fullscreen'
 
 export type DisguiseMode = 'excel' | 'vscode' | 'doc'
 
@@ -54,7 +56,13 @@ export function StealthReader({
   const [autoScroll, setAutoScroll] = useState(false)
   const [autoScrollSpeed, setAutoScrollSpeed] = useState(6) // seconds per row
   const [search, setSearch] = useState('')
+  const [helpOpen, setHelpOpen] = useState(false)
+  const [fullscreen, setFullscreen] = useState(false)
+  const [fullscreenError, setFullscreenError] = useState(false)
 
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  const settingsRef = useRef<HTMLDialogElement>(null)
+  const fullscreenRef = useRef<DisguiseFullscreen | null>(null)
   const activeRowRef = useRef<HTMLTableRowElement | HTMLDivElement | null>(null)
   const autoScrollTimer = useRef<ReturnType<typeof setInterval> | null>(null)
   const initialProgressionRef = useRef(initialProgression)
@@ -64,6 +72,55 @@ export function StealthReader({
   useEffect(() => { onProgressChangeRef.current = onProgressChange }, [onProgressChange])
   useEffect(() => { initialProgressionRef.current = initialProgression }, [initialProgression])
   useEffect(() => { initialLocatorRef.current = initialLocator }, [initialLocator])
+
+  useEffect(() => {
+    const wrapper = wrapperRef.current
+    if (!wrapper) return
+    const controller = new DisguiseFullscreen(wrapper, document)
+    fullscreenRef.current = controller
+    const update = () => setFullscreen(controller.active)
+    document.addEventListener('fullscreenchange', update)
+    wrapper.focus({ preventScroll: true })
+    return () => {
+      document.removeEventListener('fullscreenchange', update)
+      fullscreenRef.current = null
+      controller.dispose()
+    }
+  }, [])
+
+  useEffect(() => {
+    const originalTitle = document.title
+    const title = mode === 'excel' ? 'Q4_Consolidated_Financial_Model_v4.2.xlsx — Excel'
+      : mode === 'vscode' ? 'analytics_stream.ts — Visual Studio Code' : 'Enterprise Data Pipeline Reference — Word'
+    document.title = title
+    return () => { if (document.title === title) document.title = originalTitle }
+  }, [mode])
+
+  useEffect(() => {
+    const dialog = settingsRef.current
+    if (!dialog) return
+    if (helpOpen && !dialog.open) dialog.showModal()
+    if (!helpOpen && dialog.open) {
+      dialog.close()
+      wrapperRef.current?.focus({ preventScroll: true })
+    }
+  }, [helpOpen])
+
+  const toggleFullscreen = useCallback(() => {
+    const controller = fullscreenRef.current
+    if (!controller) return
+    setFullscreenError(false)
+    // Called directly from a click/keydown so the browser receives user activation.
+    void controller.toggle().then(success => {
+      if (fullscreenRef.current === controller && !success) { setFullscreenError(true); setHelpOpen(true) }
+    }).catch(() => {
+      if (fullscreenRef.current === controller) { setFullscreenError(true); setHelpOpen(true) }
+    })
+  }, [])
+
+  const exitFullscreen = useCallback(() => {
+    void fullscreenRef.current?.exit().catch(() => { /* Native Escape may already have exited. */ })
+  }, [])
 
   // Extract text on mount
   useEffect(() => {
@@ -145,83 +202,45 @@ export function StealthReader({
 
   const togglePanic = useCallback(() => {
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+    setHelpOpen(false)
+    setOpacity(1)
     setPanic(previous => !previous)
   }, [])
 
   // Keyboard navigation & Boss Key hotkeys
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const isInput = (e.target as HTMLElement)?.tagName === 'INPUT' || (e.target as HTMLElement)?.tagName === 'TEXTAREA'
-
-      // Boss keys must work even while the search field is focused.
-      if (e.key === 'F12' || (e.altKey && (e.key === 'p' || e.key === 'P'))) {
-        e.preventDefault()
-        togglePanic()
-        return
-      }
-
-      if (e.key === 'F2') {
-        e.preventDefault()
-        closeStealth()
-        return
-      }
-
-      // If user is currently typing in search field
-      if (isInput) {
-        if (e.key === 'Escape') {
-          (e.target as HTMLElement).blur()
-          if (search) setSearch('')
-        }
-        return
-      }
-
-      // Escape: Exit reader completely to Home
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        if (panic) {
-          setPanic(false)
-        } else if (onExitHome) {
-          onExitHome()
-        } else {
-          closeStealth()
-        }
-        return
-      }
-
-      if (panic) return
-
-      // Down / Space / j: Next row
-      if (e.key === 'ArrowDown' || e.key === ' ' || e.key === 'j') {
-        e.preventDefault()
-        moveDisplayRow(1)
-        return
-      }
-
-      // Up / k: Previous row
-      if (e.key === 'ArrowUp' || e.key === 'k') {
-        e.preventDefault()
-        moveDisplayRow(-1)
-        return
-      }
-
-      // PageDown: Skip forward 15 rows
-      if (e.key === 'PageDown') {
-        e.preventDefault()
-        moveDisplayRow(15)
-        return
-      }
-
-      // PageUp: Skip back 15 rows
-      if (e.key === 'PageUp') {
-        e.preventDefault()
-        moveDisplayRow(-15)
-        return
+      const target = e.target instanceof HTMLElement ? e.target : null
+      const action = stealthShortcut({
+        key: e.key, code: e.code, altKey: e.altKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey,
+        shiftKey: e.shiftKey, repeat: e.repeat,
+        editing: !!target?.closest('input, textarea, select, button, [contenteditable="true"], [role="textbox"]'),
+        helpOpen, panic, fullscreen: !!fullscreenRef.current?.active,
+      })
+      if (!action) return
+      e.preventDefault()
+      switch (action.type) {
+        case 'panic': togglePanic(); break
+        case 'close': closeStealth(); break
+        case 'home': if (onExitHome) onExitHome(); else closeStealth(); break
+        case 'help': setHelpOpen(previous => !previous); break
+        case 'dismiss-help': setHelpOpen(false); break
+        case 'fullscreen': toggleFullscreen(); break
+        case 'exit-fullscreen': exitFullscreen(); break
+        case 'clear-search': target?.blur(); setSearch(''); break
+        case 'mode': setMode(action.mode); break
+        case 'auto-scroll': setAutoScroll(previous => !previous); break
+        case 'move': moveDisplayRow(action.delta); break
+        case 'font-size': setFontSize(previous => Math.min(16, Math.max(10, previous + action.delta))); break
+        case 'scroll-speed': setAutoScrollSpeed(previous => Math.min(20, Math.max(2, previous + action.delta))); break
+        case 'opacity': setOpacity(previous => Math.min(1, Math.max(0.1, Math.round((previous + action.delta) * 100) / 100))); break
+        case 'consume': break
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [closeStealth, moveDisplayRow, onExitHome, panic, search, togglePanic])
+  }, [closeStealth, moveDisplayRow, onExitHome, panic, helpOpen, togglePanic, toggleFullscreen, exitFullscreen])
 
   // Auto-advance rows
   useEffect(() => {
@@ -230,7 +249,7 @@ export function StealthReader({
       autoScrollTimer.current = null
     }
 
-    if (autoScroll && !panic && displayEntries.length > 0) {
+    if (autoScroll && !panic && !helpOpen && displayEntries.length > 0) {
       autoScrollTimer.current = setInterval(() => {
         setActiveRowIndex(previous => {
           const currentDisplayIndex = displayIndexForSource(displayEntries, previous)
@@ -248,7 +267,7 @@ export function StealthReader({
     return () => {
       if (autoScrollTimer.current) clearInterval(autoScrollTimer.current)
     }
-  }, [autoScroll, autoScrollSpeed, panic, displayEntries])
+  }, [autoScroll, autoScrollSpeed, panic, helpOpen, displayEntries])
 
   // Auto-scroll the active row into viewport
   useEffect(() => {
@@ -258,112 +277,49 @@ export function StealthReader({
         block: 'nearest'
       })
     }
-  }, [displayActiveRowIndex])
+  }, [displayActiveRowIndex, mode, panic, fullscreen])
 
   return (
-    <div className="stealth-wrapper" style={{ opacity }}>
-      {/* Top Discreet Toolbar */}
-      <header className="stealth-control-bar" role="toolbar" aria-label="Stealth Toolbar">
-        <div className="stealth-control-left">
-          {/* Panic Button */}
-          <button
-            className={`stealth-chip-btn ${panic ? 'stealth-unpanic-btn' : 'stealth-panic-btn'}`}
-            onClick={togglePanic}
-            title={panic ? curT.unpanicBtn : curT.panicBtn}
-          >
-            {panic ? curT.unpanicBtn : curT.panicBtn}
-          </button>
-
-          {/* Mode Switchers */}
-          <button
-            className={`stealth-chip-btn ${mode === 'excel' ? 'active' : ''}`}
-            onClick={() => setMode('excel')}
-          >
-            📊 {curT.excelMode}
-          </button>
-          <button
-            className={`stealth-chip-btn ${mode === 'vscode' ? 'active' : ''}`}
-            onClick={() => setMode('vscode')}
-          >
-            💻 {curT.vscodeMode}
-          </button>
-          <button
-            className={`stealth-chip-btn ${mode === 'doc' ? 'active' : ''}`}
-            onClick={() => setMode('doc')}
-          >
-            📄 {curT.docMode}
-          </button>
+    <div ref={wrapperRef} className="stealth-wrapper" style={{ opacity }} tabIndex={-1}>
+      {/* Settings are absent from the default view; F1 or the native View menu opens them. */}
+      <dialog ref={settingsRef} className="stealth-settings" aria-labelledby="stealth-settings-title"
+        onCancel={event => { event.preventDefault(); if (fullscreenRef.current?.active) exitFullscreen(); else setHelpOpen(false) }}>
+        <div className="stealth-settings-heading">
+          <h2 id="stealth-settings-title">{curT.settingsTitle}</h2>
+          <button type="button" onClick={() => setHelpOpen(false)} aria-label={curT.dismissSettings}>×</button>
         </div>
-
-        <div className="stealth-control-right">
-          {/* Auto Scroll Toggle */}
-          <label className="stealth-slider-label">
-            <input
-              type="checkbox"
-              checked={autoScroll}
-              onChange={e => setAutoScroll(e.target.checked)}
-            />
-            {curT.autoScroll} ({autoScrollSpeed}s)
-          </label>
-
-          {autoScroll && (
-            <input
-              type="range"
-              min="2"
-              max="20"
-              value={autoScrollSpeed}
-              onChange={e => setAutoScrollSpeed(Number(e.target.value))}
-              title={`${curT.autoScrollSpeed}: ${autoScrollSpeed}s`}
-            />
-          )}
-
-          {/* Font Size */}
-          <label className="stealth-slider-label">
-            {curT.fontSizeLabel}: {fontSize}px
-            <input
-              type="range"
-              min="10"
-              max="16"
-              value={fontSize}
-              onChange={e => setFontSize(Number(e.target.value))}
-            />
-          </label>
-
-          {/* Opacity */}
-          <label className="stealth-slider-label">
-            {curT.opacityLabel}: {Math.round(opacity * 100)}%
-            <input
-              type="range"
-              min="0.1"
-              max="1"
-              step="0.05"
-              value={opacity}
-              onChange={e => setOpacity(Number(e.target.value))}
-            />
-          </label>
-
-          {/* Exit directly to Home */}
-          <button
-            type="button"
-            className="stealth-chip-btn stealth-home-btn"
-            style={{ fontWeight: 600, background: '#107c41', color: '#fff', borderColor: '#107c41' }}
-            onClick={() => { if (onExitHome) onExitHome(); else closeStealth() }}
-            title={lang === 'vi' ? 'Thoát ra Trang chủ (Esc)' : 'Exit to Home (Esc)'}
-          >
-            🏠 {curT.exitHome || (lang === 'vi' ? 'Trang chủ (Esc)' : 'Home (Esc)')}
-          </button>
-
-          {/* Exit to normal reader */}
-          <button
-            className="stealth-chip-btn"
-            style={{ fontWeight: 600, borderColor: '#0078d4' }}
-            onClick={closeStealth}
-            title={curT.exitStealth}
-          >
-            ✕ {curT.exitStealth} (F2)
-          </button>
+        <p>{curT.keyboardGuide}</p>
+        <dl className="stealth-shortcut-list">
+          <div><dt><kbd>F10</kbd> / <kbd>Alt + F</kbd></dt><dd>{curT.fullscreenLabel}</dd></div>
+          <div><dt><kbd>F2</kbd></dt><dd>{curT.exitStealth}</dd></div>
+          <div><dt><kbd>F12</kbd> / <kbd>Alt + P</kbd></dt><dd>{curT.panicHelp}</dd></div>
+          <div><dt><kbd>Alt + 1 / 2 / 3</kbd></dt><dd>Excel / VS Code / Word</dd></div>
+          <div><dt><kbd>↑ / ↓ / Space</kbd></dt><dd>{curT.rowNavigation}</dd></div>
+          <div><dt><kbd>Page Up / Page Down</kbd></dt><dd>{curT.pageNavigation}</dd></div>
+          <div><dt><kbd>Alt + A</kbd></dt><dd>{curT.autoScroll}</dd></div>
+          <div><dt><kbd>Alt + ← / →</kbd></dt><dd>{curT.speedHelp}</dd></div>
+          <div><dt><kbd>Alt + ↑ / ↓</kbd></dt><dd>{curT.fontSizeLabel}</dd></div>
+          <div><dt><kbd>Alt + [ / ]</kbd></dt><dd>{curT.opacityLabel}</dd></div>
+          <div><dt><kbd>F1</kbd></dt><dd>{curT.settingsTitle}</dd></div>
+          <div><dt><kbd>Esc</kbd></dt><dd>{curT.escapeHelp}</dd></div>
+        </dl>
+        <div className="stealth-settings-fields">
+          <label>{curT.disguiseLabel}<select value={mode} onChange={event => setMode(event.target.value as DisguiseMode)}>
+            <option value="excel">Excel</option><option value="vscode">VS Code</option><option value="doc">Word</option>
+          </select></label>
+          <label className="stealth-settings-checkbox"><input type="checkbox" checked={autoScroll} onChange={event => setAutoScroll(event.target.checked)} />{curT.autoScroll}</label>
+          <label>{curT.autoScrollSpeed} ({autoScrollSpeed}s)<input type="range" min="2" max="20" value={autoScrollSpeed} onChange={event => setAutoScrollSpeed(Number(event.target.value))} /></label>
+          <label>{curT.fontSizeLabel}: {fontSize}px<input type="range" min="10" max="16" value={fontSize} onChange={event => setFontSize(Number(event.target.value))} /></label>
+          <label>{curT.opacityLabel}: {Math.round(opacity * 100)}%<input type="range" min="0.1" max="1" step="0.05" value={opacity} onChange={event => setOpacity(Number(event.target.value))} /></label>
         </div>
-      </header>
+        {fullscreenError && <p role="alert">{curT.fullscreenUnavailable}</p>}
+        <div className="stealth-settings-actions">
+          <button type="button" onClick={toggleFullscreen}>{fullscreen ? curT.exitFullscreenLabel : curT.fullscreenLabel} (F10)</button>
+          <button type="button" onClick={closeStealth}>{curT.exitStealth}</button>
+          <button type="button" onClick={() => { if (onExitHome) onExitHome(); else closeStealth() }}>{curT.exitHome}</button>
+          <button type="button" onClick={() => setHelpOpen(false)}>{curT.dismissSettings}</button>
+        </div>
+      </dialog>
 
       {/* Main Disguised View */}
       {mode === 'excel' && (
@@ -380,11 +336,14 @@ export function StealthReader({
           lang={lang}
           search={search}
           onSearchChange={setSearch}
+          onFontSizeChange={setFontSize}
+          onOpenSettings={() => setHelpOpen(true)}
         />
       )}
 
       {mode === 'vscode' && (
         <VsCodeView
+          onOpenSettings={() => setHelpOpen(true)}
           rows={displayRows}
           activeRowIndex={displayActiveRowIndex}
           activeRowRef={activeRowRef}
@@ -399,7 +358,6 @@ export function StealthReader({
 
       {mode === 'doc' && (
         <DocView
-          bookTitle={book.title}
           rows={displayRows}
           activeRowIndex={displayActiveRowIndex}
           activeRowRef={activeRowRef}
@@ -439,6 +397,17 @@ export interface StealthTranslations {
   readingProgress: (pct: number) => string
   keyboardGuide: string
   panicNotice: string
+  settingsTitle: string
+  dismissSettings: string
+  fullscreenLabel: string
+  exitFullscreenLabel: string
+  fullscreenUnavailable: string
+  panicHelp: string
+  rowNavigation: string
+  pageNavigation: string
+  speedHelp: string
+  escapeHelp: string
+  disguiseLabel: string
 }
 
 /* ================== EXCEL VIEW COMPONENT ================== */
@@ -467,10 +436,14 @@ function ExcelView({
   lang = 'vi',
   search,
   onSearchChange,
+  onFontSizeChange,
+  onOpenSettings,
 }: SubViewProps & {
   currentRow: StealthRow
   search: string
   onSearchChange: (val: string) => void
+  onFontSizeChange: (size: number) => void
+  onOpenSettings: () => void
 }) {
   const WINDOW_SIZE = 70
   const startIdx = Math.max(0, activeRowIndex - 20)
@@ -486,7 +459,7 @@ function ExcelView({
           <span className="excel-filename">Q4_Consolidated_Financial_Model_v4.2.xlsx - Saved to OneDrive</span>
         </div>
         <div style={{ fontSize: '11px', opacity: 0.9 }}>
-          {panic ? '⚠️ ISO-27001 AUDIT MODE' : `Row ${activeRowIndex + 1} of ${rows.length}`}
+          {panic ? 'Protected View' : `Row ${activeRowIndex + 1} of ${rows.length}`}
         </div>
       </div>
 
@@ -498,7 +471,7 @@ function ExcelView({
         <div className="excel-ribbon-tab">Formulas</div>
         <div className="excel-ribbon-tab">Data</div>
         <div className="excel-ribbon-tab">Review</div>
-        <div className="excel-ribbon-tab">View</div>
+        <button type="button" className="excel-ribbon-tab" onClick={onOpenSettings}>View</button>
         <div className="excel-ribbon-tab">Automate</div>
       </div>
 
@@ -510,11 +483,14 @@ function ExcelView({
             <option>Calibri</option>
             <option>Segoe UI</option>
           </select>
-          <select className="excel-font-select" defaultValue={String(fontSize)}>
+          <select className="excel-font-select" aria-label={curT.fontSizeLabel} value={fontSize} onChange={event => onFontSizeChange(Number(event.target.value))}>
             <option value="10">10</option>
             <option value="11">11</option>
             <option value="12">12</option>
+            <option value="13">13</option>
             <option value="14">14</option>
+            <option value="15">15</option>
+            <option value="16">16</option>
           </select>
         </div>
         <div className="excel-tool-group">
@@ -630,16 +606,16 @@ function ExcelView({
 
 /* ================== VS CODE VIEW COMPONENT ================== */
 function VsCodeView({
+  onOpenSettings,
   rows,
   activeRowIndex,
   activeRowRef,
   onSelectRow,
   fontSize,
-  panic,
   loading,
   curT,
   lang = 'vi',
-}: SubViewProps) {
+}: SubViewProps & { onOpenSettings: () => void }) {
   const WINDOW_SIZE = 50
   const startIdx = Math.max(0, activeRowIndex - 15)
   const endIdx = Math.min(rows.length, startIdx + WINDOW_SIZE)
@@ -655,11 +631,12 @@ function VsCodeView({
           <div className="vscode-activity-icon" title="Source Control">🌿</div>
           <div className="vscode-activity-icon" title="Run and Debug">▶</div>
           <div className="vscode-activity-icon" title="Extensions">🧩</div>
+          <button type="button" className="vscode-activity-settings" onClick={onOpenSettings} aria-label={curT.settingsTitle} title="Manage">⚙</button>
         </div>
 
         {/* Sidebar */}
         <div className="vscode-sidebar">
-          <div className="vscode-sidebar-title">EXPLORER: NOCAP-CORE</div>
+          <div className="vscode-sidebar-title">EXPLORER: ANALYTICS-CORE</div>
           <div className="vscode-tree-item">▼ src</div>
           <div className="vscode-tree-item" style={{ paddingLeft: '24px' }}>▶ controllers</div>
           <div className="vscode-tree-item" style={{ paddingLeft: '24px' }}>▼ pipeline</div>
@@ -729,7 +706,7 @@ function VsCodeView({
                         <br />
                         &nbsp;&nbsp;<span className="vscode-var">id: </span><span className="vscode-string">"{row.id}"</span>,
                         <br />
-                        &nbsp;&nbsp;<span className="vscode-comment">/* &gt;&gt;&gt; READING LOG: */</span>
+                        &nbsp;&nbsp;<span className="vscode-comment">/* &gt;&gt;&gt; ANALYTICS PAYLOAD: */</span>
                         <br />
                         &nbsp;&nbsp;<span className="vscode-var">narrative: </span>
                         <span className="vscode-string">"{row.text}"</span>,
@@ -781,7 +758,7 @@ function VsCodeView({
           <span>Ln {activeRowIndex + 1}/{rows.length}</span>
           <span>UTF-8</span>
           <span>TypeScript 5.8</span>
-          <span>{panic ? 'EMERGENCY SHIELD ON' : 'PRETTIER: OK'}</span>
+          <span>PRETTIER: OK</span>
         </div>
       </div>
     </div>
@@ -790,7 +767,6 @@ function VsCodeView({
 
 /* ================== TECHNICAL DOC / WORD VIEW COMPONENT ================== */
 function DocView({
-  bookTitle,
   rows,
   activeRowIndex,
   activeRowRef,
@@ -798,9 +774,8 @@ function DocView({
   fontSize,
   panic,
   loading,
-  curT,
   lang = 'vi',
-}: SubViewProps & { bookTitle: string }) {
+}: SubViewProps) {
   const WINDOW_SIZE = 50
   const startIdx = Math.max(0, activeRowIndex - 15)
   const endIdx = Math.min(rows.length, startIdx + WINDOW_SIZE)
@@ -812,10 +787,10 @@ function DocView({
         {/* Document Header */}
         <div className="doc-header-block">
           <div className="doc-confidential">
-            {panic ? 'TOP SECRET • STRICTLY CONFIDENTIAL • INTERNAL AUDIT' : 'INTERNAL TECHNICAL SPECIFICATION • NOCAP-ARCH-2026'}
+            {panic ? 'TOP SECRET • STRICTLY CONFIDENTIAL • INTERNAL AUDIT' : 'INTERNAL TECHNICAL SPECIFICATION • DATA-ARCH-2026'}
           </div>
           <h1 className="doc-main-title">
-            {panic ? 'Enterprise Financial Governance & Risk Matrix Q4' : `Technical Reference: ${bookTitle}`}
+            {panic ? 'Enterprise Financial Governance & Risk Matrix Q4' : 'Enterprise Data Pipeline Reference'}
           </h1>
           <div className="doc-meta">
             Document ID: DOC-2026-X84 • Revision: 3.12 • Classification: Internal Restricted
@@ -860,9 +835,6 @@ function DocView({
           </>
         )}
 
-        <div className="doc-meta" style={{ marginTop: '24px', borderTop: '1px solid #dee2e6', paddingTop: '8px' }}>
-          {curT.keyboardGuide}
-        </div>
       </div>
     </div>
   )
