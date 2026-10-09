@@ -1,5 +1,5 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
-import type { Book, Category, LocalFile, PendingOperation, SyncRecord } from './types'
+import type { Book, Category, LocalFile, PendingOperation, Session, SyncRecord } from './types'
 
 export type OfflineBook = { key: string; profile: string; bookId: string; data: Blob; savedAt: number }
 type CachedCatalog = { key: 'public-catalog'; books: Book[]; categories: Category[]; savedAt: number }
@@ -161,13 +161,50 @@ export async function applyLibraryRestore(
   })
 }
 
-export function readSession(): import('./types').Session | null {
+export const SESSION_STORAGE_KEY = 'nocap-session'
+
+function parseSession(raw: string | null): Session | null {
   try {
-    const value = JSON.parse(sessionStorage.getItem('nocap-session') || 'null')
-    return value?.token && value.expiresAt > Date.now() / 1000 ? value : null
+    const value = JSON.parse(raw || 'null')
+    return typeof value?.token === 'string' && value.token.length > 0 &&
+      typeof value.expiresAt === 'number' && Number.isFinite(value.expiresAt) && value.expiresAt > Date.now() / 1000 &&
+      typeof value.user?.id === 'string' && value.user.id.length > 0 &&
+      typeof value.user.email === 'string' && typeof value.user.emailVerified === 'boolean'
+      ? value : null
   } catch { return null }
 }
-export function saveSession(value: import('./types').Session | null) {
-  if (value) sessionStorage.setItem('nocap-session', JSON.stringify(value))
-  else sessionStorage.removeItem('nocap-session')
+
+function clearLegacySession() {
+  try { sessionStorage.removeItem(SESSION_STORAGE_KEY) } catch { /* Browser storage may be disabled. */ }
+}
+
+export function readSession(): Session | null {
+  try {
+    const raw = localStorage.getItem(SESSION_STORAGE_KEY)
+    if (raw !== null) {
+      clearLegacySession()
+      const value = parseSession(raw)
+      if (!value && raw !== 'null') saveSession(null)
+      return value
+    }
+  } catch { /* Fall back to the current tab when persistent storage is unavailable. */ }
+
+  let legacy: Session | null = null
+  try { legacy = parseSession(sessionStorage.getItem(SESSION_STORAGE_KEY)) } catch { /* Browser storage may be disabled. */ }
+  if (legacy) saveSession(legacy)
+  else clearLegacySession()
+  return legacy
+}
+
+export function saveSession(value: Session | null) {
+  try {
+    // Keep a null marker after logout so an older tab cannot restore its legacy session.
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(value))
+    clearLegacySession()
+  } catch {
+    try {
+      if (value) sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(value))
+      else clearLegacySession()
+    } catch { /* Login in the current page still works without browser storage. */ }
+  }
 }

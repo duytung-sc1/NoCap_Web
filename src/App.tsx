@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { AlignJustify, AlignLeft, ArrowLeft, ArrowRight, Award, BarChart3, BookMarked, BookOpen, Bookmark, Briefcase, Check, CheckCircle2, ChevronLeft, ChevronRight, Cloud, CloudOff, Download, Edit3, FileDown, FileText, Flame, FolderPlus, Globe, Highlighter, Home, Layers, Library, List, LogIn, Menu, Plus, RotateCcw, Search, Settings2, Sparkles, Tag, Trash2, Type, X } from 'lucide-react'
 import { ApiError, deleteAccount, forgotPassword, getCatalog, getEntitlement, getUser, loadBookBytes, login, loginWithGoogle, logout, register, updateProfile, uploadBlob, type Entitlement } from './api'
 import type { StealthPosition } from './stealth/StealthReader'
-import { getCachedCatalog, getFile, getFiles, getOfflineBook, getOfflineBooks, getPending, readSession, removeFile, removeLocalDocument, removeOfflineBook, saveCachedCatalog, saveFile, saveSession } from './store'
+import { getCachedCatalog, getFile, getFiles, getOfflineBook, getOfflineBooks, getPending, readSession, removeFile, removeLocalDocument, removeOfflineBook, saveCachedCatalog, saveFile, saveSession, SESSION_STORAGE_KEY } from './store'
 import { androidCompositeRecordId, androidRecordId, broadcastSyncRequired, connectLiveSync, getConflicts, getDeviceId, localRecords, mutate, profileFor, readableError, resolveConflict, syncNow } from './sync'
 import { prepareBookDownload, saveBookDownload } from './bookDownload'
 import { mergeBooksById } from './library'
@@ -419,6 +419,39 @@ function App() {
   }, [refreshLocal, synchronize])
 
   useEffect(() => {
+    const restoreSession = () => {
+      const next = readSession()
+      const current = sessionRef.current
+      if (current?.token !== next?.token) {
+        setEntitlement(null)
+        if (profileFor(current) !== profileFor(next)) {
+          // Close the old reader before changing profile, keeping its progress in its own library.
+          setPage('home')
+          if (preferenceTimer.current) { clearTimeout(preferenceTimer.current); preferenceTimer.current = null }
+          setRecords([]); setLocalFiles([]); setOfflineIds(new Set()); setPendingCount(0)
+          setConflicts([]); setConflictModalOpen(false)
+          setAuthOpen(false); setEditNameOpen(false); setDeleteAccountOpen(false)
+        }
+        sessionRef.current = next
+        profileRef.current = profileFor(next)
+      }
+      if (JSON.stringify(current) !== JSON.stringify(next)) setSession(next)
+    }
+    const onStorage = (event: StorageEvent) => {
+      if (event.storageArea === localStorage && (event.key === SESSION_STORAGE_KEY || event.key === null)) restoreSession()
+    }
+    const onVisible = () => { if (document.visibilityState === 'visible') restoreSession() }
+    window.addEventListener('storage', onStorage)
+    window.addEventListener('focus', restoreSession)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      window.removeEventListener('storage', onStorage)
+      window.removeEventListener('focus', restoreSession)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [setPage])
+
+  useEffect(() => {
     const token = sessionToken
     if (!token) return
     let active = true
@@ -431,7 +464,9 @@ function App() {
       setSession(updated)
       void synchronize(updated)
     }).catch(error => {
-      if (!active) return
+      if (!active || sessionRef.current?.token !== token) return
+      const stored = readSession()
+      if (stored && stored.token !== token) return
       if (error?.status === 401 || error?.status === 403) { saveSession(null); setSession(null); setNotice(translate("Phiên đăng nhập đã hết hạn. Dữ liệu trên trình duyệt vẫn được giữ riêng.", lang)) }
       else setNotice(readableError(error, lang))
     })
@@ -665,6 +700,7 @@ function App() {
     setSavingName(true)
     try {
       const updated = await updateProfile(session.token, { displayName: editNameInput.trim() })
+      if (sessionRef.current?.token !== session.token || readSession()?.token !== session.token) return
       const newSession: Session = { ...session, user: updated }
       saveSession(newSession)
       setSession(newSession)

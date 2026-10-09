@@ -15,7 +15,7 @@ it('preserves Pro access through login and session restore with backend timestam
   vi.useFakeTimers()
   vi.setSystemTime(now)
   vi.stubGlobal('fetch', fetchMock)
-  vi.stubGlobal('sessionStorage', { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value), removeItem: (key: string) => storage.delete(key) })
+  vi.stubGlobal('localStorage', { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value), removeItem: (key: string) => storage.delete(key) })
   try {
     const { login, getEntitlement } = await import('./api')
     saveSession(await login(auth.user.email, 'qa-only-password'))
