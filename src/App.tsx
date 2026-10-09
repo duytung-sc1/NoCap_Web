@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlignJustify, AlignLeft, ArrowLeft, ArrowRight, Award, BarChart3, BookMarked, BookOpen, Bookmark, Briefcase, Check, CheckCircle2, ChevronLeft, ChevronRight, Cloud, CloudOff, Download, Edit3, FileDown, FileText, Flame, FolderPlus, Globe, Highlighter, Home, Layers, Library, List, LogIn, LogOut, Menu, Plus, RotateCcw, Search, Settings2, ShieldAlert, Sparkles, Tag, Trash2, Type, X } from 'lucide-react'
+import { AlignJustify, AlignLeft, ArrowLeft, ArrowRight, Award, BarChart3, BookMarked, BookOpen, Bookmark, Briefcase, Check, CheckCircle2, ChevronLeft, ChevronRight, Cloud, CloudOff, Download, Edit3, FileDown, FileText, Flame, FolderPlus, Globe, Highlighter, Home, Layers, Library, List, LogIn, Menu, Plus, RotateCcw, Search, Settings2, Sparkles, Tag, Trash2, Type, X } from 'lucide-react'
 import { ApiError, deleteAccount, forgotPassword, getCatalog, getEntitlement, getUser, loadBookBytes, login, loginWithGoogle, logout, register, updateProfile, uploadBlob, type Entitlement } from './api'
 import type { StealthPosition } from './stealth/StealthReader'
 import { getCachedCatalog, getFile, getFiles, getOfflineBook, getOfflineBooks, getPending, readSession, removeFile, removeLocalDocument, removeOfflineBook, saveCachedCatalog, saveFile, saveSession } from './store'
@@ -18,7 +18,7 @@ const StealthReader = lazy(() => importWithChunkRecovery(() => import('./stealth
 
 import type { Page } from './routing'
 import { useAppRoute } from './useAppRoute'
-import { SePayCheckout } from './SePayCheckout'
+import { AccountSettings, type AccountSettingsSection } from './AccountSettings'
 import { AnnotationEditor, AnnotationDeleteDialog } from './AnnotationDialogs'
 import { ProRequiredDialog } from './ProRequiredDialog'
 import { addAnnotationReview, annotationId, deleteAnnotation, rateAnnotationReview, updateAnnotation, type HighlightColor } from './annotations'
@@ -162,6 +162,7 @@ function App() {
   const reviewRatingActive = useRef(false)
   const [reviewStats, setReviewStats] = useState({ mastered: 0, reviewAgain: 0 })
   const [entitlement, setEntitlement] = useState<Entitlement | null>(null)
+  const [accountSection, setAccountSection] = useState<AccountSettingsSection>('profile')
   const [controls, setControls] = useState<{ previous: () => void; next: () => void } | null>(null)
   const [selectedBook, setSelectedBook] = useState<Book | null>(null)
   const [stealthGrant, setStealthGrant] = useState<{ token: string; bookId: string } | null>(null)
@@ -201,6 +202,7 @@ function App() {
   const stealthLaunchBusy = useRef(false)
 
   const setPage = useCallback((next: Page) => {
+    if (next === 'account') setAccountSection('profile')
     closeReaderRef.current()
     setSelectedBook(null)
     setSidebarOpen(false)
@@ -1654,74 +1656,22 @@ async function sha256Hex(file: Blob): Promise<string> {
           </div>
         </>}
 
-        {page === 'account' && <>
-          <div className="inner-page-banner">
-            <div className="banner-text">
-              <div className="banner-eyebrow">{curT.banners.account.eyebrow}</div>
-              <h2>{session ? curT.banners.account.titleUser : curT.banners.account.titleGuest}</h2>
-              <p>{session ? curT.banners.account.descUser : curT.banners.account.descGuest}</p>
-            </div>
-            {!session && <div className="banner-action"><button className="light-button" onClick={() => setAuthOpen(true)}>{curT.banners.account.loginNow}</button></div>}
-          </div>
-          <div className="settings-grid">
-            <section className="settings-card">
-              <h2>{curT.accountPage.accountHeading}</h2>
-              {session ? (
-                <>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <p className="account-email" style={{ margin: 0 }}>{session.user.displayName || session.user.email}</p>
-                    <button
-                      className="icon-button"
-                      title={curT.accountPage.editDisplayName}
-                      onClick={() => { setEditNameInput(session.user.displayName || ''); setEditNameOpen(true) }}
-                    >
-                      <Edit3 size={15} />
-                    </button>
-                  </div>
-                  <p className="muted">{session.user.email}</p>
-                  {!session.user.emailVerified && <p className="warning-text">{curT.accountPage.unverifiedWarning}</p>}
-                  <p className="muted">
-                    {curT.accountPage.currentPlan} <strong>{allowsPro(entitlement, session, statsNow) ? 'PRO' : 'FREE'}</strong>
-                    {entitlement?.plan === 'PRO' && entitlement.expiresAt ? ` · ${curT.accountPage.validUntil(new Date(entitlement.expiresAt).toLocaleDateString(lang === 'vi' ? 'vi-VN' : 'en-US'))}` : ''}
-                  </p>
-                  <button className="secondary" onClick={() => void signOut()}><LogOut size={17} /> {curT.accountPage.logout}</button>
-                </>
-              ) : (
-                <>
-                  <p className="muted">{curT.accountPage.loginPrompt}</p>
-                  <button className="primary" onClick={() => setAuthOpen(true)}>{curT.accountPage.loginRegister}</button>
-                </>
-              )}
-            </section>
-
-
-
-            <SePayCheckout key={profile} session={session} entitlement={entitlement} lang={lang} onSignIn={() => setAuthOpen(true)} onPaid={setEntitlement} />
-            <section className="settings-card">
-              <h2>{curT.accountPage.comfortHeading}</h2>
-              <label className="range-label">{curT.accountPage.fontSize} <strong>{fontSize}%</strong><input type="range" min="80" max="170" step="10" value={fontSize} onChange={event => updateComfort({ fontSize: Number(event.target.value) })} /></label>
-              <div className="setting-group" style={{ margin: '14px 0 10px' }}><span className="setting-label">{curT.accountPage.typeface}</span><div className="toggle-row"><button className={`choice-chip ${fontFamily === 'serif' ? 'active' : ''}`} onClick={() => updateComfort({ fontFamily: 'serif' })}>{curT.accountPage.serifChoice}</button><button className={`choice-chip ${fontFamily === 'sans' ? 'active' : ''}`} onClick={() => updateComfort({ fontFamily: 'sans' })}>{curT.accountPage.sansChoice}</button><button className={`choice-chip ${fontFamily === 'mono' ? 'active' : ''}`} onClick={() => updateComfort({ fontFamily: 'mono' })}>{curT.accountPage.monoChoice}</button></div></div>
-              <div className="setting-group" style={{ margin: '14px 0 10px' }}><span className="setting-label">{curT.accountPage.align}</span><div className="toggle-row"><button className={`choice-chip ${textAlignment === 'left' ? 'active' : ''}`} onClick={() => updateComfort({ textAlignment: 'left' })}><AlignLeft size={14} /> {curT.accountPage.alignLeft}</button><button className={`choice-chip ${textAlignment === 'justify' ? 'active' : ''}`} onClick={() => updateComfort({ textAlignment: 'justify' })}><AlignJustify size={14} /> {curT.accountPage.alignJustify}</button></div></div>
-              <div className="setting-group" style={{ margin: '14px 0 10px' }}><span className="setting-label">{curT.accountPage.theme}</span><div className="theme-row">{(['paper', 'sepia', 'night'] as const).map(value => <button key={value} className={`theme-chip ${value} ${theme === value ? 'chosen' : ''}`} onClick={() => updateComfort({ theme: value })}>{value === 'paper' ? curT.accountPage.themePaper : value === 'sepia' ? curT.accountPage.themeSepia : curT.accountPage.themeNight}</button>)}</div></div>
-            </section>
-
-            {session && (
-              <section className="settings-card danger-zone-card">
-                <h2>{curT.accountPage.dangerZoneHeading}</h2>
-                <p className="muted" style={{ fontSize: '12px', margin: '6px 0 14px' }}>
-                  {curT.accountPage.deleteAccountWarning}
-                </p>
-                <button
-                  className="secondary"
-                  style={{ color: '#b91c1c', borderColor: '#fca5a5' }}
-                  onClick={() => setDeleteAccountOpen(true)}
-                >
-                  <ShieldAlert size={16} /> {curT.accountPage.deleteAccountBtn}
-                </button>
-              </section>
-            )}
-          </div>
-        </>}
+        {page === 'account' && <AccountSettings
+          key={profile}
+          session={session}
+          entitlement={entitlement}
+          lang={lang}
+          now={statsNow}
+          section={accountSection}
+          onSectionChange={setAccountSection}
+          comfort={{ fontSize, fontFamily, textAlignment, theme }}
+          onComfortChange={updateComfort}
+          onSignIn={() => setAuthOpen(true)}
+          onSignOut={() => void signOut()}
+          onEditName={() => { setEditNameInput(session?.user.displayName || ''); setEditNameOpen(true) }}
+          onDeleteAccount={() => setDeleteAccountOpen(true)}
+          onPaid={setEntitlement}
+        />}
       </div>
 
       <footer className="swiss-footer">
@@ -1847,7 +1797,7 @@ async function sha256Hex(file: Blob): Promise<string> {
 
     {editingAnnotation?.profile === profile && <AnnotationEditor key={editingAnnotation.key} record={editingAnnotation} lang={lang} busy={annotationBusy} error={annotationError} onClose={() => { if (!annotationBusy) setEditingAnnotation(null) }} onSave={changes => void handleAnnotationSave(changes)} />}
     {deletingAnnotation?.profile === profile && <AnnotationDeleteDialog record={deletingAnnotation} lang={lang} busy={annotationBusy} error={annotationError} onClose={() => { if (!annotationBusy) setDeletingAnnotation(null) }} onDelete={() => void handleAnnotationDelete()} />}
-    {proRequiredFeature && <ProRequiredDialog feature={proRequiredFeature} lang={lang} onClose={() => setProRequiredFeature(null)} onPlans={() => { setProRequiredFeature(null); setPage('account') }} />}
+    {proRequiredFeature && <ProRequiredDialog feature={proRequiredFeature} lang={lang} onClose={() => setProRequiredFeature(null)} onPlans={() => { setProRequiredFeature(null); setPage('account'); setAccountSection('pro') }} />}
 
     {editNameOpen && session && <div className="modal-shade"><div className="dialog" role="dialog" aria-modal="true" aria-labelledby="edit-name-title">
       <button className="icon-button dialog-close" onClick={() => setEditNameOpen(false)} disabled={savingName} aria-label={curT.auth.close}><X size={19} /></button>

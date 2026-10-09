@@ -62,6 +62,15 @@ No admin credentials or payment-confirmation secrets belong in this bundle.
   offline-mode toggle. Previously opened/imported content may remain in browser
   storage, but that storage can be cleared or evicted and is not a backup.
 
+## Account settings
+
+On desktop Web (above 900 px), `/account` uses a settings sidebar with Profile,
+NoCap Pro and Reading preferences panels. The existing rename, sign-out,
+account-deletion confirmation, checkout and saved reading preferences are reused.
+Switching panels preserves the selected billing period and an active checkout.
+Phone-width Web retains the original banner and card layout. The Android app
+is not changed by this redesign.
+
 ## Reading Memory and plans
 
 | Feature | Free | Pro |

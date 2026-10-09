@@ -1,0 +1,80 @@
+/* The phone layout keeps its existing banner and card grid. */
+.account-settings-desktop-heading,
+.account-settings-navigation { display: none; }
+.account-settings-layout .account-profile-desktop { display: none; }
+.account-settings-panel { display: contents; }
+
+@media (min-width: 901px) {
+  .account-settings-mobile-banner,
+  .account-profile-mobile { display: none; }
+  .account-settings-desktop-heading { display: block; max-width: 1120px; margin: 4px auto 32px; }
+  .account-settings-desktop-heading h1 { margin: 0 0 10px; font: 600 32px/1.35 'Literata Variable', Georgia, serif; letter-spacing: -.035em; color: #142b36; }
+  .account-settings-desktop-heading p { margin: 0; color: #687b83; font-size: 14px; line-height: 1.7; }
+  .account-settings-layout { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 30px; max-width: 1120px; margin: 0 auto; align-items: start; }
+  .account-settings-navigation { display: flex; flex-direction: column; gap: 6px; padding-top: 14px; }
+  .account-settings-navigation button { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 46px; padding: 12px 16px; border: 0; border-radius: 9px; background: transparent; color: #667d84; text-align: left; font-size: 13px; font-weight: 600; }
+  .account-settings-navigation button:hover { background: #edf5f1; color: #176e62; }
+  .account-settings-navigation button.active { background: #e3f1ea; color: #116a5e; }
+  .account-settings-navigation button:focus-visible { outline: 2px solid #178b7b; outline-offset: 3px; }
+  .account-settings-grid { display: block; min-width: 0; }
+  .account-settings-grid > .account-settings-panel { display: none; }
+  .account-settings-grid > .account-settings-panel.active { display: block; }
+  .account-settings-grid .settings-card { border: 1px solid #e2e9e5; border-radius: 18px; padding: 32px 36px; min-height: 0; background: #fff; box-shadow: 0 8px 28px #183e2e08; }
+  .account-settings-grid .settings-card h2 { margin: 0 0 20px; font-size: 23px; font-weight: 600; letter-spacing: -.025em; color: #1c323b; }
+  .account-settings-grid .settings-card p { font-size: 13px; line-height: 1.7; }
+  .account-settings-grid .settings-card .muted { color: #71828a !important; }
+  .account-settings-profile.active { border: 1px solid #e2e9e5; border-radius: 18px; background: #fff; box-shadow: 0 8px 28px #183e2e08; overflow: hidden; }
+  .account-settings-profile.has-session.active { border-bottom: 0; border-radius: 18px 18px 0 0; }
+  .account-settings-grid .account-profile-card { border: 0; border-radius: 0; box-shadow: none; }
+  .account-settings-layout .account-profile-desktop { display: block; }
+  .account-profile-heading { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+  .account-settings-grid .account-profile-heading h2 { margin-bottom: 0; }
+  .account-profile-heading .secondary { display: inline-flex; flex-shrink: 0; min-height: 38px; padding: 8px 12px; border-color: #d6e2dc; color: #176e62; font-weight: 600; }
+  .account-settings-grid .account-profile-description { margin: 12px 0 28px; color: #71828a; }
+  .account-profile-identity { display: flex; align-items: center; gap: 16px; padding: 0 0 28px; border-bottom: 1px solid #e9eeeb; }
+  .account-profile-avatar { position: relative; display: grid; place-items: center; flex: none; width: 64px; height: 64px; border: 1px solid #cce3d8; border-radius: 50%; background: #e5f3ec; color: #1b7968; font: 600 23px 'Literata Variable', Georgia, serif; overflow: hidden; }
+  .account-profile-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .account-profile-identity > div:nth-child(2) { min-width: 0; }
+  .account-profile-identity strong { display: block; color: #1c323b; font-size: 16px; overflow-wrap: anywhere; }
+  .account-profile-identity-caption { display: block; margin-top: 5px; color: #7b8d93; font-size: 12px; }
+  .account-plan-badge { flex: none; margin-left: auto; padding: 6px 12px; border: 1px solid #dfe7e3; border-radius: 999px; background: #f5f8f6; color: #60766d; font-size: 11px; font-weight: 700; }
+  .account-plan-badge.pro { border-color: #c5e3d5; background: #e9f6ef; color: #147864; }
+  .account-profile-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 24px; margin: 26px 0 14px; }
+  .account-profile-fields dt { margin-bottom: 9px; color: #364e56; font-size: 12px; font-weight: 600; }
+  .account-profile-fields dd { margin: 0; min-height: 44px; padding: 11px 13px; border: 1px solid #e2e8e5; border-radius: 7px; background: #fcfdfc; color: #3d525b; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+  .account-settings-grid .account-email-verified { display: flex; align-items: center; gap: 7px; margin: 14px 0 26px; color: #22816a; font-size: 12px; }
+  .account-profile-membership { display: flex; align-items: center; justify-content: space-between; gap: 20px; border-top: 1px solid #e9eeeb; padding-top: 24px; }
+  .account-profile-membership > div { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: #536c75; font-size: 12px; }
+  .account-profile-membership strong { color: #197766; }
+  .account-profile-membership small { flex-basis: 100%; margin-top: 2px; color: #7b8d93; font-size: 12px; }
+  .account-profile-membership button { flex: none; font-weight: 600; }
+  .account-settings-grid > .danger-zone-card { display: none; }
+  .account-settings-profile.active ~ .danger-zone-card { position: relative; display: flex; align-items: center; gap: 24px; margin: 0; padding: 24px 36px 28px; border: 1px solid #e2e9e5 !important; border-top: 0 !important; border-radius: 0 0 18px 18px; background: #fff !important; box-shadow: 0 8px 28px #183e2e08; }
+  .account-settings-grid .danger-zone-card::before { content: ''; position: absolute; top: 0; left: 36px; right: 36px; height: 1px; background: #e9eeeb; }
+  .account-settings-grid .danger-zone-card h2 { margin: 0; color: #704949 !important; font: 600 13px/1.5 'DM Sans', sans-serif; letter-spacing: 0; }
+  .account-settings-grid .danger-zone-card p { margin: 7px 0 0 !important; line-height: 1.65; }
+  .account-settings-grid .danger-zone-card button { flex: none; min-height: 38px; padding: 8px 11px; background: #fff; border-color: #ead4d0 !important; color: #a34f45 !important; font-size: 11px; font-weight: 600; }
+  .account-settings-pro .pro-benefits { margin: 24px 0; padding: 16px 20px; border: 1px solid #e6eee9; border-radius: 10px; background: #f9fcfa; }
+  .account-settings-pro .pro-benefits p { margin: 4px 0 8px; color: #48635c; }
+  .account-settings-pro .pro-plan-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 24px 0 22px; }
+  .account-settings-pro .pro-plan-options legend { padding-bottom: 14px; font-size: 15px; color: #2b464c; }
+  .account-settings-pro .pro-plan-option { min-height: 126px; padding: 18px 16px; border-radius: 11px; }
+  .account-settings-pro .pro-plan-price { margin-top: 7px; font-size: 25px; }
+  .account-settings-pro .settings-card > .secondary { border-color: #cbded5; background: #e9f5ee; color: #166c5b; min-height: 43px; }
+  .account-settings-reading .settings-card > .range-label { display: block; max-width: 520px; padding: 6px 0 12px; font-size: 13px; }
+  .account-settings-reading .range-label input { margin-bottom: 12px; }
+  .account-settings-reading .setting-group { margin: 0 !important; padding: 22px 0; border-top: 1px solid #e9eeeb; }
+  .account-settings-reading .setting-label { display: block; margin-bottom: 12px; color: #697f85; font-size: 11px; letter-spacing: .06em; }
+  .account-settings-reading .choice-chip,
+  .account-settings-reading .theme-chip { min-height: 38px; padding: 9px 14px; font-size: 12px; }
+  .account-settings-reading .toggle-row,
+  .account-settings-reading .theme-row { gap: 8px; }
+}
+
+@media (min-width: 901px) and (max-width: 1100px) {
+  .account-settings-layout { grid-template-columns: 170px minmax(0, 1fr); gap: 22px; }
+  .account-settings-grid .settings-card { padding: 28px; }
+  .account-settings-grid .danger-zone-card { flex-direction: column; align-items: flex-start; padding: 22px 28px 26px; }
+  .account-settings-grid .danger-zone-card::before { left: 28px; right: 28px; }
+  .account-profile-fields { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+}
