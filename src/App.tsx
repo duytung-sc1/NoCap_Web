@@ -1375,13 +1375,15 @@ async function sha256Hex(file: Blob): Promise<string> {
             <span>SWISS EDITORIAL & QUIET WORKSPACE</span>
           </div>
           <div className="swiss-hero-echo-container">
-            <div className="swiss-hero-echo-text" aria-label="NOCAP">
-              <span className="swiss-hero-echo-layer swiss-echo-4">NOCAP</span>
-              <span className="swiss-hero-echo-layer swiss-echo-3">NOCAP</span>
-              <span className="swiss-hero-echo-layer swiss-echo-2">NOCAP</span>
-              <span className="swiss-hero-echo-layer swiss-echo-1">NOCAP</span>
-              <span className="swiss-hero-echo-layer swiss-echo-fore">NOCAP</span>
-            </div>
+            <h1 className="swiss-hero-echo-text" aria-label="NOCAP">
+              {(['4', '3', '2', '1', 'fore'] as const).map(layer =>
+                <span key={layer} className={`swiss-hero-echo-layer swiss-echo-${layer}`} aria-hidden="true">
+                  {Array.from('NOCAP').map((letter, index) =>
+                    <span key={index} className="swiss-echo-letter" style={layer === 'fore' ? { animationDelay: `${index * 75}ms` } : undefined}>{letter}</span>
+                  )}
+                </span>
+              )}
+            </h1>
           </div>
           <p className="swiss-hero-sub">
             {curT.hero.sub}

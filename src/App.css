@@ -832,6 +832,7 @@ body, .main-area {
   user-select: none;
 }
 .swiss-hero-echo-text {
+  margin: 0;
   font-family: 'Plus Jakarta Sans', 'Be Vietnam Pro', -apple-system, sans-serif;
   font-size: clamp(64px, 11vw, 175px);
   font-weight: 800;
@@ -847,16 +848,46 @@ body, .main-area {
   pointer-events: none;
   transition: transform 700ms cubic-bezier(0.77, 0, 0.175, 1);
 }
-.swiss-echo-4 { transform: translate(-0.16em, -0.16em); color: #d9d9d9; }
-.swiss-echo-3 { transform: translate(-0.12em, -0.12em); color: #d1d1d1; }
-.swiss-echo-2 { transform: translate(-0.08em, -0.08em); color: #c9c9c9; }
-.swiss-echo-1 { transform: translate(-0.04em, -0.04em); color: #bfbfbf; }
+.swiss-echo-4 { --echo-offset: -0.16em; color: #d9d9d9; animation-delay: 120ms; }
+.swiss-echo-3 { --echo-offset: -0.12em; color: #d1d1d1; animation-delay: 160ms; }
+.swiss-echo-2 { --echo-offset: -0.08em; color: #c9c9c9; animation-delay: 200ms; }
+.swiss-echo-1 { --echo-offset: -0.04em; color: #bfbfbf; animation-delay: 240ms; }
+.swiss-hero-echo-layer:not(.swiss-echo-fore) {
+  transform: translate(var(--echo-offset), var(--echo-offset));
+  animation-name: nocap-echo-reveal;
+  animation-duration: 850ms;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  animation-fill-mode: backwards;
+}
 .swiss-echo-fore { position: relative; color: #111111; z-index: 5; }
+.swiss-echo-letter { display: inline-block; }
+.swiss-echo-fore .swiss-echo-letter {
+  animation: nocap-letter-reveal 800ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
 
-.swiss-hero:hover .swiss-echo-4 { transform: translate(-0.20em, -0.20em); }
-.swiss-hero:hover .swiss-echo-3 { transform: translate(-0.15em, -0.15em); }
-.swiss-hero:hover .swiss-echo-2 { transform: translate(-0.10em, -0.10em); }
-.swiss-hero:hover .swiss-echo-1 { transform: translate(-0.05em, -0.05em); }
+@keyframes nocap-letter-reveal {
+  from { opacity: 0; transform: translateY(0.35em); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes nocap-echo-reveal {
+  from { opacity: 0; transform: translate(calc(var(--echo-offset) * 1.8), calc(var(--echo-offset) * 1.8)); }
+  to { opacity: 1; transform: translate(var(--echo-offset), var(--echo-offset)); }
+}
+
+/* Start the reveal after the existing book intro has uncovered the home page. */
+.intro-open .swiss-hero-echo-layer:not(.swiss-echo-fore),
+.intro-open .swiss-echo-fore .swiss-echo-letter { animation-name: none; }
+
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .swiss-hero:hover .swiss-echo-4 { --echo-offset: -0.20em; }
+  .swiss-hero:hover .swiss-echo-3 { --echo-offset: -0.15em; }
+  .swiss-hero:hover .swiss-echo-2 { --echo-offset: -0.10em; }
+  .swiss-hero:hover .swiss-echo-1 { --echo-offset: -0.05em; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .swiss-hero-echo-layer,
+  .swiss-echo-fore .swiss-echo-letter { animation: none; transition: none; }
+}
 
 .swiss-hero-sub {
   font-family: 'Plus Jakarta Sans', 'Be Vietnam Pro', sans-serif;
