@@ -1,8 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlignJustify, AlignLeft, ArrowLeft, ArrowRight, Award, BarChart3, BookMarked, BookOpen, Bookmark, Briefcase, Check, CheckCircle2, ChevronLeft, ChevronRight, Cloud, CloudOff, Download, Edit3, FileDown, FileText, Flame, FolderPlus, Globe, Highlighter, Home, Layers, Library, List, LogIn, Menu, Plus, RotateCcw, Search, Settings2, Sparkles, Tag, Trash2, Type, X } from 'lucide-react'
-import { ApiError, deleteAccount, forgotPassword, getCatalog, getEntitlement, getUser, loadBookBytes, login, loginWithGoogle, logout, register, updateProfile, uploadBlob, type Entitlement } from './api'
+import { ApiError, deleteAccount, forgotPassword, getCatalog, getEntitlement, getUser, loadBookBytes, login, loginWithGoogle, logout, register, updateProfile, type Entitlement } from './api'
 import type { StealthPosition } from './stealth/StealthReader'
-import { getCachedCatalog, getFile, getFiles, getOfflineBook, getOfflineBooks, getPending, readSession, removeFile, removeLocalDocument, removeOfflineBook, saveCachedCatalog, saveFile, saveSession, SESSION_STORAGE_KEY } from './store'
+import { applyLibraryRestore, getCachedCatalog, getFile, getFiles, getOfflineBook, getOfflineBooks, getPending, keyFor, readSession, removeFile, removeLocalDocument, removeOfflineBook, saveCachedCatalog, saveSession, SESSION_STORAGE_KEY } from './store'
 import { androidCompositeRecordId, androidRecordId, broadcastSyncRequired, connectLiveSync, getConflicts, getDeviceId, localRecords, mutate, profileFor, readableError, resolveConflict, syncNow } from './sync'
 import { prepareBookDownload, saveBookDownload } from './bookDownload'
 import { mergeBooksById } from './library'
@@ -185,7 +185,7 @@ function App() {
   const progressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const preferenceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const readingSessionRef = useRef<{ id: string; bookId: string; startedAt: number; startProgress: number; format: string; localOnly: boolean } | null>(null)
-  const syncFlight = useRef<{ profile: string; promise: Promise<void> } | null>(null)
+  const syncFlight = useRef<{ profile: string; token: string; promise: Promise<void> } | null>(null)
   const readerRef = useRef<Book | null>(null)
   const profileRef = useRef(profile)
   profileRef.current = profile
@@ -210,6 +210,25 @@ function App() {
     navigate({ kind: 'page', page: next })
     window.scrollTo({ top: 0 })
   }, [navigate])
+
+  const resetAccountView = useCallback(() => {
+    setPage('home')
+    if (preferenceTimer.current) { clearTimeout(preferenceTimer.current); preferenceTimer.current = null }
+    setRecords([]); setLocalFiles([]); setOfflineIds(new Set()); setPendingCount(0)
+    setConflicts([]); setConflictModalOpen(false)
+    setAuthOpen(false); setEditNameOpen(false); setDeleteAccountOpen(false)
+    lastSyncAt.current = 0
+  }, [setPage])
+
+  const invalidateSession = useCallback((token: string) => {
+    if (sessionRef.current?.token !== token) return
+    const stored = readSession()
+    if (stored && stored.token !== token) return
+    resetAccountView()
+    saveSession(null)
+    sessionRef.current = null; profileRef.current = profileFor(null)
+    setSession(null); setEntitlement(null)
+  }, [resetAccountView])
 
   const closeBookDetails = useCallback(() => {
     setSelectedBook(null)
@@ -331,13 +350,14 @@ function App() {
       return
     }
     const targetProfile = profileFor(activeSession)
+    if (profileRef.current !== targetProfile || sessionRef.current?.token !== activeSession.token) return
     if (syncFlight.current) {
-      if (syncFlight.current.profile === targetProfile) {
+      if (syncFlight.current.profile === targetProfile && syncFlight.current.token === activeSession.token) {
         syncNeedsRerun.current = true
         return syncFlight.current.promise
       }
       await syncFlight.current.promise
-      if (profileRef.current !== targetProfile) return
+      if (profileRef.current !== targetProfile || sessionRef.current?.token !== activeSession.token) return
     }
     setSyncing(true)
     const flight = (async () => {
@@ -345,11 +365,12 @@ function App() {
         do {
           syncNeedsRerun.current = false
           await syncNow(activeSession)
+          if (profileRef.current !== targetProfile || sessionRef.current?.token !== activeSession.token) return
           lastSyncAt.current = Date.now()
           await refreshLocal(profileFor(activeSession))
           const currentConflicts = await getConflicts(targetProfile)
-          setConflicts(currentConflicts)
-          if (profileRef.current === profileFor(activeSession)) {
+          if (profileRef.current === targetProfile && sessionRef.current?.token === activeSession.token) {
+            setConflicts(currentConflicts)
             if (currentConflicts.length) {
               setNotice((lang === 'vi' ? `${currentConflicts.length} xung đột đồng bộ cần giải quyết.` : `${currentConflicts.length} sync conflicts need your attention.`))
             } else if (!silent && !syncNeedsRerun.current) {
@@ -358,7 +379,8 @@ function App() {
           }
         } while (syncNeedsRerun.current && profileRef.current === targetProfile)
       } catch (error) {
-        if (profileRef.current === profileFor(activeSession)) {
+        if (profileRef.current === targetProfile && sessionRef.current?.token === activeSession.token) {
+          if (error instanceof ApiError && error.status === 401) invalidateSession(activeSession.token)
           if (!silent || (error instanceof Error && error.message.includes('hết hạn'))) {
             setNotice(readableError(error, lang))
           }
@@ -369,9 +391,9 @@ function App() {
         setSyncing(false)
       }
     })()
-    syncFlight.current = { profile: targetProfile, promise: flight }
+    syncFlight.current = { profile: targetProfile, token: activeSession.token, promise: flight }
     try { await flight } finally { if (syncFlight.current?.promise === flight) syncFlight.current = null }
-  }, [refreshLocal, lang])
+  }, [refreshLocal, lang, invalidateSession])
 
   useEffect(() => {
     if (!session) return
@@ -426,11 +448,7 @@ function App() {
         setEntitlement(null)
         if (profileFor(current) !== profileFor(next)) {
           // Close the old reader before changing profile, keeping its progress in its own library.
-          setPage('home')
-          if (preferenceTimer.current) { clearTimeout(preferenceTimer.current); preferenceTimer.current = null }
-          setRecords([]); setLocalFiles([]); setOfflineIds(new Set()); setPendingCount(0)
-          setConflicts([]); setConflictModalOpen(false)
-          setAuthOpen(false); setEditNameOpen(false); setDeleteAccountOpen(false)
+          resetAccountView()
         }
         sessionRef.current = next
         profileRef.current = profileFor(next)
@@ -449,7 +467,7 @@ function App() {
       window.removeEventListener('focus', restoreSession)
       document.removeEventListener('visibilitychange', onVisible)
     }
-  }, [setPage])
+  }, [resetAccountView])
 
   useEffect(() => {
     const token = sessionToken
@@ -467,13 +485,13 @@ function App() {
       if (!active || sessionRef.current?.token !== token) return
       const stored = readSession()
       if (stored && stored.token !== token) return
-      if (error?.status === 401 || error?.status === 403) { saveSession(null); setSession(null); setNotice(translate("Phiên đăng nhập đã hết hạn. Dữ liệu trên trình duyệt vẫn được giữ riêng.", lang)) }
+      if (error?.status === 401 || error?.status === 403) { invalidateSession(token); setNotice(translate("Phiên đăng nhập đã hết hạn. Dữ liệu trên trình duyệt vẫn được giữ riêng.", lang)) }
       else setNotice(readableError(error, lang))
     })
     return () => { active = false }
     // Only verify when the account identity changes; sync retries use the online event.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionToken, synchronize, lang])
+  }, [sessionToken, synchronize, lang, invalidateSession])
 
   useEffect(() => {
     if (!sessionToken) { setEntitlement(null); return }
@@ -896,69 +914,68 @@ async function sha256Hex(file: Blob): Promise<string> {
         source: isCloud ? 'cloud' : 'local',
         fileSizeBytes: file.size,
       }
-      await saveFile({ key: `${profile}:${book.id}`, profile, book, data: file, addedAt: ms() })
+      const importedRecords: Array<{ record: SyncRecord; sync: boolean }> = []
+      if (isCloud && session) {
+        const mediaType = extension === 'pdf' ? 'application/pdf'
+          : extension === 'cbz' ? 'application/vnd.comicbook+zip'
+          : extension === 'txt' ? 'text/plain'
+          : extension === 'md' || extension === 'markdown' ? 'text/markdown'
+          : extension === 'html' || extension === 'htm' ? 'text/html'
+          : extension === 'docx' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+          : extension === 'png' ? 'image/png'
+          : extension === 'webp' ? 'image/webp'
+          : extension === 'jpg' || extension === 'jpeg' ? 'image/jpeg'
+          : 'application/epub+zip'
+        const now = ms()
+        const payload = {
+          id: book.id,
+          title: book.title,
+          author: book.author,
+          description: '',
+          cover_url: '',
+          category_id: 'imported',
+          file_url: `nocap-private:${hash}`,
+          file_size_bytes: file.size,
+          content_version: 1,
+          content_hash: hash,
+          is_featured: 0,
+          is_new: 0,
+          is_premium: 0,
+          play_product_id: null,
+          entitlement_type: 'FREE',
+          rating: 0,
+          published_date: null,
+          format: extension.toUpperCase(),
+          media_type: mediaType,
+          source_type: sourceUrl ? 'REMOTE_URL' : 'LOCAL_FILE',
+          source_url: sourceUrl || null,
+          is_in_inbox: 1,
+          inbox_added_at: now,
+          is_pinned: 0,
+          is_archived: 0,
+          reading_status: 'UNREAD',
+          user_title_override: null,
+          user_author_override: null,
+          custom_cover_path: null,
+          last_opened_at: null,
+          added_at: now,
+          updated_at: now,
+          original_filename: file.name,
+        }
+        const id = androidRecordId('catalog_books', book.id)
+        importedRecords.push({ record: { key: keyFor(profile, `catalog_books:${id}`), profile, kind: 'catalog_books', id, version: 0, deleted: false, payload }, sync: true })
+      }
+      // Reuse the atomic file/record/pending transaction. The existing sync queue
+      // uploads private bytes before publishing metadata and retains failed uploads.
+      await applyLibraryRestore(profile, importedRecords, [{ key: keyFor(profile, book.id), profile, book, data: file, addedAt: ms() }], [])
       await refreshLocal(profile)
       if (profileRef.current !== profile) return false
       setQuery(''); setCategory('all'); setShelfFilter('all'); setOrganizationFilter('all')
       setPage('library')
-
       if (isCloud && session) {
-        setNotice(translate("Đang tải tệp lên Cloud...", lang))
-        try {
-          await uploadBlob(session.token, hash, file)
-          const mediaType = extension === 'pdf' ? 'application/pdf'
-            : extension === 'cbz' ? 'application/vnd.comicbook+zip'
-            : extension === 'txt' ? 'text/plain'
-            : extension === 'md' || extension === 'markdown' ? 'text/markdown'
-            : extension === 'html' || extension === 'htm' ? 'text/html'
-            : extension === 'docx' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-            : extension === 'png' ? 'image/png'
-            : extension === 'webp' ? 'image/webp'
-            : extension === 'jpg' || extension === 'jpeg' ? 'image/jpeg'
-            : 'application/epub+zip'
-          const now = ms()
-          const payload = {
-            id: book.id,
-            title: book.title,
-            author: book.author,
-            description: '',
-            cover_url: '',
-            category_id: 'imported',
-            file_url: `nocap-private:${hash}`,
-            file_size_bytes: file.size,
-            content_version: 1,
-            content_hash: hash,
-            is_featured: 0,
-            is_new: 0,
-            is_premium: 0,
-            play_product_id: null,
-            entitlement_type: 'FREE',
-            rating: 0,
-            published_date: null,
-            format: extension.toUpperCase(),
-            media_type: mediaType,
-            source_type: sourceUrl ? 'REMOTE_URL' : 'LOCAL_FILE',
-            source_url: sourceUrl || null,
-            is_in_inbox: 1,
-            inbox_added_at: now,
-            is_pinned: 0,
-            is_archived: 0,
-            reading_status: 'UNREAD',
-            user_title_override: null,
-            user_author_override: null,
-            custom_cover_path: null,
-            last_opened_at: null,
-            added_at: now,
-            updated_at: now,
-            original_filename: file.name,
-          }
-          await mutate(profile, 'catalog_books', androidRecordId('catalog_books', book.id), payload, false, false)
-          await refreshLocal(profile)
-          void synchronize(session)
-          setNotice(translate("Đã thêm và đồng bộ tài liệu riêng lên Cloud thành công.", lang))
-        } catch (uploadError) {
-          setNotice(`${lang === 'vi' ? 'Tài liệu đã lưu trên trình duyệt, nhưng tải lên cloud gặp sự cố:' : 'Your document is saved in this browser, but cloud upload failed:'} ${readableError(uploadError, lang)}`)
-        }
+        setNotice(lang === 'vi' ? 'Đã thêm tài liệu. Tệp sẽ được tự động tải lên Cloud khi có kết nối.' : 'Document added. It will automatically upload to Cloud when connected.')
+        broadcastSyncRequired(profile)
+        if (navigator.onLine) void synchronize(session, true)
       } else {
         setNotice(translate("Đã thêm tài liệu vào trình duyệt này. Đăng nhập để tự động sao lưu lên Cloud.", lang))
       }

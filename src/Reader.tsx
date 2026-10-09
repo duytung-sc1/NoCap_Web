@@ -691,7 +691,7 @@ function CbzPane({ lang = 'vi', bytes, initial, onLocation, onControls, onToc, n
           onTocRef.current(
             loadedPages.map((_, idx) => ({
               id: `cbz-p-${idx + 1}`,
-              label: `Trang ${idx + 1}`,
+              label: `${translate('Trang', langRef.current)} ${idx + 1}`,
               href: `page:${idx + 1}`,
             }))
           )
@@ -755,7 +755,7 @@ function CbzPane({ lang = 'vi', bytes, initial, onLocation, onControls, onToc, n
   useEffect(() => {
     if (!pages.length) return
     const locator = archiveLocator(page - 1, pages.map(entry => entry.name))
-    onLocation({ locatorJson: JSON.stringify(locator), progression: locator.progression, chapterTitle: `Trang ${page} / ${pages.length}` })
+    onLocation({ locatorJson: JSON.stringify(locator), progression: locator.progression, chapterTitle: `${translate('Trang', langRef.current)} ${page} / ${pages.length}` })
   }, [page, pages, onLocation])
 
   useEffect(() => {
@@ -869,7 +869,7 @@ function TextPane({ lang = 'vi', bytes, initial, fontSize, fontFamily, lineHeigh
   useEffect(() => {
     if (!navigateTarget || !host.current) return
     const id = navigateTarget.replace(/^#/, '')
-    const targetElement = host.current.querySelector(`[id="${id}"]`) || host.current.querySelector(navigateTarget)
+    const targetElement = host.current.querySelector(`#${CSS.escape(id)}`)
     if (targetElement) {
       targetElement.scrollIntoView({ behavior: 'smooth' })
     }

@@ -9,21 +9,37 @@ export class ApiError extends Error {
 
 class RequestTimeoutError extends Error {}
 
-async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs: number): Promise<Response> {
+async function fetchWithTimeout<T>(input: RequestInfo | URL, init: RequestInit, timeoutMs: number, consume: (response: Response, signal: AbortSignal) => Promise<T>): Promise<T> {
   const controller = new AbortController()
   const upstream = init.signal
   const forwardAbort = () => controller.abort(upstream?.reason)
+  let response: Response | undefined
+  let rejectAbort: () => void = () => {}
+  const aborted = new Promise<never>((_, reject) => {
+    rejectAbort = () => reject(controller.signal.reason)
+    controller.signal.addEventListener('abort', rejectAbort, { once: true })
+  })
   if (upstream?.aborted) forwardAbort()
   else upstream?.addEventListener('abort', forwardAbort, { once: true })
   const timer = globalThis.setTimeout(() => controller.abort(new RequestTimeoutError()), timeoutMs)
   try {
-    return await fetch(input, { ...init, signal: controller.signal })
+    // The deadline includes reading the body, not just receiving its headers.
+    return await Promise.race([
+      fetch(input, { ...init, signal: controller.signal }).then(value => {
+        response = value
+        controller.signal.throwIfAborted()
+        return consume(value, controller.signal)
+      }),
+      aborted,
+    ])
   } catch (error) {
-    if (!upstream?.aborted && controller.signal.aborted) throw new RequestTimeoutError('Máy chủ phản hồi quá lâu. Vui lòng thử lại.')
+    if (controller.signal.reason instanceof RequestTimeoutError) throw new RequestTimeoutError('Máy chủ phản hồi quá lâu. Vui lòng thử lại.')
     throw error
   } finally {
     globalThis.clearTimeout(timer)
     upstream?.removeEventListener('abort', forwardAbort)
+    controller.signal.removeEventListener('abort', rejectAbort)
+    if (controller.signal.aborted && response?.body && !response.body.locked) void response.body.cancel().catch(() => {})
   }
 }
 
@@ -36,14 +52,16 @@ export async function api<T>(path: string, options: RequestInit = {}, token?: st
   const headers = new Headers(options.headers)
   if (token) headers.set('Authorization', `Bearer ${token}`)
   if (options.body && !(options.body instanceof Blob)) headers.set('Content-Type', 'application/json')
-  let response: Response
-  try { response = await fetchWithTimeout(`${API_BASE}${path}`, { ...options, headers, cache: 'no-store' }, 20000) }
+  try {
+    return await fetchWithTimeout(`${API_BASE}${path}`, { ...options, headers, cache: 'no-store' }, 20000, async response => {
+      if (!response.ok) return parseError(response)
+      return response.json() as Promise<T>
+    })
+  }
   catch (error) {
-    if (error instanceof RequestTimeoutError) throw error
+    if (error instanceof RequestTimeoutError || error instanceof ApiError || options.signal?.aborted) throw error
     throw new Error('Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.')
   }
-  if (!response.ok) return parseError(response)
-  return response.json() as Promise<T>
 }
 
 export async function getCatalog() {
@@ -157,9 +175,8 @@ export async function pushOperation(token: string, operation: SyncOperation) {
 }
 
 export async function uploadBlob(token: string, hash: string, blob: Blob): Promise<{ hash: string }> {
-  let response: Response
   try {
-    response = await fetchWithTimeout(`${API_BASE}/api/v1/sync/blobs/${hash}`, {
+    return await fetchWithTimeout(`${API_BASE}/api/v1/sync/blobs/${hash}`, {
       method: 'PUT',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -168,13 +185,48 @@ export async function uploadBlob(token: string, hash: string, blob: Blob): Promi
       },
       body: blob,
       cache: 'no-store',
-    }, 120000)
+    }, 120000, async response => {
+      if (!response.ok) return parseError(response)
+      return response.json() as Promise<{ hash: string }>
+    })
   } catch (error) {
-    if (error instanceof RequestTimeoutError) throw error
+    if (error instanceof RequestTimeoutError || error instanceof ApiError) throw error
     throw new Error('Không kết nối được máy chủ khi tải tệp lên. Kiểm tra mạng rồi thử lại.')
   }
-  if (!response.ok) return parseError(response)
-  return response.json() as Promise<{ hash: string }>
+}
+
+/** Enforce file size as chunks arrive, including responses without Content-Length. */
+export async function readBookResponse(response: Response, signal: AbortSignal, maximumBytes = 250 * 1024 * 1024): Promise<ArrayBuffer> {
+  const tooLarge = () => new Error('Tệp quá lớn để mở trong trình duyệt.')
+  if (Number(response.headers.get('Content-Length') || 0) > maximumBytes) {
+    await response.body?.cancel()
+    throw tooLarge()
+  }
+  if (!response.body) {
+    const bytes = await response.arrayBuffer()
+    if (bytes.byteLength > maximumBytes) throw tooLarge()
+    return bytes
+  }
+  const reader = response.body.getReader()
+  const cancel = () => { void reader.cancel(signal.reason).catch(() => {}) }
+  signal.addEventListener('abort', cancel, { once: true })
+  const chunks: Uint8Array[] = []
+  let received = 0
+  try {
+    while (true) {
+      signal.throwIfAborted()
+      const { done, value } = await reader.read()
+      signal.throwIfAborted()
+      if (done) break
+      received += value.byteLength
+      if (received > maximumBytes) { await reader.cancel(); throw tooLarge() }
+      chunks.push(value)
+    }
+    const bytes = new Uint8Array(received)
+    let offset = 0
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength }
+    return bytes.buffer
+  } finally { signal.removeEventListener('abort', cancel); reader.releaseLock() }
 }
 
 export async function loadBookBytes(book: Book, token?: string): Promise<ArrayBuffer> {
@@ -194,16 +246,14 @@ export async function loadBookBytes(book: Book, token?: string): Promise<ArrayBu
     }
   } else throw new Error('Sách chưa có tệp để đọc.')
   const headers = token && book.fileUrl?.startsWith('nocap-private:') ? { Authorization: `Bearer ${token}` } : undefined
-  let response: Response
-  try { response = await fetchWithTimeout(url, { headers, cache: 'no-store' }, 60000) }
+  try {
+    return await fetchWithTimeout(url, { headers, cache: 'no-store' }, 60000, async (response, signal) => {
+      if (!response.ok) return parseError(response)
+      return readBookResponse(response, signal)
+    })
+  }
   catch (error) {
-    if (error instanceof RequestTimeoutError) throw error
+    if (error instanceof RequestTimeoutError || error instanceof ApiError || error instanceof Error && error.message === 'Tệp quá lớn để mở trong trình duyệt.') throw error
     throw new Error('Không tải được tệp sách. Kiểm tra mạng rồi thử lại.')
   }
-  if (!response.ok) return parseError(response)
-  const length = Number(response.headers.get('Content-Length') || 0)
-  if (length > 250 * 1024 * 1024) throw new Error('Tệp quá lớn để mở trong trình duyệt.')
-  const bytes = await response.arrayBuffer()
-  if (bytes.byteLength > 250 * 1024 * 1024) throw new Error('Tệp quá lớn để mở trong trình duyệt.')
-  return bytes
 }

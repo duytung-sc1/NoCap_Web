@@ -115,7 +115,7 @@ export function AccountSettings({ session, entitlement, lang, now, section, onSe
         </div>
 
         <div id="account-panel-pro" className={`account-settings-panel account-settings-pro ${section === 'pro' ? 'active' : ''}`}>
-          <SePayCheckout session={session} entitlement={entitlement} lang={lang} onSignIn={onSignIn} onPaid={onPaid} />
+          <SePayCheckout key={session?.token || 'guest'} session={session} entitlement={entitlement} lang={lang} onSignIn={onSignIn} onPaid={onPaid} />
         </div>
 
         <div id="account-panel-reading" className={`account-settings-panel account-settings-reading ${section === 'reading' ? 'active' : ''}`}>
