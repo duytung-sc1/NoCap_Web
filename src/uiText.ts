@@ -1,6 +1,8 @@
 import { getStoredLang, type Lang } from './i18n'
 
 const english: Record<string, string> = {
+  "Mục đồng bộ đã thay đổi. Vui lòng thử lại.": "This sync entry changed. Please try again.",
+  "Bản trên máy vừa thay đổi. Vui lòng xem lại xung đột.": "The local copy just changed. Please review the conflict again.",
   "Không tìm thấy thẻ ôn tập của ghi chú này.": "This note no longer has a scheduled review card.",
   "Tiểu sử": "Biography",
   "Hư cấu": "Fiction",

@@ -75,6 +75,15 @@ it('never downloads another account’s private browser copy', async () => {
   expect(await (await getOfflineBook('ACCOUNT:A', document.id))?.data.text()).toBe('private account A document')
 })
 
+it('fetches the current private file when the browser holds an older content hash', async () => {
+  const document = book({ source: 'cloud', format: 'TXT', fileUrl: `nocap-private:${'b'.repeat(64)}` })
+  await saveFile({ key: `ACCOUNT:A:${document.id}`, profile: 'ACCOUNT:A', book: { ...document, fileUrl: `nocap-private:${'a'.repeat(64)}` }, data: new Blob(['old content']), addedAt: 1 })
+  loadBytes.mockResolvedValueOnce(bytes('new content'))
+  const download = await prepareBookDownload(document, 'ACCOUNT:A', 'current-token')
+  expect(await download.blob.text()).toBe('new content')
+  expect(loadBytes).toHaveBeenCalledWith(document, 'current-token')
+})
+
 it('retains supported file extensions instead of forcing every file to PDF', async () => {
   for (const [format, name, type] of [
     ['MD', 'Ghi chú.md', 'text/markdown'],

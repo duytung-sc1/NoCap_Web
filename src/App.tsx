@@ -5,7 +5,7 @@ import type { StealthPosition } from './stealth/StealthReader'
 import { applyLibraryRestore, getCachedCatalog, getFile, getFiles, getOfflineBook, getOfflineBooks, getPending, keyFor, readSession, removeFile, removeLocalDocument, removeOfflineBook, saveCachedCatalog, saveSession, SESSION_STORAGE_KEY } from './store'
 import { androidCompositeRecordId, androidRecordId, broadcastSyncRequired, connectLiveSync, getConflicts, getDeviceId, localRecords, mutate, profileFor, readableError, resolveConflict, syncNow } from './sync'
 import { prepareBookDownload, saveBookDownload } from './bookDownload'
-import { mergeBooksById } from './library'
+import { currentLocalFile, mergeBooksById } from './library'
 import { importWithChunkRecovery } from './lazyRecovery'
 import { reviewIsDue, type ReviewItemPayload } from './review'
 import type { Book, Category, FontFamily, LocalFile, PendingOperation, ReaderLocation, ReaderWidth, Session, SyncRecord, TextAlignment, TocItem } from './types'
@@ -572,7 +572,11 @@ function App() {
   }, [synchronize, refreshLocal, beginReadingSession, completeReadingSession])
 
   const cloudBooks = useMemo(() => records.map(syncedBook).filter((book): book is Book => !!book && !!book.id && !catalog.some(item => item.id === book.id)), [records, catalog])
-  const books = useMemo(() => mergeBooksById(catalog, cloudBooks, localFiles.map(file => file.book)), [catalog, cloudBooks, localFiles])
+  const browserBooks = useMemo(() => {
+    const deletedCatalogIds = new Set(records.filter(record => record.kind === 'catalog_books' && record.deleted).map(record => record.id))
+    return localFiles.filter(file => file.book.source !== 'cloud' || !deletedCatalogIds.has(androidRecordId('catalog_books', file.book.id))).map(file => file.book)
+  }, [localFiles, records])
+  const books = useMemo(() => mergeBooksById(catalog, browserBooks, cloudBooks), [catalog, cloudBooks, browserBooks])
   const routeBook = route.kind === 'book' || route.kind === 'read' ? books.find(book => book.id === route.bookId) : undefined
   useEffect(() => {
     if (route.kind === 'page' || route.kind === 'notFound') {
@@ -1003,8 +1007,9 @@ async function sha256Hex(file: Blob): Promise<string> {
         getFile(profile, book.id),
         getOfflineBook(offlineProfileFor(book, profile), book.id),
       ])
-      const local = localResult.status === 'fulfilled' ? localResult.value : undefined
-      const offlineCopy = offlineResult.status === 'fulfilled' ? offlineResult.value : undefined
+      const stored = localResult.status === 'fulfilled' ? localResult.value : undefined
+      const local = currentLocalFile(book, stored)
+      const offlineCopy = (!stored || local) && offlineResult.status === 'fulfilled' ? offlineResult.value : undefined
       if (!local && !offlineCopy && (book.source === 'local' || book.fileUrl?.startsWith('nocap-private:')) && localResult.status === 'rejected') {
         throw new Error(lang === 'vi'
           ? 'Bộ nhớ trình duyệt vừa bị đóng. Hãy tải lại trang rồi mở tài liệu riêng này.'

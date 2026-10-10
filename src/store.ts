@@ -1,5 +1,5 @@
-import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
-import type { Book, Category, LocalFile, PendingOperation, Session, SyncRecord } from './types'
+import { openDB, type DBSchema, type IDBPDatabase, type IDBPTransaction } from 'idb'
+import type { Book, Category, LocalFile, PendingOperation, Session, SyncKind, SyncOperation, SyncRecord } from './types'
 
 export type OfflineBook = { key: string; profile: string; bookId: string; data: Blob; savedAt: number }
 type CachedCatalog = { key: 'public-catalog'; books: Book[]; categories: Category[]; savedAt: number }
@@ -118,6 +118,163 @@ export async function getPending(profile: string) { return withDatabase(database
 export async function getPendingItem(key: string) { return withDatabase(database => database.get('pending', key)) }
 export async function savePending(value: PendingOperation) { await withDatabase(database => database.put('pending', value)) }
 export async function removePending(key: string) { await withDatabase(database => database.delete('pending', key)) }
+
+type SyncTransaction = IDBPTransaction<NoCapDB, ['records', 'pending', 'metadata', 'files', 'offlineBooks'], 'readwrite'>
+
+async function withSyncTransaction<T>(operation: (transaction: SyncTransaction) => Promise<T>): Promise<T> {
+  return withDatabase(async database => {
+    const transaction = database.transaction(['records', 'pending', 'metadata', 'files', 'offlineBooks'], 'readwrite')
+    try {
+      const result = await operation(transaction)
+      await transaction.done
+      return result
+    } catch (error) {
+      try { transaction.abort() } catch { /* already aborted */ }
+      await transaction.done.catch(() => {})
+      throw error
+    }
+  })
+}
+
+/** Commit the visible record and its outbox together, including across tabs. */
+export async function saveLocalMutation(profile: string, kind: SyncKind, id: string, payload: Record<string, unknown>, deleted: boolean, localOnly: boolean) {
+  const key = keyFor(profile, `${kind}:${id}`)
+  await withSyncTransaction(async transaction => {
+    const records = transaction.objectStore('records')
+    const pendingStore = transaction.objectStore('pending')
+    const current = await records.get(key)
+    const pending = await pendingStore.get(key)
+    await records.put({ key, profile, kind, id, version: current?.version || 0, deleted, payload })
+    if (profile === 'DEVICE_LOCAL' || localOnly || pending?.attempted) return
+    await pendingStore.put({
+      key, profile, attempted: false, needsBlobUpload: pending?.needsBlobUpload,
+      operation: {
+        opId: pending?.operation.opId || crypto.randomUUID(), kind, id,
+        baseVersion: current?.version || 0, deleted, payload,
+        recreate: current?.deleted && !deleted ? true : pending?.operation.recreate,
+      },
+    })
+  })
+}
+
+/** Freeze the latest outbox payload before any asynchronous upload/push. */
+export async function claimPendingOperation(key: string): Promise<PendingOperation | undefined> {
+  return withSyncTransaction(async transaction => {
+    const store = transaction.objectStore('pending')
+    const item = await store.get(key)
+    if (!item || item.conflicted) return undefined
+    const claimed = { ...item, attempted: true }
+    await store.put(claimed)
+    return claimed
+  })
+}
+
+export async function updatePendingOperation(item: PendingOperation, patch: Pick<Partial<PendingOperation>, 'needsBlobUpload' | 'conflicted'>) {
+  await withSyncTransaction(async transaction => {
+    const store = transaction.objectStore('pending')
+    const current = await store.get(item.key)
+    if (current?.operation.opId === item.operation.opId) await store.put({ ...current, ...patch })
+  })
+}
+
+type SyncVersion = { version: number; deleted: number | boolean; payload: Record<string, unknown> }
+
+async function invalidateCatalogCache(transaction: SyncTransaction, change: SyncRecord, current?: SyncRecord) {
+  if (change.kind !== 'catalog_books') return
+  // Imported cloud bytes are a cache, never authority over a new catalog version.
+  const bookId = String(change.payload.id || current?.payload.id || '')
+  if (!bookId) return
+  const key = keyFor(change.profile, bookId)
+  const file = await transaction.objectStore('files').get(key)
+  if (file?.book.source === 'cloud' && (change.deleted || file.book.fileUrl !== change.payload.file_url)) await transaction.objectStore('files').delete(key)
+  if (change.deleted || (current && current.payload.file_url !== change.payload.file_url)) await transaction.objectStore('offlineBooks').delete(key)
+}
+
+/** A receipt must not erase an edit made while the request was in flight. */
+export async function acknowledgeSyncOperation(item: PendingOperation, latest: SyncVersion) {
+  await withSyncTransaction(async transaction => {
+    const records = transaction.objectStore('records')
+    const pendingStore = transaction.objectStore('pending')
+    const pending = await pendingStore.get(item.key)
+    if (pending?.operation.opId !== item.operation.opId) return
+    const current = await records.get(item.key)
+    if (current && current.version > latest.version) return
+    const changedAgain = current && (current.deleted !== item.operation.deleted || JSON.stringify(current.payload) !== JSON.stringify(item.operation.payload))
+    if (changedAgain) {
+      await records.put({ ...current, version: latest.version })
+      await pendingStore.put({
+        key: item.key, profile: item.profile, attempted: false,
+        needsBlobUpload: current.kind === 'catalog_books' && current.payload.file_url !== item.operation.payload.file_url,
+        operation: {
+          opId: crypto.randomUUID(), kind: current.kind, id: current.id,
+          baseVersion: latest.version, deleted: current.deleted, payload: current.payload,
+          recreate: latest.deleted && !current.deleted ? true : undefined,
+        },
+      })
+    } else {
+      const next = { key: item.key, profile: item.profile, kind: item.operation.kind, id: item.operation.id, version: latest.version, deleted: !!latest.deleted, payload: latest.payload }
+      await invalidateCatalogCache(transaction, next, current)
+      await records.put(next)
+      await pendingStore.delete(item.key)
+    }
+  })
+}
+
+/** Pull, pending checks and the cursor are one transaction; stale responses cannot regress it. */
+export async function applyRemoteChanges(profile: string, changes: SyncRecord[], cursor: number): Promise<number> {
+  if (!Number.isSafeInteger(cursor) || cursor < 0) throw new Error('Invalid sync cursor')
+  return withSyncTransaction(async transaction => {
+    const records = transaction.objectStore('records')
+    const pending = transaction.objectStore('pending')
+    let count = 0
+    for (const change of changes) {
+      if (await pending.get(change.key)) continue
+      const current = await records.get(change.key)
+      if (current && current.version >= change.version) continue
+      await invalidateCatalogCache(transaction, change, current)
+      await records.put(change)
+      count++
+    }
+    const key = `sync-cursor:${profile}`
+    const previous = await transaction.objectStore('metadata').get(key)
+    await transaction.objectStore('metadata').put({ key, cursor: Math.max(cursor, previous && 'cursor' in previous ? previous.cursor : 0) })
+    return count
+  })
+}
+
+export async function prepareLocalConflict(item: PendingOperation, remote?: SyncVersion): Promise<PendingOperation> {
+  return withSyncTransaction(async transaction => {
+    const store = transaction.objectStore('pending')
+    const current = await store.get(item.key)
+    if (current?.operation.opId !== item.operation.opId) throw new Error('Mục đồng bộ đã thay đổi. Vui lòng thử lại.')
+    const local = await transaction.objectStore('records').get(item.key)
+    const deleted = local?.deleted ?? item.operation.deleted
+    const operation: SyncOperation = {
+      ...item.operation, opId: crypto.randomUUID(), baseVersion: remote?.version ?? item.operation.baseVersion,
+      payload: local?.payload || item.operation.payload, deleted,
+      recreate: remote?.deleted && !deleted ? true : undefined,
+    }
+    const next = { ...current, operation, attempted: true, conflicted: true,
+      needsBlobUpload: current.needsBlobUpload || operation.payload.file_url !== item.operation.payload.file_url }
+    await store.put(next)
+    return next
+  })
+}
+
+export async function acceptRemoteConflict(item: PendingOperation, remote: SyncVersion, expected: SyncRecord | undefined) {
+  await withSyncTransaction(async transaction => {
+    const records = transaction.objectStore('records')
+    const current = await records.get(item.key)
+    const pending = await transaction.objectStore('pending').get(item.key)
+    if (pending?.operation.opId !== item.operation.opId || JSON.stringify(current) !== JSON.stringify(expected) || (current && remote.version < current.version)) {
+      throw new Error('Bản trên máy vừa thay đổi. Vui lòng xem lại xung đột.')
+    }
+    const next = { key: item.key, profile: item.profile, kind: item.operation.kind, id: item.operation.id, version: remote.version, deleted: !!remote.deleted, payload: remote.payload }
+    await invalidateCatalogCache(transaction, next, current)
+    await records.put(next)
+    await transaction.objectStore('pending').delete(item.key)
+  })
+}
 
 /** Apply a validated backup atomically, using target-account versions rather
  * than versions copied from a different account's snapshot. */

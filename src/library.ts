@@ -1,4 +1,9 @@
-import type { Book } from './types'
+import type { Book, LocalFile } from './types'
+
+/** Private cache entries must describe the same immutable blob as the catalog. */
+export function currentLocalFile(book: Book, file: LocalFile | undefined): LocalFile | undefined {
+  return file && (book.source === 'local' || file.book.fileUrl === book.fileUrl) ? file : undefined
+}
 
 /**
  * Merge catalog, cloud and browser-backed books without rendering the same

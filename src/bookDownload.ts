@@ -1,6 +1,7 @@
 import { loadBookBytes } from './api'
 import { detectReaderFormat } from './readerFormat'
 import { getFile, getOfflineBook } from './store'
+import { currentLocalFile } from './library'
 import type { Book } from './types'
 
 const extensions = {
@@ -48,8 +49,9 @@ export type BookDownload = { filename: string; blob: Blob }
 export async function prepareBookDownload(book: Book, profile: string, token?: string, originalFilename?: string): Promise<BookDownload> {
   const storageProfile = book.source === 'cloud' || book.fileUrl?.startsWith('nocap-private:') ? profile : 'PUBLIC_OFFLINE'
   const [localResult, cachedResult] = await Promise.allSettled([getFile(profile, book.id), getOfflineBook(storageProfile, book.id)])
-  const local = localResult.status === 'fulfilled' ? localResult.value : undefined
-  const cached = cachedResult.status === 'fulfilled' ? cachedResult.value : undefined
+  const stored = localResult.status === 'fulfilled' ? localResult.value : undefined
+  const local = currentLocalFile(book, stored)
+  const cached = (!stored || local) && cachedResult.status === 'fulfilled' ? cachedResult.value : undefined
   const data = local?.data || cached?.data || new Blob([await loadBookBytes(book, token)])
   if (!data.size) throw new Error('Tệp sách không có nội dung.')
   const sourceName = typeof (data as File).name === 'string' ? (data as File).name : originalFilename

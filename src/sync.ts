@@ -2,7 +2,7 @@ import { getStoredLang, type Lang } from './i18n'
 import { localizeErrorMessage, translate } from './uiText'
 import { md5 } from '@noble/hashes/legacy.js'
 import { API_BASE, getChanges, getUser, pushOperation, uploadBlob, ApiError } from './api'
-import { getFile, getPending, getPendingItem, getRecord, getRecords, getSyncCursor, keyFor, removePending, savePending, saveRecord, saveSyncCursor } from './store'
+import { acceptRemoteConflict, acknowledgeSyncOperation, applyRemoteChanges, claimPendingOperation, getFile, getPending, getPendingItem, getRecord, getRecords, getSyncCursor, keyFor, prepareLocalConflict, saveLocalMutation, updatePendingOperation } from './store'
 import { SYNC_KINDS, type PendingOperation, type Session, type SyncKind, type SyncOperation, type SyncRecord } from './types'
 
 const encoder = new TextEncoder()
@@ -26,7 +26,6 @@ export function androidCompositeRecordId(kind: SyncKind, localIds: string[]): st
 
 export const profileFor = (session: Session | null) => session ? `ACCOUNT:${session.user.id}` : 'DEVICE_LOCAL'
 const recordKey = (profile: string, kind: SyncKind, id: string) => keyFor(profile, `${kind}:${id}`)
-const pendingKey = (profile: string, kind: SyncKind, id: string) => keyFor(profile, `${kind}:${id}`)
 
 export async function localRecords(profile: string): Promise<SyncRecord[]> { return getRecords(profile) }
 
@@ -39,20 +38,7 @@ async function uploadRestoredFile(profile: string, token: string, operation: Syn
 }
 
 export async function mutate(profile: string, kind: SyncKind, id: string, payload: Record<string, unknown>, deleted = false, localOnly = false) {
-  const key = recordKey(profile, kind, id)
-  const current = await getRecord(key)
-  await saveRecord({ key, profile, kind, id, version: current?.version || 0, deleted, payload })
-  if (profile === 'DEVICE_LOCAL' || localOnly) return
-  const pending = await getPendingItem(pendingKey(profile, kind, id))
-  // An in-flight or conflicted operation must keep its original payload and
-  // operation ID; the newer local edit stays in the record until it can be
-  // reconciled without clobbering either version.
-  if (pending?.attempted) return
-  const operation: SyncOperation = {
-    opId: pending?.operation.opId || crypto.randomUUID(), kind, id,
-    baseVersion: current?.version || 0, deleted, payload, recreate: pending?.operation.recreate,
-  }
-  await savePending({ key: pendingKey(profile, kind, id), profile, operation, attempted: false, needsBlobUpload: pending?.needsBlobUpload })
+  await saveLocalMutation(profile, kind, id, payload, deleted, localOnly)
 }
 
 export async function syncNow(session: Session): Promise<{ conflicts: number; changes: number }> {
@@ -63,53 +49,40 @@ export async function syncNow(session: Session): Promise<{ conflicts: number; ch
   const operations = await getPending(profile)
   const priority = (item: PendingOperation) => item.operation.kind === 'categories' ? 0 : item.operation.kind === 'catalog_books' ? 1 : 2
   operations.sort((a, b) => priority(a) - priority(b))
-  for (const item of operations) {
-    if (item.conflicted) { conflicts++; continue }
+  for (const snapshot of operations) {
+    if (snapshot.conflicted) { conflicts++; continue }
+    const item = await claimPendingOperation(snapshot.key)
+    if (!item) continue
     // A restored private document must exist in this account's blob storage
     // before another device receives its catalog record. Failed uploads leave
     // the operation pending, so an offline restore can retry when back online.
     await uploadRestoredFile(profile, session.token, item.operation, item.needsBlobUpload)
     item.needsBlobUpload = false
-    await savePending({ ...item, attempted: true })
+    await updatePendingOperation(item, { needsBlobUpload: false })
     const result = await pushOperation(session.token, item.operation)
     const receipt = result.receipts[0]
     if (!receipt) throw new Error('Máy chủ chưa xác nhận thao tác đồng bộ.')
-    const key = recordKey(profile, item.operation.kind, item.operation.id)
-    const current = await getRecord(key)
     const latest = receipt.current
     if (receipt.status === 'APPLIED' && latest) {
-      const changedAgain = current && (current.deleted !== item.operation.deleted || JSON.stringify(current.payload) !== JSON.stringify(item.operation.payload))
-      await removePending(item.key)
-      if (changedAgain) {
-        await saveRecord({ ...current, version: latest.version })
-        await mutate(profile, current.kind, current.id, current.payload, current.deleted)
-        if (current.kind === 'catalog_books' && current.payload.file_url !== item.operation.payload.file_url) {
-          const queued = await getPendingItem(item.key)
-          if (queued) await savePending({ ...queued, needsBlobUpload: true })
-        }
-      } else await saveRecord({ key, profile, kind: item.operation.kind, id: item.operation.id, version: latest.version, deleted: !!latest.deleted, payload: latest.payload })
+      await acknowledgeSyncOperation(item, latest)
     } else {
       conflicts++
       // Keep the local copy and its pending marker. Pull must not overwrite it
       // with the server version before the user can review the conflict.
-      await savePending({ ...item, attempted: true, conflicted: true })
+      await updatePendingOperation(item, { conflicted: true })
     }
   }
   let cursor = await getSyncCursor(profile)
   let count = 0
   for (let page = 0; page < 100; page++) {
     const result = await getChanges(session.token, cursor)
-    const pending = new Set((await getPending(profile)).map(item => item.key))
-    for (const change of result.changes) {
-      if (!(SYNC_KINDS as readonly string[]).includes(change.kind)) continue
+    const changes = result.changes.filter(change => (SYNC_KINDS as readonly string[]).includes(change.kind)).map(change => {
       const kind = change.kind as SyncKind
       const key = recordKey(profile, kind, change.id)
-      if (pending.has(key)) continue
-      await saveRecord({ key, profile, kind, id: change.id, version: change.version, deleted: !!change.deleted, payload: change.payload })
-      count++
-    }
+      return { key, profile, kind, id: change.id, version: change.version, deleted: !!change.deleted, payload: change.payload }
+    })
+    count += await applyRemoteChanges(profile, changes, result.cursor)
     cursor = result.cursor
-    await saveSyncCursor(profile, cursor)
     if (!result.hasMore) return { conflicts, changes: count }
   }
   throw new Error('Có quá nhiều thay đổi để tải một lần. Vui lòng đồng bộ lại.')
@@ -233,6 +206,7 @@ export async function resolveConflict(
   const item = await getPendingItem(key)
   if (!item) return
   if (item.profile !== profile) throw new Error('Mục đồng bộ không thuộc tài khoản hiện tại.')
+  const expectedLocal = await getRecord(key)
   await getUser(session.token)
 
   let remote: Awaited<ReturnType<typeof getChanges>>['changes'][number] | undefined
@@ -250,44 +224,15 @@ export async function resolveConflict(
 
   if (strategy === 'take_remote') {
     if (!remote) throw new Error('Chưa tìm thấy bản cloud. Bản trên máy vẫn được giữ.')
-    await saveRecord({
-        key: recordKey(profile, remote.kind as SyncKind, remote.id),
-        profile,
-        kind: remote.kind as SyncKind,
-        id: remote.id,
-        version: remote.version,
-        deleted: !!remote.deleted,
-        payload: remote.payload,
-    })
-    await removePending(key)
+    await acceptRemoteConflict(item, remote, expectedLocal)
   } else {
-    const baseVersion = remote ? remote.version : item.operation.baseVersion
-    const local = await getRecord(key)
-    const refreshedOp: SyncOperation = {
-      ...item.operation,
-      opId: crypto.randomUUID(),
-      baseVersion,
-      payload: local?.payload || item.operation.payload,
-      deleted: local?.deleted ?? item.operation.deleted,
-      recreate: !!remote?.deleted && !(local?.deleted ?? item.operation.deleted) ? true : undefined,
-    }
-    const needsBlobUpload = item.needsBlobUpload || refreshedOp.payload.file_url !== item.operation.payload.file_url
-    await uploadRestoredFile(profile, session.token, refreshedOp, needsBlobUpload)
-    // Persist the new ID before pushing so a lost response can be retried safely.
-    await savePending({ ...item, operation: refreshedOp, attempted: true, conflicted: true, needsBlobUpload: false })
-    const pushRes = await pushOperation(session.token, refreshedOp)
+    const refreshed = await prepareLocalConflict(item, remote)
+    await uploadRestoredFile(profile, session.token, refreshed.operation, refreshed.needsBlobUpload)
+    await updatePendingOperation(refreshed, { needsBlobUpload: false })
+    const pushRes = await pushOperation(session.token, refreshed.operation)
     const receipt = pushRes.receipts[0]
     if (receipt && receipt.status === 'APPLIED' && receipt.current) {
-      await saveRecord({
-        key: recordKey(profile, item.operation.kind, item.operation.id),
-        profile,
-        kind: item.operation.kind,
-        id: item.operation.id,
-        version: receipt.current.version,
-        deleted: !!receipt.current.deleted,
-        payload: receipt.current.payload,
-      })
-      await removePending(key)
+      await acknowledgeSyncOperation(refreshed, receipt.current)
     } else {
       throw new Error('Chưa thể giải quyết xung đột với máy chủ. Vui lòng thử lại.')
     }
