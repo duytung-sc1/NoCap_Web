@@ -147,6 +147,7 @@ function EpubPane({ lang = 'vi', bytes, initial, fontSize, fontFamily, lineHeigh
   const locationsReady = useRef(false)
   const requestedProgression = useRef<number | null>(null)
   const contentReadiness = useRef(new WeakMap<Document, Promise<void>>())
+  const renditionReady = useRef(false)
   const comfortRef = useRef({ fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme })
   const [renditionVersion, setRenditionVersion] = useState(0)
   const [error, setError] = useState('')
@@ -159,19 +160,19 @@ function EpubPane({ lang = 'vi', bytes, initial, fontSize, fontFamily, lineHeigh
   }, [onLocation, onSelection, onControls, onToc])
 
   useEffect(() => {
-    if (!navigateTarget || !rendition.current) return
+    if (!navigateTarget || !rendition.current || !renditionReady.current) return
     const target = findSpineHref(bookRef.current?.spine, navigateTarget) || navigateTarget
     const current = rendition.current
     let active = true
     void displayEpubLocation(current, target, () => active, contentReadiness.current).catch(() => {})
     return () => { active = false }
-  }, [navigateTarget])
+  }, [navigateTarget, renditionVersion])
 
   useEffect(() => {
     const request = navigateProgression
     const book = bookRef.current
     const view = rendition.current
-    if (!request || !book || !view) return
+    if (!request || !book || !view || !renditionReady.current) return
     let active = true
     void (async () => {
       try {
@@ -209,6 +210,7 @@ function EpubPane({ lang = 'vi', bytes, initial, fontSize, fontFamily, lineHeigh
   useEffect(() => {
     if (!host.current) return
     setError('')
+    renditionReady.current = false
     locationsReady.current = false
     requestedProgression.current = null
     let alive = true
@@ -374,11 +376,14 @@ function EpubPane({ lang = 'vi', bytes, initial, fontSize, fontFamily, lineHeigh
         } else {
           await displayEpubLocation(view, undefined, () => alive, contentReadiness.current)
         }
-        if (alive) setRenditionVersion(value => value + 1)
+        if (alive) {
+          renditionReady.current = true
+          setRenditionVersion(value => value + 1)
+        }
       } catch { if (alive) setError(translate("Không mở được EPUB này. Tệp có thể bị hỏng hoặc không đúng định dạng.", langRef.current)) }
     }
     void open()
-    return () => { alive = false; rendition.current = null; locationsReady.current = false; view?.destroy(); book?.destroy() }
+    return () => { alive = false; renditionReady.current = false; rendition.current = null; locationsReady.current = false; view?.destroy(); book?.destroy() }
   }, [bytes, initial])
 
   useEffect(() => {
