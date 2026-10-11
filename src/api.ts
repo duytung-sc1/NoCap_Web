@@ -229,7 +229,7 @@ export async function readBookResponse(response: Response, signal: AbortSignal, 
   } finally { signal.removeEventListener('abort', cancel); reader.releaseLock() }
 }
 
-export async function loadBookBytes(book: Book, token?: string): Promise<ArrayBuffer> {
+export async function loadBookBytes(book: Book, token?: string, options: { signal?: AbortSignal } = {}): Promise<ArrayBuffer> {
   let url: string
   if (book.fileUrl?.startsWith('nocap-private:')) {
     if (!token) throw new Error('Đăng nhập để tải tài liệu riêng.')
@@ -247,13 +247,13 @@ export async function loadBookBytes(book: Book, token?: string): Promise<ArrayBu
   } else throw new Error('Sách chưa có tệp để đọc.')
   const headers = token && book.fileUrl?.startsWith('nocap-private:') ? { Authorization: `Bearer ${token}` } : undefined
   try {
-    return await fetchWithTimeout(url, { headers, cache: 'no-store' }, 60000, async (response, signal) => {
+    return await fetchWithTimeout(url, { headers, cache: 'no-store', signal: options.signal }, 60000, async (response, signal) => {
       if (!response.ok) return parseError(response)
       return readBookResponse(response, signal)
     })
   }
   catch (error) {
-    if (error instanceof RequestTimeoutError || error instanceof ApiError || error instanceof Error && error.message === 'Tệp quá lớn để mở trong trình duyệt.') throw error
+    if (options.signal?.aborted || error instanceof RequestTimeoutError || error instanceof ApiError || error instanceof Error && error.message === 'Tệp quá lớn để mở trong trình duyệt.') throw error
     throw new Error('Không tải được tệp sách. Kiểm tra mạng rồi thử lại.')
   }
 }
