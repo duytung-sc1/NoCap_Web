@@ -26,6 +26,7 @@ import { allowsPro, proAccessExpiresAt, verifyProAccess, type ProFeature } from 
 import { readingActivity } from './readingStats'
 import { translate } from './uiText'
 import { ImportDocumentDialog } from './ImportDocumentDialog'
+import { ReaderErrorBoundary } from './ReaderErrorBoundary'
 type ShelfFilter = 'all' | 'reading' | 'favorites' | 'completed' | 'local'
 type AuthMode = 'login' | 'register' | 'forgot'
 type Theme = 'paper' | 'sepia' | 'night'
@@ -189,6 +190,7 @@ function App() {
   const readerRef = useRef<Book | null>(null)
   const profileRef = useRef(profile)
   profileRef.current = profile
+  const localRefreshId = useRef(0)
   const sessionRef = useRef(session)
   sessionRef.current = session
   const locationRef = useRef(location)
@@ -196,6 +198,7 @@ function App() {
   const lastSyncAt = useRef(0)
   const syncNeedsRerun = useRef(false)
   const openRequestId = useRef(0)
+  const openController = useRef<AbortController | null>(null)
   const closeReaderRef = useRef<() => void>(() => {})
   const openBookRef = useRef<(book: Book) => Promise<boolean>>(async () => false)
   const launchStealthRef = useRef<(book?: Book) => Promise<void>>(async () => {})
@@ -305,15 +308,16 @@ function App() {
   }, [profile])
 
   const refreshLocal = useCallback(async (selectedProfile: string) => {
-    const [nextRecords, nextFiles, nextPending, nextOffline, publicOffline] = await Promise.all([localRecords(selectedProfile), getFiles(selectedProfile), getPending(selectedProfile), getOfflineBooks(selectedProfile), getOfflineBooks('PUBLIC_OFFLINE')])
     if (profileRef.current !== selectedProfile) return
+    const requestId = ++localRefreshId.current
+    const [nextRecords, nextFiles, nextPending, nextOffline, publicOffline] = await Promise.all([localRecords(selectedProfile), getFiles(selectedProfile), getPending(selectedProfile), getOfflineBooks(selectedProfile), getOfflineBooks('PUBLIC_OFFLINE')])
+    if (profileRef.current !== selectedProfile || requestId !== localRefreshId.current) return
     setRecords(nextRecords)
     setLocalFiles(nextFiles)
     setPendingCount(nextPending.length)
     setOfflineIds(new Set([...nextOffline, ...publicOffline].map(item => item.bookId)))
     setLoadedProfile(selectedProfile)
   }, [])
-
   useEffect(() => {
     let active = true
     void (async () => {
@@ -394,6 +398,21 @@ function App() {
     syncFlight.current = { profile: targetProfile, token: activeSession.token, promise: flight }
     try { await flight } finally { if (syncFlight.current?.promise === flight) syncFlight.current = null }
   }, [refreshLocal, lang, invalidateSession])
+  const persistReadingProgress = useCallback(async (selectedProfile: string, book: Book, loc: ReaderLocation, activeSession: Session | null) => {
+    try {
+      const payload = { book_id: book.id, locator_json: loc.locatorJson, progression: Math.max(0, Math.min(1, loc.progression)), chapter_title: loc.chapterTitle || null, last_read_at: ms(), sync_version: 1 }
+      await mutate(selectedProfile, 'reading_progress', androidRecordId('reading_progress', book.id), payload, false, book.source === 'local')
+    } catch {
+      if (profileRef.current === selectedProfile) setNotice(lang === 'vi'
+        ? 'Không lưu được tiến độ đọc. Kiểm tra bộ nhớ trình duyệt rồi thử lại.'
+        : 'Could not save reading progress. Check browser storage and try again.')
+      return
+    }
+    // A display refresh failure must not prevent an already-persisted change
+    // from reaching the sync queue. Both actions remain bound to its owner.
+    await refreshLocal(selectedProfile).catch(() => {})
+    if (activeSession && navigator.onLine && book.source !== 'local') void synchronize(activeSession, true)
+  }, [refreshLocal, synchronize, lang])
 
   useEffect(() => {
     if (!session) return
@@ -434,11 +453,17 @@ function App() {
       end_progress: Math.max(0, Math.min(1, endProgress)),
       format: tracked.format,
     }
-    await mutate(selectedProfile, 'reading_sessions', androidRecordId('reading_sessions', tracked.id), payload, false, tracked.localOnly)
-    await refreshLocal(selectedProfile)
     const activeSession = sessionRef.current
-    if (activeSession && navigator.onLine && !tracked.localOnly) void synchronize(activeSession, true)
-  }, [refreshLocal, synchronize])
+    try {
+      await mutate(selectedProfile, 'reading_sessions', androidRecordId('reading_sessions', tracked.id), payload, false, tracked.localOnly)
+      await refreshLocal(selectedProfile).catch(() => {})
+      if (activeSession && navigator.onLine && !tracked.localOnly) void synchronize(activeSession, true)
+    } catch {
+      if (profileRef.current === selectedProfile) setNotice(lang === 'vi'
+        ? 'Không lưu được thời gian đọc. Kiểm tra bộ nhớ trình duyệt rồi thử lại.'
+        : 'Could not save reading time. Check browser storage and try again.')
+    }
+  }, [refreshLocal, synchronize, lang])
 
   useEffect(() => {
     const restoreSession = () => {
@@ -520,13 +545,7 @@ function App() {
           clearTimeout(progressTimer.current)
           progressTimer.current = null
         }
-        const payload = { book_id: book.id, locator_json: loc.locatorJson, progression: Math.max(0, Math.min(1, loc.progression)), chapter_title: loc.chapterTitle || null, last_read_at: ms(), sync_version: 1 }
-        void mutate(curProfile, 'reading_progress', androidRecordId('reading_progress', book.id), payload, false, book.source === 'local').then(() => {
-          void refreshLocal(curProfile)
-          if (curSession && navigator.onLine && book.source !== 'local') {
-            void synchronize(curSession, true)
-          }
-        })
+        void persistReadingProgress(curProfile, book, loc, curSession)
       }
     }
 
@@ -552,6 +571,16 @@ function App() {
       }
     }
 
+    const onPageHide = () => {
+      flushReadingProgress()
+      const book = readerRef.current
+      if (book) void completeReadingSession(book, locationRef.current?.progression || 0)
+    }
+    const onPageShow = () => {
+      const book = readerRef.current
+      if (book && document.visibilityState === 'visible' && !readingSessionRef.current) beginReadingSession(book, locationRef.current?.progression || 0)
+    }
+
     const interval = setInterval(() => {
       const curSession = sessionRef.current
       if (curSession && navigator.onLine && document.visibilityState === 'visible' && Date.now() - lastSyncAt.current > 45000) {
@@ -561,15 +590,17 @@ function App() {
 
     document.addEventListener('visibilitychange', onVisibilityChange)
     window.addEventListener('focus', onFocus)
-    window.addEventListener('pagehide', flushReadingProgress)
+    window.addEventListener('pagehide', onPageHide)
+    window.addEventListener('pageshow', onPageShow)
 
     return () => {
       document.removeEventListener('visibilitychange', onVisibilityChange)
       window.removeEventListener('focus', onFocus)
-      window.removeEventListener('pagehide', flushReadingProgress)
+      window.removeEventListener('pagehide', onPageHide)
+      window.removeEventListener('pageshow', onPageShow)
       clearInterval(interval)
     }
-  }, [synchronize, refreshLocal, beginReadingSession, completeReadingSession])
+  }, [synchronize, persistReadingProgress, beginReadingSession, completeReadingSession])
 
   const cloudBooks = useMemo(() => records.map(syncedBook).filter((book): book is Book => !!book && !!book.id && !catalog.some(item => item.id === book.id)), [records, catalog])
   const browserBooks = useMemo(() => {
@@ -696,24 +727,21 @@ function App() {
   const readingStreak = activity.streak
 
   async function authenticated(value: Session) {
-    openRequestId.current++
-    if (progressTimer.current) clearTimeout(progressTimer.current)
+    closeReaderRef.current()
     if (preferenceTimer.current) clearTimeout(preferenceTimer.current)
-    if (readerRef.current) await completeReadingSession(readerRef.current, locationRef.current?.progression || 0)
-    setReader(null); readerRef.current = null; setRecords([]); setLocalFiles([]); setOfflineIds(new Set())
+    setRecords([]); setLocalFiles([]); setOfflineIds(new Set())
+    sessionRef.current = value; profileRef.current = profileFor(value)
     saveSession(value); setSession(value); setAuthOpen(false)
     if (route.kind !== 'book' && route.kind !== 'read') setPage('home')
     setNotice(curT.auth.signedIn(value.user.email))
   }
 
   async function signOut() {
-    openRequestId.current++
-    if (progressTimer.current) clearTimeout(progressTimer.current)
-    if (preferenceTimer.current) clearTimeout(preferenceTimer.current)
-    if (readerRef.current) await completeReadingSession(readerRef.current, locationRef.current?.progression || 0)
-    const oldToken = session?.token
-    saveSession(null); setSession(null); setRecords([]); setLocalFiles([]); setOfflineIds(new Set()); setReader(null); readerRef.current = null
-    setPage('home'); setNotice(translate("Đã đăng xuất. Dữ liệu tài khoản được giữ riêng và không bị xóa.", lang))
+    const oldToken = sessionRef.current?.token
+    resetAccountView()
+    saveSession(null); sessionRef.current = null; profileRef.current = profileFor(null)
+    setSession(null); setEntitlement(null)
+    setNotice(translate("Đã đăng xuất. Dữ liệu tài khoản được giữ riêng và không bị xóa.", lang))
     if (oldToken) void logout(oldToken).catch(() => {})
   }
 
@@ -740,6 +768,7 @@ function App() {
     setDeleteAccountBusy(true)
     try {
       await deleteAccount(session.token)
+      if (sessionRef.current?.token !== session.token || readSession()?.token !== session.token) return
       saveSession(null)
       setSession(null)
       setRecords([])
@@ -994,6 +1023,9 @@ async function sha256Hex(file: Blob): Promise<string> {
 
   async function openBook(book: Book, initialOverride?: string): Promise<boolean> {
     if (readerRef.current && readerRef.current.id !== book.id) closeReaderRef.current()
+    openController.current?.abort()
+    const controller = new AbortController()
+    openController.current = controller
     if (route.kind === 'page') backgroundPageRef.current = route.page
     openingBookRef.current = book.id
     routeAttemptRef.current = `${profile}:${book.id}`
@@ -1015,7 +1047,8 @@ async function sha256Hex(file: Blob): Promise<string> {
           ? 'Bộ nhớ trình duyệt vừa bị đóng. Hãy tải lại trang rồi mở tài liệu riêng này.'
           : 'Browser storage was closed. Reload the page, then open this private document again.')
       }
-      const bytes = local ? await local.data.arrayBuffer() : offlineCopy ? await offlineCopy.data.arrayBuffer() : await loadBookBytes(book, session?.token)
+      controller.signal.throwIfAborted()
+      const bytes = local ? await local.data.arrayBuffer() : offlineCopy ? await offlineCopy.data.arrayBuffer() : await loadBookBytes(book, session?.token, { signal: controller.signal })
       if (profileRef.current !== targetProfile || openRequestId.current !== requestId) return false
       if (!bytes.byteLength) throw new Error(translate("Tệp sách không có nội dung.", lang))
       const savedComfort = comfortFromRecord(records.find(record => record.kind === 'per_book_preferences' && !record.deleted && record.payload.book_id === book.id), readerWidth)
@@ -1034,6 +1067,7 @@ async function sha256Hex(file: Blob): Promise<string> {
     }
     finally {
       if (openRequestId.current === requestId) {
+        openController.current = null
         setReaderLoading(false)
         openingBookRef.current = null
       }
@@ -1063,18 +1097,12 @@ async function sha256Hex(file: Blob): Promise<string> {
     if (!book) return
     if (progressTimer.current) clearTimeout(progressTimer.current)
     const currentProfile = profileRef.current
+    const currentSession = sessionRef.current
     progressTimer.current = setTimeout(() => {
       progressTimer.current = null
-      const payload = { book_id: book.id, locator_json: next.locatorJson, progression: Math.max(0, Math.min(1, next.progression)), chapter_title: next.chapterTitle || null, last_read_at: ms(), sync_version: 1 }
-      void mutate(currentProfile, 'reading_progress', androidRecordId('reading_progress', book.id), payload, false, book.source === 'local').then(() => {
-        void refreshLocal(currentProfile)
-        const curSession = sessionRef.current
-        if (curSession && navigator.onLine && book.source !== 'local') {
-          void synchronize(curSession, true)
-        }
-      })
+      void persistReadingProgress(currentProfile, book, next, currentSession)
     }, 1500)
-  }, [refreshLocal, synchronize])
+  }, [persistReadingProgress])
 
   const onStealthProgressChange = useCallback((position: StealthPosition) => {
     const next: ReaderLocation = {
@@ -1112,6 +1140,8 @@ async function sha256Hex(file: Blob): Promise<string> {
 
   function closeReader() {
     openRequestId.current++
+    openController.current?.abort()
+    openController.current = null
     openingBookRef.current = null
     setReaderLoading(false)
     setReaderError('')
@@ -1120,11 +1150,7 @@ async function sha256Hex(file: Blob): Promise<string> {
     const book = readerRef.current
     if (book && loc) {
       void completeReadingSession(book, loc.progression)
-      const payload = { book_id: book.id, locator_json: loc.locatorJson, progression: Math.max(0, Math.min(1, loc.progression)), chapter_title: loc.chapterTitle || null, last_read_at: ms(), sync_version: 1 }
-      void mutate(profile, 'reading_progress', androidRecordId('reading_progress', book.id), payload, false, book.source === 'local').then(() => {
-        void refreshLocal(profile)
-        if (session && book.source !== 'local') void synchronize(session, true)
-      })
+      void persistReadingProgress(profileRef.current, book, loc, sessionRef.current)
     }
     if (book && !loc) void completeReadingSession(book, 0)
     setReader(null); readerRef.current = null; locationRef.current = null; setSelection(null); setStealthGrant(null); setStealthProgressRequest(null); setControls(null)
@@ -1782,12 +1808,12 @@ async function sha256Hex(file: Blob): Promise<string> {
       {importOpen && <ImportDocumentDialog lang={lang} onClose={() => setImportOpen(false)} onPickFile={() => fileInput.current?.click()} onImport={importFile} />}
     </main>
 
-    {(readerLoading || readerError) && <div className="overlay"><div className="loading-card"><button className="icon-button close-floating" onClick={() => { openRequestId.current++; setReaderLoading(false); setReaderError('') }} aria-label={lang === 'vi' ? 'Đóng' : 'Close'}><X size={20} /></button>{readerLoading ? <><div className="loader" /><h2>{lang === 'vi' ? 'Đang mở sách…' : 'Opening book…'}</h2><p>{lang === 'vi' ? 'Đang chuẩn bị nội dung để đọc.' : 'Preparing the document for reading.'}</p></> : <><FileText size={32} /><h2>{lang === 'vi' ? 'Chưa mở được tài liệu' : 'Unable to open document'}</h2><p>{readerError}</p><button className="primary" onClick={() => setReaderError('')}>{lang === 'vi' ? 'Đóng' : 'Close'}</button></>}</div></div>}
+    {(readerLoading || readerError) && <div className="overlay"><div className="loading-card"><button className="icon-button close-floating" onClick={() => setPage(backgroundPageRef.current)} aria-label={lang === 'vi' ? 'Đóng' : 'Close'}><X size={20} /></button>{readerLoading ? <><div className="loader" /><h2>{lang === 'vi' ? 'Đang mở sách…' : 'Opening book…'}</h2><p>{lang === 'vi' ? 'Đang chuẩn bị nội dung để đọc.' : 'Preparing the document for reading.'}</p></> : <><FileText size={32} /><h2>{lang === 'vi' ? 'Chưa mở được tài liệu' : 'Unable to open document'}</h2><p>{readerError}</p><button className="primary" onClick={() => setPage(backgroundPageRef.current)}>{lang === 'vi' ? 'Đóng' : 'Close'}</button></>}</div></div>}
 
-    {reader && <div className={`reader-shell ${theme}`}><div className="reader-topbar"><button className="reader-back reader-home-btn" onClick={() => { closeReader(); setPage('home'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} aria-label={lang === 'vi' ? 'Trở về Trang chủ' : 'Home'} title={lang === 'vi' ? 'Trở về Trang chủ (Esc)' : 'Home (Esc)'}><Home size={18} /> <span>{lang === 'vi' ? 'Trang chủ' : 'Home'}</span></button><button className="reader-back" onClick={() => setPage('library')} aria-label={lang === 'vi' ? 'Quay lại tủ sách' : 'Back to library'}><ArrowLeft size={19} /> <span>{lang === 'vi' ? 'Tủ sách' : 'Library'}</span></button><div className="reader-title"><strong>{reader.book.title}</strong><small>{bookLabel(reader.book, lang)}</small></div><div className="reader-actions"><button className="stealth-topbar-pill" title={curT.stealth.btnTitle} aria-label={curT.stealth.btnLabel} onClick={() => void launchStealth()}><Briefcase size={15} /> <span>{lang === 'vi' ? 'Đọc ẩn · Pro (F2)' : 'Stealth · Pro (F2)'}</span></button><button className="icon-button" title={lang === 'vi' ? 'Mục lục sách' : 'Table of contents'} aria-label={lang === 'vi' ? 'Mục lục' : 'Table of contents'} onClick={() => { setNavigateTarget(null); setTocOpen(true) }}><List size={20} /></button><button className="icon-button" title={lang === 'vi' ? 'Tùy chỉnh đọc & font' : 'Reading settings'} aria-label={lang === 'vi' ? 'Tùy chỉnh' : 'Settings'} onClick={() => setSettingsOpen(true)}><Type size={20} /></button><button className={`icon-button ${currentBookmarked ? 'active' : ''}`} title={currentBookmarked ? (lang === 'vi' ? 'Bỏ dấu trang' : 'Remove bookmark') : (lang === 'vi' ? 'Thêm dấu trang' : 'Add bookmark')} aria-label={currentBookmarked ? (lang === 'vi' ? 'Bỏ dấu trang' : 'Remove bookmark') : (lang === 'vi' ? 'Đánh dấu vị trí' : 'Bookmark position')} aria-pressed={currentBookmarked} onClick={() => void toggleBookmark()}><Bookmark size={20} fill={currentBookmarked ? 'currentColor' : 'none'} /></button><button className="icon-button" title={lang === 'vi' ? 'Ghi chú' : 'Note'} aria-label={lang === 'vi' ? 'Thêm ghi chú' : 'Add note'} onClick={() => { setNoteText(''); setNoteOpen(true) }}><Highlighter size={20} /></button></div></div><div className="reader-body"><Suspense fallback={<div className="reader-error">{lang === 'vi' ? 'Đang chuẩn bị trình đọc…' : 'Preparing reader…'}</div>}><ReaderPane lang={lang} book={reader.book} bytes={reader.bytes} initial={reader.initial} fontSize={fontSize} fontFamily={fontFamily} lineHeight={lineHeight} textAlignment={textAlignment} readerWidth={readerWidth} theme={theme} onLocation={onLocation} onSelection={(text, locator) => setSelection({ text, locator })} onControls={setControls} onToc={setToc} navigateTarget={navigateTarget} navigateProgression={stealthProgressRequest} annotations={readerAnnotations} /></Suspense></div><div className={`reader-footer ${controls ? 'has-controls' : 'progress-only'}`}>{controls && <button onClick={() => controls.previous()} aria-label={lang === 'vi' ? 'Trang trước' : 'Previous page'}><ChevronLeft size={21} /> {lang === 'vi' ? 'Trước' : 'Previous'}</button>}<span>{Math.round((location?.progression || 0) * 100)}% · {location?.chapterTitle || (lang === 'vi' ? 'Đang đọc' : 'Reading')}</span>{controls && <button onClick={() => controls.next()} aria-label={lang === 'vi' ? 'Trang sau' : 'Next page'}>{lang === 'vi' ? 'Sau' : 'Next'} <ChevronRight size={21} /></button>}</div></div>}
+    {reader && <div className={`reader-shell ${theme}`}><div className="reader-topbar"><button className="reader-back reader-home-btn" onClick={() => { closeReader(); setPage('home'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} aria-label={lang === 'vi' ? 'Trở về Trang chủ' : 'Home'} title={lang === 'vi' ? 'Trở về Trang chủ (Esc)' : 'Home (Esc)'}><Home size={18} /> <span>{lang === 'vi' ? 'Trang chủ' : 'Home'}</span></button><button className="reader-back" onClick={() => setPage('library')} aria-label={lang === 'vi' ? 'Quay lại tủ sách' : 'Back to library'}><ArrowLeft size={19} /> <span>{lang === 'vi' ? 'Tủ sách' : 'Library'}</span></button><div className="reader-title"><strong>{reader.book.title}</strong><small>{bookLabel(reader.book, lang)}</small></div><div className="reader-actions"><button className="stealth-topbar-pill" title={curT.stealth.btnTitle} aria-label={curT.stealth.btnLabel} onClick={() => void launchStealth()}><Briefcase size={15} /> <span>{lang === 'vi' ? 'Đọc ẩn · Pro (F2)' : 'Stealth · Pro (F2)'}</span></button><button className="icon-button" title={lang === 'vi' ? 'Mục lục sách' : 'Table of contents'} aria-label={lang === 'vi' ? 'Mục lục' : 'Table of contents'} onClick={() => { setNavigateTarget(null); setTocOpen(true) }}><List size={20} /></button><button className="icon-button" title={lang === 'vi' ? 'Tùy chỉnh đọc & font' : 'Reading settings'} aria-label={lang === 'vi' ? 'Tùy chỉnh' : 'Settings'} onClick={() => setSettingsOpen(true)}><Type size={20} /></button><button className={`icon-button ${currentBookmarked ? 'active' : ''}`} title={currentBookmarked ? (lang === 'vi' ? 'Bỏ dấu trang' : 'Remove bookmark') : (lang === 'vi' ? 'Thêm dấu trang' : 'Add bookmark')} aria-label={currentBookmarked ? (lang === 'vi' ? 'Bỏ dấu trang' : 'Remove bookmark') : (lang === 'vi' ? 'Đánh dấu vị trí' : 'Bookmark position')} aria-pressed={currentBookmarked} onClick={() => void toggleBookmark()}><Bookmark size={20} fill={currentBookmarked ? 'currentColor' : 'none'} /></button><button className="icon-button" title={lang === 'vi' ? 'Ghi chú' : 'Note'} aria-label={lang === 'vi' ? 'Thêm ghi chú' : 'Add note'} onClick={() => { setNoteText(''); setNoteOpen(true) }}><Highlighter size={20} /></button></div></div><div className="reader-body"><ReaderErrorBoundary key={`${profile}:${reader.book.id}`} lang={lang} onClose={() => setPage('library')}><Suspense fallback={<div className="reader-error">{lang === 'vi' ? 'Đang chuẩn bị trình đọc…' : 'Preparing reader…'}</div>}><ReaderPane lang={lang} book={reader.book} bytes={reader.bytes} initial={reader.initial} fontSize={fontSize} fontFamily={fontFamily} lineHeight={lineHeight} textAlignment={textAlignment} readerWidth={readerWidth} theme={theme} onLocation={onLocation} onSelection={(text, locator) => setSelection({ text, locator })} onControls={setControls} onToc={setToc} navigateTarget={navigateTarget} navigateProgression={stealthProgressRequest} annotations={readerAnnotations} /></Suspense></ReaderErrorBoundary></div><div className={`reader-footer ${controls ? 'has-controls' : 'progress-only'}`}>{controls && <button onClick={() => controls.previous()} aria-label={lang === 'vi' ? 'Trang trước' : 'Previous page'}><ChevronLeft size={21} /> {lang === 'vi' ? 'Trước' : 'Previous'}</button>}<span>{Math.round((location?.progression || 0) * 100)}% · {location?.chapterTitle || (lang === 'vi' ? 'Đang đọc' : 'Reading')}</span>{controls && <button onClick={() => controls.next()} aria-label={lang === 'vi' ? 'Trang sau' : 'Next page'}>{lang === 'vi' ? 'Sau' : 'Next'} <ChevronRight size={21} /></button>}</div></div>}
 
     {stealthActive && reader && (
-      <Suspense fallback={null}><StealthReader
+      <ReaderErrorBoundary key={`${profile}:${reader.book.id}:stealth`} lang={lang} onClose={() => setPage('library')}><Suspense fallback={null}><StealthReader
         book={reader.book}
         bytes={reader.bytes}
         lang={lang}
@@ -1801,7 +1827,7 @@ async function sha256Hex(file: Blob): Promise<string> {
           window.scrollTo({ top: 0, behavior: 'smooth' })
         }}
         onProgressChange={onStealthProgressChange}
-      /></Suspense>
+      /></Suspense></ReaderErrorBoundary>
     )}
 
     {tocOpen && reader && <div className="modal-shade" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setTocOpen(false) }}><aside className="toc-drawer" role="dialog" aria-modal="true" aria-label={translate("Mục lục sách", lang)}><div className="toc-header"><div><p className="eyebrow">{translate("MỤC LỤC SÁCH", lang)}</p><h2>{reader.book.title}</h2></div><button className="icon-button" onClick={() => setTocOpen(false)} aria-label={translate("Đóng mục lục", lang)}><X size={19} /></button></div><div className="toc-list">{toc.length ? <TocTree items={toc} onSelect={target => { setNavigateTarget(target); setTocOpen(false) }} /> : <p className="muted" style={{ padding: '20px', textAlign: 'center', fontSize: '13px' }}>{translate("Tài liệu không có cấu trúc mục lục sẵn.", lang)}</p>}</div></aside></div>}
@@ -2132,7 +2158,38 @@ function AuthDialog({ lang, onClose, onSuccess }: { lang: Lang; onClose: () => v
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const googleBtnRef = useRef<HTMLDivElement>(null)
+  const request = useRef({ mounted: true, generation: 0, busy: false })
   const copy = t[lang].auth
+
+  useEffect(() => {
+    const lifecycle = request.current
+    lifecycle.mounted = true
+    return () => { lifecycle.mounted = false; lifecycle.generation++; lifecycle.busy = false }
+  }, [])
+
+  function cancelAttempt() {
+    request.current.generation++
+    request.current.busy = false
+    setBusy(false)
+  }
+
+  function close() { cancelAttempt(); onClose() }
+  function changeMode(next: AuthMode) { cancelAttempt(); setMode(next); setMessage('') }
+
+  const authenticate = useCallback(async (action: () => Promise<Session | undefined>, successMessage = '') => {
+    if (!request.current.mounted || request.current.busy) return
+    const generation = ++request.current.generation
+    request.current.busy = true
+    setBusy(true); setMessage('')
+    const current = () => request.current.mounted && request.current.generation === generation
+    try {
+      const result = await action()
+      if (!current()) return
+      if (result) onSuccess(result)
+      else setMessage(successMessage)
+    } catch (error) { if (current()) setMessage(readableError(error, lang)) }
+    finally { if (current()) { request.current.busy = false; setBusy(false) } }
+  }, [lang, onSuccess])
 
   useEffect(() => {
     if (mode !== 'login' && mode !== 'register') return
@@ -2144,16 +2201,8 @@ function AuthDialog({ lang, onClose, onSuccess }: { lang: Lang; onClose: () => v
       g.accounts.id.initialize({
         client_id: '847491126060-3dikoskpsf80ibrnf799tivmpe8vj2bn.apps.googleusercontent.com',
         callback: async (resp: { credential?: string }) => {
-          if (!resp.credential) return
-          setBusy(true); setMessage('')
-          try {
-            const session = await loginWithGoogle(resp.credential)
-            onSuccess(session)
-          } catch (err) {
-            setMessage(readableError(err, lang))
-          } finally {
-            setBusy(false)
-          }
+          if (cancelled || !resp.credential) return
+          await authenticate(() => loginWithGoogle(resp.credential!))
         },
       })
       if (googleBtnRef.current) {
@@ -2169,7 +2218,7 @@ function AuthDialog({ lang, onClose, onSuccess }: { lang: Lang; onClose: () => v
       }
     }
     // If GIS already loaded
-    if ((window as unknown as Record<string, unknown>).google) { initGoogle(); return }
+    if ((window as unknown as Record<string, unknown>).google) { initGoogle(); return () => { cancelled = true } }
     // Otherwise inject the script and wait
     const existing = document.getElementById('gsi-script')
     if (!existing) {
@@ -2183,23 +2232,21 @@ function AuthDialog({ lang, onClose, onSuccess }: { lang: Lang; onClose: () => v
     } else {
       existing.addEventListener('load', initGoogle)
     }
-    return () => { cancelled = true }
-  }, [mode, lang, onSuccess])
+    return () => { cancelled = true; existing?.removeEventListener('load', initGoogle) }
+  }, [mode, lang, authenticate])
 
   async function submit(event: React.FormEvent) {
-    event.preventDefault(); setBusy(true); setMessage('')
-    try {
-      if (mode === 'forgot') { await forgotPassword(email); setMessage(copy.forgotDescription); return }
-      const result = mode === 'register' ? await register(email, password) : await login(email, password)
-      onSuccess(result)
-    } catch (error) { setMessage(readableError(error, lang)) }
-    finally { setBusy(false) }
+    event.preventDefault()
+    await authenticate(async () => {
+      if (mode === 'forgot') { await forgotPassword(email); return undefined }
+      return mode === 'register' ? register(email, password) : login(email, password)
+    }, copy.forgotDescription)
   }
 
   return (
-    <div className="modal-shade" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
+    <div className="modal-shade" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) close() }}>
       <div className="dialog auth-dialog" role="dialog" aria-modal="true" aria-labelledby="auth-title">
-        <button className="icon-button dialog-close" onClick={onClose} aria-label={copy.close}><X size={19} /></button>
+        <button className="icon-button dialog-close" onClick={close} aria-label={copy.close}><X size={19} /></button>
         <div className="auth-mark"><BookOpen size={25} /></div>
         <p className="eyebrow">{copy.accountEyebrow}</p>
         <h2 id="auth-title">{mode === 'login' ? copy.loginTitle : mode === 'register' ? copy.registerTitle : copy.forgotTitle}</h2>
@@ -2219,9 +2266,9 @@ function AuthDialog({ lang, onClose, onSuccess }: { lang: Lang; onClose: () => v
           <button className="primary wide" type="submit" disabled={busy}>{busy ? copy.processing : mode === 'login' ? copy.login : mode === 'register' ? copy.register : copy.sendInstructions} <ArrowRight size={17} /></button>
         </form>
         <div className="auth-links">
-          {mode !== 'login' && <button onClick={() => { setMode('login'); setMessage('') }}>{copy.login}</button>}
-          {mode !== 'register' && <button onClick={() => { setMode('register'); setMessage('') }}>{copy.register}</button>}
-          {mode === 'login' && <button onClick={() => { setMode('forgot'); setMessage('') }}>{copy.forgotPassword}</button>}
+          {mode !== 'login' && <button onClick={() => changeMode('login')}>{copy.login}</button>}
+          {mode !== 'register' && <button onClick={() => changeMode('register')}>{copy.register}</button>}
+          {mode === 'login' && <button onClick={() => changeMode('forgot')}>{copy.forgotPassword}</button>}
         </div>
       </div>
     </div>

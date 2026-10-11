@@ -57,3 +57,31 @@ it('preserves caller cancellation instead of reporting a lost network connection
   controller.abort(reason)
   await rejected
 })
+
+it('aborts a canceled book request before its headers arrive', async () => {
+  const controller = new AbortController()
+  vi.stubGlobal('fetch', vi.fn().mockImplementation((_url, options) => new Promise((_, reject) => {
+    options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true })
+  })))
+  const reason = new DOMException('Reader was closed', 'AbortError')
+  const request = loadBookBytes({ id: 'test', title: 'Test', author: '', fileUrl: 'https://example.test/book.pdf' }, undefined, { signal: controller.signal })
+  const rejected = expect(request).rejects.toBe(reason)
+  controller.abort(reason)
+  await rejected
+})
+
+it('releases a streaming book body when the reader is closed during download', async () => {
+  const canceled = vi.fn()
+  const response = new Response(new ReadableStream<Uint8Array>({ cancel: canceled }))
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response))
+  const controller = new AbortController()
+  const request = loadBookBytes({ id: 'test', title: 'Test', author: '', fileUrl: 'https://example.test/book.pdf' }, undefined, { signal: controller.signal })
+  const reason = new DOMException('Reader was closed', 'AbortError')
+  const rejected = expect(request).rejects.toBe(reason)
+  // Let the response consumer acquire its stream reader before cancellation.
+  await Promise.resolve(); await Promise.resolve()
+  controller.abort(reason)
+  await rejected
+  expect(canceled).toHaveBeenCalledOnce()
+  expect(response.body?.locked).toBe(false)
+})
