@@ -1567,34 +1567,30 @@ async function sha256Hex(file: Blob): Promise<string> {
               </div>
             </div>
 
-            <div className="asym-card-pill-4" onClick={() => setPage('catalog')} title={curT.showcase.explorePill}>
+            <button type="button" className="asym-card-pill-4" onClick={() => setPage('catalog')} aria-label={curT.showcase.explorePill}>
               <div className="asym-pill-art">
-                <div className="asym-pill-circle-glow" />
-                <div className="asym-pill-icon-wrap">
-                  <BookOpen size={44} strokeWidth={1.5} />
-                </div>
+                <img className="library-photo" src="/photos/reading-nook.webp" width={1000} height={1500} alt="" loading="lazy" decoding="async" />
                 <div className="asym-pill-caption">
                   <span className="asym-pill-tag">{curT.showcase.editionBadge}</span>
                   <strong>NOCAP</strong>
                   <small>QUIET KNOWLEDGE</small>
+                  <span className="asym-pill-link">{curT.showcase.explorePill} <ArrowRight size={14} /></span>
                 </div>
               </div>
-              <div className="asym-pill-overlay">
-                <div className="asym-pill-badge">
-                  {curT.showcase.explorePill}
-                </div>
-              </div>
-            </div>
+            </button>
 
             <div className="asym-card-circle-5">
-              <span className="editorial-chip peach" style={{ marginBottom: '10px' }}>{curT.showcase.habitChip}</span>
-              <div style={{ fontFamily: "'Plus Jakarta Sans', 'Be Vietnam Pro', sans-serif", fontSize: '44px', fontWeight: '800', lineHeight: '1', margin: '8px 0', color: '#111111' }}>
-                {readingStreak > 0 ? `${readingStreak}D` : '15M'}
+              <img className="habit-photo" src="/photos/reading-tea.webp" width={900} height={675} alt="" loading="lazy" decoding="async" />
+              <div className="habit-copy">
+                <span className="editorial-chip peach" style={{ marginBottom: '10px' }}>{curT.showcase.habitChip}</span>
+                <div className="habit-value">
+                  {readingStreak > 0 ? `${readingStreak}D` : '15M'}
+                </div>
+                <p className="habit-description">
+                  {readingStreak > 0 ? curT.showcase.habitDesc : curT.showcase.habitDescEmpty}
+                </p>
+                <button className="text-button" onClick={() => setPage('stats')}>{curT.showcase.viewAnalytics} <ArrowRight size={12} /></button>
               </div>
-              <p style={{ fontSize: '12px', color: '#78716c', maxWidth: '180px', margin: '4px 0 12px' }}>
-                {readingStreak > 0 ? curT.showcase.habitDesc : curT.showcase.habitDescEmpty}
-              </p>
-              <button className="text-button" onClick={() => setPage('stats')}>{curT.showcase.viewAnalytics} <ArrowRight size={12} /></button>
             </div>
 
             <div className="asym-card-wide-7">

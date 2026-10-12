@@ -1091,62 +1091,47 @@ body, .main-area {
   overflow: hidden;
   position: relative;
   border: 1px solid rgba(30, 30, 30, 0.15);
-  background: #0d1726;
+  background: #f2efe7;
   cursor: pointer;
   display: block;
+  padding: 0;
+  width: 100%;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
 }
 .asym-pill-art {
   width: 100%;
   height: 100%;
-  background: radial-gradient(circle at 50% 38%, #1a384e 0%, #0d1726 70%, #070e18 100%);
+  background: #f2efe7;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 40px 24px;
   position: relative;
-  color: #ffffff;
-  transition: transform 700ms cubic-bezier(0.77, 0, 0.175, 1);
+  color: #21352f;
 }
-.asym-card-pill-4:hover .asym-pill-art {
-  transform: scale(1.05);
-}
-.asym-pill-circle-glow {
+.library-photo {
   position: absolute;
-  width: 230px;
-  height: 230px;
-  border-radius: 50%;
-  border: 1px dashed rgba(56, 199, 172, 0.35);
-  animation: rotatePillGlow 24s linear infinite;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 62%;
+  transition: transform 900ms ease;
 }
-@keyframes rotatePillGlow {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-.asym-pill-icon-wrap {
-  width: 92px;
-  height: 92px;
-  border-radius: 26px;
-  background: rgba(22, 126, 112, 0.3);
-  border: 1px solid rgba(56, 199, 172, 0.5);
-  display: grid;
-  place-items: center;
-  color: #52cdb3;
-  box-shadow: 0 0 35px rgba(56, 199, 172, 0.25);
-  margin-bottom: 22px;
-  position: relative;
-  z-index: 2;
-  transition: transform 0.4s ease;
-}
-.asym-card-pill-4:hover .asym-pill-icon-wrap {
-  transform: scale(1.08) rotate(6deg);
-  color: #ffffff;
-  background: rgba(22, 126, 112, 0.5);
+.asym-pill-art::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(242, 239, 231, 0) 35%, rgba(242, 239, 231, 0.08) 52%, rgba(242, 239, 231, 0.9) 78%, #f2efe7 100%);
+  pointer-events: none;
 }
 .asym-pill-caption {
   text-align: center;
-  position: relative;
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  bottom: 48px;
   z-index: 2;
   display: flex;
   flex-direction: column;
@@ -1158,7 +1143,7 @@ body, .main-area {
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.16em;
-  color: #38c7ac;
+  color: #326c5e;
   margin-bottom: 4px;
 }
 .asym-pill-caption strong {
@@ -1166,43 +1151,23 @@ body, .main-area {
   font-size: 26px;
   font-weight: 800;
   letter-spacing: 0.06em;
-  color: #ffffff;
+  color: #21352f;
 }
 .asym-pill-caption small {
   font-family: 'Plus Jakarta Sans', 'Be Vietnam Pro', sans-serif;
   font-size: 11px;
   letter-spacing: 0.14em;
-  color: #94a3b8;
+  color: #52635b;
 }
-.asym-pill-overlay {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  background: rgba(13, 23, 38, 0.55);
-  backdrop-filter: blur(4px);
-  opacity: 0;
-  transition: opacity 700ms cubic-bezier(0.77, 0, 0.175, 1);
-}
-.asym-card-pill-4:hover .asym-pill-overlay {
-  opacity: 1;
-}
-.asym-pill-badge {
-  width: 130px;
-  height: 130px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(8px);
-  display: grid;
-  place-items: center;
-  text-align: center;
-  color: #ffffff;
-  padding: 16px;
+.asym-pill-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #24665b;
+  margin-top: 16px;
   font-family: 'Plus Jakarta Sans', 'Be Vietnam Pro', sans-serif;
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
 /* 3. Circular 5-column aspect-square image/card */
@@ -1219,11 +1184,43 @@ body, .main-area {
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 40px;
+  padding: clamp(18px, 3vw, 36px);
   transition: transform 700ms cubic-bezier(0.77, 0, 0.175, 1);
 }
 .asym-card-circle-5:hover {
   transform: scale(1.04);
+}
+.habit-photo {
+  display: block;
+  width: 78%;
+  height: auto;
+  max-width: 320px;
+  max-height: 43%;
+  min-height: 0;
+  object-fit: cover;
+  border-radius: 18px;
+  margin-bottom: clamp(6px, 1vw, 12px);
+  pointer-events: none;
+}
+.habit-copy { position: relative; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; }
+.habit-value { font-family: 'Plus Jakarta Sans', 'Be Vietnam Pro', sans-serif; font-size: clamp(32px, 4vw, 44px); font-weight: 800; line-height: 1; margin: 8px 0; color: #111111; }
+.habit-description { font-size: 12px; line-height: 1.5; color: #655f5a; max-width: 210px; margin: 4px 0 12px; }
+@media (max-width: 1024px) {
+  .asym-card-pill-4 { max-width: 480px; align-self: center; }
+  .asym-card-circle-5 { width: min(100%, 540px); align-self: center; }
+}
+@media (max-width: 420px) {
+  .asym-card-circle-5 { aspect-ratio: auto; min-height: 360px; border-radius: 9999px; padding: 24px; }
+  .habit-photo { width: 85%; max-width: 240px; height: 132px; max-height: none; }
+  .asym-card-pill-4 { height: 420px; }
+  .asym-pill-caption { bottom: 42px; }
+}
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .asym-card-pill-4:hover .library-photo { transform: scale(1.035); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .library-photo, .asym-card-circle-5 { transition: none; }
+  .asym-card-circle-5:hover { transform: none; }
 }
 
 /* 4. Wide 7-column rectangle */
