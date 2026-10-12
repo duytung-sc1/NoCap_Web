@@ -6,7 +6,10 @@ import { readSession, saveSession, SESSION_STORAGE_KEY } from './store'
 import App from './App'
 
 const fixtures = vi.hoisted(() => ({
-  login: vi.fn(), googleLogin: vi.fn(), getFiles: vi.fn(), mutate: vi.fn(), loadBytes: vi.fn(), readerThrows: false,
+  login: vi.fn(), googleLogin: vi.fn(), getFiles: vi.fn(), mutate: vi.fn(), loadBytes: vi.fn(), downloadHttps: vi.fn(), readerThrows: false,
+}))
+vi.mock('./httpsImport', async importOriginal => ({
+  ...await importOriginal<typeof import('./httpsImport')>(), downloadHttpsPublication: fixtures.downloadHttps,
 }))
 vi.mock('./api', async importOriginal => ({
   ...await importOriginal<typeof import('./api')>(),
@@ -65,11 +68,30 @@ beforeEach(() => {
   fixtures.mutate.mockReset().mockResolvedValue(undefined)
   fixtures.login.mockReset(); fixtures.googleLogin.mockReset()
   fixtures.loadBytes.mockReset().mockResolvedValue(new TextEncoder().encode('QA document').buffer)
+  fixtures.downloadHttps.mockReset()
   fixtures.readerThrows = false
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks(); delete (window as unknown as { google?: unknown }).google })
 
 describe('account and reader lifecycle', () => {
+  it('closes and cancels a private HTTPS import when another tab signs out', async () => {
+    saveSession(session)
+    const pending = deferred<File>(); fixtures.downloadHttps.mockReturnValue(pending.promise)
+    render(<App />)
+    fireEvent.click(screen.getAllByRole('button', { name: 'Thêm tài liệu' })[0])
+    const dialog = screen.getByRole('dialog', { name: 'Thêm tài liệu' })
+    fireEvent.click(within(dialog).getByRole('button', { name: /Từ liên kết HTTPS/ }))
+    fireEvent.change(within(dialog).getByLabelText('Liên kết HTTPS'), { target: { value: 'https://books.example.test/private.pdf?signature=qa' } })
+    fireEvent.submit(dialog.querySelector('form')!)
+    await waitFor(() => expect(fixtures.downloadHttps).toHaveBeenCalled())
+    saveSession(null)
+    fireEvent(window, new StorageEvent('storage', { key: SESSION_STORAGE_KEY, storageArea: localStorage }))
+    expect(screen.queryByRole('dialog', { name: 'Thêm tài liệu' })).toBeNull()
+    expect(fixtures.downloadHttps.mock.calls[0][1].signal.aborted).toBe(true)
+    await act(async () => { pending.resolve(new File(['%PDF-QA'], 'QA.pdf')); await pending.promise })
+    expect(window.location.pathname).toBe('/')
+  })
+
   it('does not sign in after the login dialog was closed while the request was pending', async () => {
     const pending = deferred<Session>(); fixtures.login.mockReturnValue(pending.promise)
     render(<App />)

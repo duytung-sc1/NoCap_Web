@@ -17,8 +17,12 @@ export function SePayCheckout({ session, entitlement, lang, onSignIn, onPaid }: 
   const [selectedPlan, setSelectedPlan] = useState<SePayPlanId>('MONTHLY')
   const [quote, setQuote] = useState<{ token: string; plans: SePayPlan[]; error: string } | null>(null)
   const [quoteRetry, setQuoteRetry] = useState(0)
+  const [paidRetry, setPaidRetry] = useState(0)
   const creatingRef = useRef(false)
+  const orderRef = useRef<SePayOrder | null>(null)
+  const checkRequestId = useRef(0)
   const paidOrderRef = useRef<string | null>(null)
+  const paidFlightRef = useRef<{ token: string; id: string; promise: Promise<Entitlement> } | null>(null)
   const paidCallback = useRef(onPaid)
   const sessionRef = useRef(session)
   useEffect(() => { paidCallback.current = onPaid }, [onPaid])
@@ -31,6 +35,16 @@ export function SePayCheckout({ session, entitlement, lang, onSignIn, onPaid }: 
   const currentQuote = quote?.token === session?.token ? quote : null
   const selectedQuote = currentQuote?.plans.find(plan => plan.id === selectedPlan)
   const price = (amount: number) => new Intl.NumberFormat(vi ? 'vi-VN' : 'en-US', { style: 'currency', currency: 'VND' }).format(amount)
+
+  function replaceOrder(value: SePayOrder | null) {
+    orderRef.current = value
+    setOrder(value)
+  }
+  function closeOrder() {
+    checkRequestId.current++
+    replaceOrder(null)
+    setChecking(false); setMessage('')
+  }
 
   useEffect(() => {
     if (!session) return
@@ -50,7 +64,7 @@ export function SePayCheckout({ session, entitlement, lang, onSignIn, onPaid }: 
     const token = session.token
     try {
       const value = await createSePayOrder(token, selectedPlan)
-      if (sessionRef.current?.token === token) setOrder(value)
+      if (sessionRef.current?.token === token) replaceOrder(value)
     } catch (error) {
       if (sessionRef.current?.token === token) setMessage(readableError(error, lang))
     } finally { creatingRef.current = false; setCreating(false) }
@@ -66,10 +80,12 @@ export function SePayCheckout({ session, entitlement, lang, onSignIn, onPaid }: 
       if (document.visibilityState === 'visible' && navigator.onLine) {
         try {
           const next = await getSePayOrder(session.token, orderId)
-          if (!active) return
-          setOrder(next); setMessage('')
+          if (!active || orderRef.current?.id !== orderId || next.id !== orderId) return
+          // A slower pending response must not undo a confirmed terminal status.
+          if (['PAID', 'EXPIRED'].includes(orderRef.current.status)) return
+          replaceOrder(next); setMessage('')
           if (next.status === 'PAID' || next.status === 'EXPIRED') return
-        } catch (error) { if (active) setMessage(readableError(error, lang)) }
+        } catch (error) { if (active && orderRef.current?.id === orderId) setMessage(readableError(error, lang)) }
       }
       if (active) timer = setTimeout(poll, 5000)
     }
@@ -80,25 +96,32 @@ export function SePayCheckout({ session, entitlement, lang, onSignIn, onPaid }: 
   useEffect(() => {
     if (!session || !orderId || orderStatus !== 'PAID' || paidOrderRef.current === orderId) return
     let active = true
-    void getEntitlement(session.token).then(value => {
-      if (active) { paidOrderRef.current = orderId; paidCallback.current(value) }
-    }).catch(error => { if (active) setMessage(readableError(error, lang)) })
+    const token = session.token
+    const flight = paidFlightRef.current?.token === token && paidFlightRef.current.id === orderId
+      ? paidFlightRef.current : { token, id: orderId, promise: getEntitlement(token) }
+    paidFlightRef.current = flight
+    const isCurrent = () => active && sessionRef.current?.token === token && orderRef.current?.id === orderId
+    void flight.promise.then(value => {
+      if (isCurrent()) { paidOrderRef.current = orderId; paidCallback.current(value); setMessage('') }
+    }).catch(error => { if (isCurrent()) setMessage(readableError(error, lang)) })
+      .finally(() => { if (paidFlightRef.current === flight) paidFlightRef.current = null })
     return () => { active = false }
-  }, [session, orderId, orderStatus, lang])
+  }, [session, orderId, orderStatus, lang, paidRetry])
 
   async function checkOrder() {
     if (!session || !order || checking) return
     const token = session.token
+    const id = order.id
+    const requestId = ++checkRequestId.current
+    const isCurrent = () => sessionRef.current?.token === token && orderRef.current?.id === id && checkRequestId.current === requestId
     setChecking(true); setMessage('')
     try {
-      const next = await getSePayOrder(token, order.id)
-      if (sessionRef.current?.token === token) setOrder(next)
-      if (next.status === 'PAID') {
-        const value = await getEntitlement(token)
-        if (sessionRef.current?.token === token) { paidOrderRef.current = next.id; paidCallback.current(value) }
-      }
-    } catch (error) { if (sessionRef.current?.token === token) setMessage(readableError(error, lang)) }
-    finally { setChecking(false) }
+      const next = await getSePayOrder(token, id)
+      if (!isCurrent() || next.id !== id) return
+      if (!['PAID', 'EXPIRED'].includes(orderRef.current!.status) || next.status === orderRef.current!.status) replaceOrder(next)
+      if (next.status === 'PAID') setPaidRetry(value => value + 1)
+    } catch (error) { if (isCurrent()) setMessage(readableError(error, lang)) }
+    finally { if (isCurrent()) setChecking(false) }
   }
 
   const statuses = vi ? { PENDING: 'Đang chờ chuyển khoản', PROCESSING: 'Đang xác nhận thanh toán', PAID: 'Đã thanh toán', EXPIRED: 'Đơn đã hết hạn' } : { PENDING: 'Awaiting transfer', PROCESSING: 'Confirming payment', PAID: 'Paid', EXPIRED: 'Order expired' }
@@ -126,9 +149,9 @@ export function SePayCheckout({ session, entitlement, lang, onSignIn, onPaid }: 
       <CreditCard size={17} /> {creating ? (vi ? 'Đang tạo đơn…' : 'Creating order…') : !session ? (vi ? 'Đăng nhập để nâng cấp' : 'Sign in to upgrade') : entitlement?.plan === 'PRO' ? (vi ? 'Gia hạn qua SePay' : 'Renew via SePay') : (vi ? 'Nâng cấp qua SePay' : 'Upgrade via SePay')}
     </button>
     {!order && message && <p className="form-message" role="alert">{message}</p>}
-    {order && <div className="modal-shade" onMouseDown={event => { if (event.target === event.currentTarget) setOrder(null) }}>
+    {order && <div className="modal-shade" onMouseDown={event => { if (event.target === event.currentTarget) closeOrder() }}>
       <div className="dialog payment-dialog" role="dialog" aria-modal="true" aria-label={vi ? 'Thanh toán NoCap Pro' : 'NoCap Pro payment'}>
-        <button className="icon-button dialog-close" onClick={() => setOrder(null)} aria-label={vi ? 'Đóng thanh toán' : 'Close payment'}><X size={19} /></button>
+        <button className="icon-button dialog-close" onClick={closeOrder} aria-label={vi ? 'Đóng thanh toán' : 'Close payment'}><X size={19} /></button>
         <h2>{vi ? 'Thanh toán NoCap Pro' : 'NoCap Pro payment'}</h2>
         <p className="payment-status" role="status">{statuses[order.status]}</p>
         {order.status === 'PAID' ? <p>{vi ? 'Giao dịch đã được máy chủ xác nhận. Gói Pro của bạn đang được cập nhật.' : 'The server confirmed your payment. Your Pro plan is being updated.'}</p> : order.status === 'EXPIRED' ? <p>{vi ? 'Không chuyển khoản theo đơn này. Đóng cửa sổ và tạo đơn mới.' : 'Do not pay this expired order. Close the dialog and create a new one.'}</p> : <>

@@ -35,15 +35,19 @@ async function requirePublicDns(host: string, fetcher: Fetcher, signal: AbortSig
   if (addresses.some(address => !isPublicAddress(address))) throw new HttpsImportError('PUBLIC_URL_REQUIRED')
 }
 
-async function readInput(request: Request): Promise<string> {
+async function readInput(request: Request, signal: AbortSignal): Promise<string> {
   if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/json')) throw new HttpsImportError('INVALID_URL')
   const reader = request.body?.getReader()
   if (!reader) throw new HttpsImportError('INVALID_URL')
+  const cancel = () => { void reader.cancel(signal.reason).catch(() => {}) }
+  signal.addEventListener('abort', cancel, { once: true })
   const chunks: Uint8Array<ArrayBuffer>[] = []
   let bytes = 0
   try {
     while (true) {
+      signal.throwIfAborted()
       const { done, value } = await reader.read()
+      signal.throwIfAborted()
       if (done) break
       bytes += value.byteLength
       if (bytes > 16_384) { await reader.cancel(); throw new HttpsImportError('INVALID_URL', 413) }
@@ -53,7 +57,7 @@ async function readInput(request: Request): Promise<string> {
     try { data = JSON.parse(await new Blob(chunks).text()) } catch { throw new HttpsImportError('INVALID_URL') }
     if (!data || typeof data.url !== 'string') throw new HttpsImportError('INVALID_URL')
     return data.url
-  } finally { reader.releaseLock() }
+  } finally { signal.removeEventListener('abort', cancel); reader.releaseLock() }
 }
 
 /** A bounded same-origin file download, never an authenticated/open redirect proxy. */
@@ -70,7 +74,7 @@ export async function handleHttpsImport(request: Request, fetcher: Fetcher = (in
   let upstream: Response | undefined
   let stage = 'input'
   try {
-    let url = publicationUrl(await readInput(request))
+    let url = publicationUrl(await readInput(request, controller.signal))
     const appHost = new URL(request.url).hostname
     for (let redirects = 0; ; redirects++) {
       if (url.pathname.replace(/\/+$/, '') === '/api/import' && (url.hostname === appHost || url.hostname === 'ntlab.id.vn' || url.hostname.endsWith('.nocap-web.pages.dev'))) throw new HttpsImportError('PUBLIC_URL_REQUIRED')

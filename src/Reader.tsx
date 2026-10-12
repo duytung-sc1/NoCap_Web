@@ -443,7 +443,8 @@ function PdfPane({ lang = 'vi', bytes, initial, onLocation, onSelection, onContr
   const [dimensions, setDimensions] = useState<{ width: number; height: number }>({ width: 800, height: 1100 })
   const [page, setPage] = useState(() => {
     const saved = parseInitial(initial)
-    return typeof saved?.pageNumber === 'number' ? saved.pageNumber : 1
+    const requested = Number(saved?.pageNumber) || Number(saved?.pageIndex) + 1
+    return Number.isFinite(requested) ? Math.max(1, Math.trunc(requested)) : 1
   })
   const [error, setError] = useState('')
   const onTocRef = useRef(onToc)
@@ -482,7 +483,7 @@ function PdfPane({ lang = 'vi', bytes, initial, onLocation, onSelection, onContr
       const progression = Math.min(1, Math.max(0, saved.progression))
       targetPage = Math.round(progression * Math.max(0, document.numPages - 1)) + 1
     }
-    if (targetPage !== null) queueMicrotask(() => setPage(Math.min(document.numPages, Math.max(1, targetPage!))))
+    if (targetPage !== null) queueMicrotask(() => setPage(Math.min(document.numPages, Math.max(1, Math.trunc(targetPage!)))))
   }, [document, initial])
 
   useEffect(() => {
@@ -496,6 +497,7 @@ function PdfPane({ lang = 'vi', bytes, initial, onLocation, onSelection, onContr
     const task = getDocument({ data: bytes.slice(0) })
     void task.promise.then(pdf => {
       if (!active) return
+      setPage(current => Math.min(pdf.numPages, Math.max(1, Math.trunc(current))))
       setDocument(pdf)
       void pdf.getOutline().then(outline => {
         if (!active || !outline || !outline.length || !onTocRef.current) return
@@ -508,7 +510,7 @@ function PdfPane({ lang = 'vi', bytes, initial, onLocation, onSelection, onContr
   }, [bytes])
 
   useEffect(() => {
-    if (!document || !canvas.current) return
+    if (!document || !canvas.current || !Number.isInteger(page) || page < 1 || page > document.numPages) return
     let active = true
     let render: RenderTask | null = null
     let textLayer: TextLayer | null = null
@@ -872,15 +874,6 @@ function TextPane({ lang = 'vi', bytes, initial, fontSize, fontFamily, lineHeigh
   useEffect(() => { onTocRef.current = onToc }, [onToc])
 
   useEffect(() => {
-    if (!navigateTarget || !host.current) return
-    const id = navigateTarget.replace(/^#/, '')
-    const targetElement = host.current.querySelector(`#${CSS.escape(id)}`)
-    if (targetElement) {
-      targetElement.scrollIntoView({ behavior: 'smooth' })
-    }
-  }, [navigateTarget])
-
-  useEffect(() => {
     let active = true
     async function decode() {
       try {
@@ -945,6 +938,15 @@ function TextPane({ lang = 'vi', bytes, initial, fontSize, fontFamily, lineHeigh
     })
     return () => cancelAnimationFrame(frame)
   }, [content, initial, onLocation])
+  useEffect(() => {
+    if (!content || !navigateTarget || !host.current) return
+    // Apply chapter requests after decoding and after saved-position restoration.
+    const frame = requestAnimationFrame(() => {
+      const id = navigateTarget.replace(/^#/, '')
+      host.current?.querySelector(`#${CSS.escape(id)}`)?.scrollIntoView({ behavior: 'smooth' })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [content, navigateTarget])
   useEffect(() => {
     const element = host.current
     if (!content || !element || !navigateProgression) return

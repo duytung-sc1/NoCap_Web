@@ -125,4 +125,28 @@ describe('public HTTPS download endpoint', () => {
       expect((await response.json()).error.code).toBe('DOWNLOAD_TIMEOUT')
     } finally { vi.useRealTimers() }
   })
+  it('cancels a stalled input body when the request deadline is reached', async () => {
+    vi.useFakeTimers()
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    let canceled = false
+    let input!: ReadableStreamDefaultController<Uint8Array>
+    const body = new ReadableStream<Uint8Array>({ start(value) { input = value }, cancel() { canceled = true } })
+    const fetcher = vi.fn()
+    let response: Response | undefined
+    const pending = handleHttpsImport(new Request(`${origin}/api/import`, {
+      method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body, duplex: 'half',
+    } as RequestInit), fetcher).then(value => { response = value })
+    try {
+      await vi.advanceTimersByTimeAsync(IMPORT_TIMEOUT_MS)
+      expect(canceled).toBe(true)
+      await pending
+      expect(response?.status).toBe(504)
+      expect(await response?.json()).toMatchObject({ error: { code: 'DOWNLOAD_TIMEOUT' } })
+      expect(fetcher).not.toHaveBeenCalled()
+    } finally {
+      if (!canceled) input.close()
+      await pending
+      warning.mockRestore(); vi.useRealTimers()
+    }
+  })
 })
