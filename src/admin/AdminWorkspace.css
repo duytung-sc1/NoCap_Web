@@ -1,6 +1,6 @@
 .admin-workspace { max-width: 1440px; margin: 12px auto 40px; color: var(--ink, #152b3d); }
 .admin-workspace-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 32px; }
-.admin-workspace-heading h1 { font-family: 'Literata Variable', serif; font-size: clamp(26px, 3vw, 38px); margin: 10px 0; }
+.admin-workspace-heading h1 { font-family:var(--font-editorial); font-size: clamp(26px, 3vw, 38px); margin: 10px 0; }
 .admin-workspace-heading p { line-height: 1.7; margin: 8px 0; }
 .admin-identity { display: grid; gap: 6px; text-align: right; font-size: 13px; overflow-wrap: anywhere; }
 .admin-identity span { color: #526a7b; }

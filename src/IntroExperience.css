@@ -295,7 +295,7 @@ body.intro-open {
 }
 
 .intro-cover-title-text {
-  font-family: 'Cinzel', serif;
+  font-family:var(--font-editorial);
   font-size: 38px;
   font-weight: 700;
   letter-spacing: 0.18em;
@@ -422,7 +422,7 @@ body.intro-open {
 
 .intro-dropped-cap {
   float: left;
-  font-family: 'Cinzel', serif;
+  font-family:var(--font-editorial);
   font-size: 34px;
   line-height: 28px;
   padding-top: 4px;
@@ -433,7 +433,7 @@ body.intro-open {
 }
 
 .intro-prose-text {
-  font-family: 'Literata Variable', Georgia, serif;
+  font-family:var(--font-editorial);
   font-size: 10.5px;
   line-height: 1.58;
   color: #2b2e35;

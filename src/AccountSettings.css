@@ -8,7 +8,7 @@
   .account-settings-mobile-banner,
   .account-profile-mobile { display: none; }
   .account-settings-desktop-heading { display: block; max-width: 1120px; margin: 4px auto 32px; }
-  .account-settings-desktop-heading h1 { margin: 0 0 10px; font: 600 32px/1.35 'Literata Variable', Georgia, serif; letter-spacing: -.035em; color: #142b36; }
+  .account-settings-desktop-heading h1 { margin: 0 0 10px; font: 600 32px/1.35 var(--font-editorial); letter-spacing: -.035em; color: #142b36; }
   .account-settings-desktop-heading p { margin: 0; color: #687b83; font-size: 14px; line-height: 1.7; }
   .account-settings-layout { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 30px; max-width: 1120px; margin: 0 auto; align-items: start; }
   .account-settings-navigation { display: flex; flex-direction: column; gap: 6px; padding-top: 14px; }
@@ -32,7 +32,7 @@
   .account-profile-heading .secondary { display: inline-flex; flex-shrink: 0; min-height: 38px; padding: 8px 12px; border-color: #d6e2dc; color: #176e62; font-weight: 600; }
   .account-settings-grid .account-profile-description { margin: 12px 0 28px; color: #71828a; }
   .account-profile-identity { display: flex; align-items: center; gap: 16px; padding: 0 0 28px; border-bottom: 1px solid #e9eeeb; }
-  .account-profile-avatar { position: relative; display: grid; place-items: center; flex: none; width: 64px; height: 64px; border: 1px solid #cce3d8; border-radius: 50%; background: #e5f3ec; color: #1b7968; font: 600 23px 'Literata Variable', Georgia, serif; overflow: hidden; }
+  .account-profile-avatar { position: relative; display: grid; place-items: center; flex: none; width: 64px; height: 64px; border: 1px solid #cce3d8; border-radius: 50%; background: #e5f3ec; color: #1b7968; font: 600 23px var(--font-editorial); overflow: hidden; }
   .account-profile-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
   .account-profile-identity > div:nth-child(2) { min-width: 0; }
   .account-profile-identity strong { display: block; color: #1c323b; font-size: 16px; overflow-wrap: anywhere; }
@@ -51,7 +51,7 @@
   .account-settings-grid > .danger-zone-card { display: none; }
   .account-settings-profile.active ~ .danger-zone-card { position: relative; display: flex; align-items: center; gap: 24px; margin: 0; padding: 24px 36px 28px; border: 1px solid #e2e9e5 !important; border-top: 0 !important; border-radius: 0 0 18px 18px; background: #fff !important; box-shadow: 0 8px 28px #183e2e08; }
   .account-settings-grid .danger-zone-card::before { content: ''; position: absolute; top: 0; left: 36px; right: 36px; height: 1px; background: #e9eeeb; }
-  .account-settings-grid .danger-zone-card h2 { margin: 0; color: #704949 !important; font: 600 13px/1.5 'DM Sans', sans-serif; letter-spacing: 0; }
+  .account-settings-grid .danger-zone-card h2 { margin: 0; color: #704949 !important; font: 600 13px/1.5 var(--font-ui); letter-spacing: 0; }
   .account-settings-grid .danger-zone-card p { margin: 7px 0 0 !important; line-height: 1.65; }
   .account-settings-grid .danger-zone-card button { flex: none; min-height: 38px; padding: 8px 11px; background: #fff; border-color: #ead4d0 !important; color: #a34f45 !important; font-size: 11px; font-weight: 600; }
   .account-settings-pro .pro-benefits { margin: 24px 0; padding: 16px 20px; border: 1px solid #e6eee9; border-radius: 10px; background: #f9fcfa; }

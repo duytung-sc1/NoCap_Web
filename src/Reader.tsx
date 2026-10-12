@@ -3,18 +3,8 @@ import DOMPurify from 'dompurify'
 import { getDocument, GlobalWorkerOptions, TextLayer, type PDFDocumentProxy, type RenderTask } from 'pdfjs-dist'
 import 'pdfjs-dist/web/pdf_viewer.css'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
-import literataVietnamese from '@fontsource-variable/literata/files/literata-vietnamese-wght-normal.woff2?url'
-import literataLatinExt from '@fontsource-variable/literata/files/literata-latin-ext-wght-normal.woff2?url'
-import literataLatin from '@fontsource-variable/literata/files/literata-latin-wght-normal.woff2?url'
-import literataVietnameseItalic from '@fontsource-variable/literata/files/literata-vietnamese-wght-italic.woff2?url'
-import literataLatinExtItalic from '@fontsource-variable/literata/files/literata-latin-ext-wght-italic.woff2?url'
-import literataLatinItalic from '@fontsource-variable/literata/files/literata-latin-wght-italic.woff2?url'
-import atkinsonLatinExt from '@fontsource/atkinson-hyperlegible/files/atkinson-hyperlegible-latin-ext-400-normal.woff2?url'
-import atkinsonLatin from '@fontsource/atkinson-hyperlegible/files/atkinson-hyperlegible-latin-400-normal.woff2?url'
-import atkinsonLatinExtItalic from '@fontsource/atkinson-hyperlegible/files/atkinson-hyperlegible-latin-ext-400-italic.woff2?url'
-import atkinsonLatinItalic from '@fontsource/atkinson-hyperlegible/files/atkinson-hyperlegible-latin-400-italic.woff2?url'
-import atkinsonLatinExtBold from '@fontsource/atkinson-hyperlegible/files/atkinson-hyperlegible-latin-ext-700-normal.woff2?url'
-import atkinsonLatinBold from '@fontsource/atkinson-hyperlegible/files/atkinson-hyperlegible-latin-700-normal.woff2?url'
+import epubFontFaces from './fonts.css?inline'
+import { readerTypeface } from './readerTypography'
 import type { Book, FontFamily, ReaderAnnotation, ReaderLocation, ReaderWidth, TextAlignment, TocItem } from './types'
 import { detectReaderFormat } from './readerFormat'
 import { synchronizeEpubScroll, waitForEpubTargetFonts, type EpubScrollManager } from './epubScroll'
@@ -61,46 +51,22 @@ function parseInitial(value?: string): Record<string, unknown> | null {
   try { return value ? JSON.parse(value) as Record<string, unknown> : null } catch { return null }
 }
 
-function fontStack(family?: FontFamily): string {
-  if (family === 'sans') return '"Atkinson Hyperlegible", "DM Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
-  if (family === 'mono') return 'ui-monospace, "SF Mono", Menlo, Consolas, monospace'
-  return '"Literata Variable", Literata, Georgia, "Times New Roman", serif'
-}
-
 function readingMeasure(width?: ReaderWidth): string {
   if (width === 'narrow') return '58ch'
   if (width === 'wide') return '78ch'
   return '68ch'
 }
 
-const vietnameseRange = 'U+0102-0103,U+0110-0111,U+0128-0129,U+0168-0169,U+01A0-01A1,U+01AF-01B0,U+0300-0301,U+0303-0304,U+0308-0309,U+0323,U+0329,U+1EA0-1EF9,U+20AB'
-const latinExtRange = 'U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF'
-const latinRange = 'U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD'
-
-const epubFontFaces = [
-  ['Literata Variable', 'normal', '200 900', literataVietnamese, vietnameseRange],
-  ['Literata Variable', 'normal', '200 900', literataLatinExt, latinExtRange],
-  ['Literata Variable', 'normal', '200 900', literataLatin, latinRange],
-  ['Literata Variable', 'italic', '200 900', literataVietnameseItalic, vietnameseRange],
-  ['Literata Variable', 'italic', '200 900', literataLatinExtItalic, latinExtRange],
-  ['Literata Variable', 'italic', '200 900', literataLatinItalic, latinRange],
-  ['Atkinson Hyperlegible', 'normal', '400', atkinsonLatinExt, latinExtRange],
-  ['Atkinson Hyperlegible', 'normal', '400', atkinsonLatin, latinRange],
-  ['Atkinson Hyperlegible', 'italic', '400', atkinsonLatinExtItalic, latinExtRange],
-  ['Atkinson Hyperlegible', 'italic', '400', atkinsonLatinItalic, latinRange],
-  ['Atkinson Hyperlegible', 'normal', '700', atkinsonLatinExtBold, latinExtRange],
-  ['Atkinson Hyperlegible', 'normal', '700', atkinsonLatinBold, latinRange],
-].map(([family, style, weight, url, range]) => `@font-face{font-family:"${family}";font-style:${style};font-display:swap;font-weight:${weight};src:url("${url}") format("woff2");unicode-range:${range};}`).join('')
-
-function applyEpubComfort(view: Rendition, comfort: Pick<Props, 'fontSize' | 'fontFamily' | 'lineHeight' | 'textAlignment' | 'readerWidth' | 'theme'>) {
-  const { fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme } = comfort
+function applyEpubComfort(view: Rendition, comfort: Pick<Props, 'fontSize' | 'fontFamily' | 'lineHeight' | 'textAlignment' | 'readerWidth' | 'theme'> & { language?: string }) {
+  const { fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme, language } = comfort
   view.themes.fontSize(`${fontSize * 0.18}px`)
   const palette = theme === 'night' ? { color: '#e8edf7', background: '#111b2b' } : theme === 'sepia' ? { color: '#443627', background: '#f3e9d3' } : { color: '#172033', background: '#fffdf8' }
   view.themes.default({
     body: {
       color: `${palette.color} !important`,
       background: `${palette.background} !important`,
-      'font-family': `${fontStack(fontFamily)} !important`,
+      'font-family': `${readerTypeface(fontFamily, language).stack} !important`,
+      'font-synthesis': 'none',
       'line-height': `${lineHeight || 1.65} !important`,
       'text-align': `${textAlignment || 'left'} !important`,
       'max-width': `${readingMeasure(readerWidth)} !important`,
@@ -133,7 +99,9 @@ async function displayEpubLocation(view: Rendition, target: string | undefined, 
   }
 }
 
-function EpubPane({ lang = 'vi', bytes, initial, fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme, onLocation, onSelection, onControls, onToc, navigateTarget, navigateProgression, annotations = [] }: Props) {
+function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme, onLocation, onSelection, onControls, onToc, navigateTarget, navigateProgression, annotations = [] }: Props) {
+  const language = sourceBook.language
+  const publicationLanguage = useRef<string | undefined>(undefined)
   const langRef = useRef(lang)
   useEffect(() => { langRef.current = lang }, [lang])
   const host = useRef<HTMLDivElement>(null)
@@ -148,10 +116,10 @@ function EpubPane({ lang = 'vi', bytes, initial, fontSize, fontFamily, lineHeigh
   const requestedProgression = useRef<number | null>(null)
   const contentReadiness = useRef(new WeakMap<Document, Promise<void>>())
   const renditionReady = useRef(false)
-  const comfortRef = useRef({ fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme })
+  const comfortRef = useRef({ fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme, language })
   const [renditionVersion, setRenditionVersion] = useState(0)
   const [error, setError] = useState('')
-  useEffect(() => { comfortRef.current = { fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme } }, [fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme])
+  useEffect(() => { comfortRef.current = { fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme, language } }, [fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme, language])
   useEffect(() => {
     locationRef.current = onLocation
     selectionRef.current = onSelection
@@ -213,6 +181,7 @@ function EpubPane({ lang = 'vi', bytes, initial, fontSize, fontFamily, lineHeigh
     renditionReady.current = false
     locationsReady.current = false
     requestedProgression.current = null
+    publicationLanguage.current = undefined
     let alive = true
     let book: import('epubjs/types/book').default | null = null
     let view: Rendition | null = null
@@ -223,6 +192,10 @@ function EpubPane({ lang = 'vi', bytes, initial, fontSize, fontFamily, lineHeigh
         book = ePub(bytes.slice(0))
         bookRef.current = book
         await book.ready
+        if (!alive || !host.current) return
+        // Imported books do not yet have catalog language metadata. Read their
+        // declared EPUB language before choosing or measuring the reader font.
+        publicationLanguage.current = (await book.loaded.metadata).language
         if (!alive || !host.current) return
         void book.loaded.navigation.then(nav => {
           if (!alive || !nav?.toc || !onTocRef.current) return
@@ -241,7 +214,7 @@ function EpubPane({ lang = 'vi', bytes, initial, fontSize, fontFamily, lineHeigh
         if (!alive) return
         synchronizeEpubScroll((view as unknown as { manager: EpubScrollManager }).manager)
         // Set typography before display measures any spine views.
-        applyEpubComfort(view, comfortRef.current)
+        applyEpubComfort(view, { ...comfortRef.current, language: comfortRef.current.language?.trim() || publicationLanguage.current })
         view.hooks.render.register((frame: { contents: Contents }) => {
           const contents = frame.contents
           const document = contents.document
@@ -258,8 +231,9 @@ function EpubPane({ lang = 'vi', bytes, initial, fontSize, fontFamily, lineHeigh
             view!.themes.inject(contents)
             view!.themes.overrides(contents)
             const comfort = comfortRef.current
-            if (comfort.fontFamily !== 'mono') {
-              await document.fonts.load(`${comfort.fontSize * 0.18}px "${comfort.fontFamily === 'sans' ? 'Atkinson Hyperlegible' : 'Literata Variable'}"`, document.body.textContent || 'NoCap').catch(() => [])
+            const typeface = readerTypeface(comfort.fontFamily, comfort.language?.trim() || publicationLanguage.current)
+            if (typeface.family) {
+              await document.fonts.load(`${comfort.fontSize * 0.18}px "${typeface.family}"`, document.body.textContent || 'NoCap').catch(() => [])
             }
           })()
           contentReadiness.current.set(document, ready)
@@ -389,8 +363,8 @@ function EpubPane({ lang = 'vi', bytes, initial, fontSize, fontFamily, lineHeigh
   useEffect(() => {
     const view = rendition.current
     if (!view) return
-    applyEpubComfort(view, { fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme })
-  }, [fontSize, theme, fontFamily, lineHeight, textAlignment, readerWidth, renditionVersion])
+    applyEpubComfort(view, { fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme, language: language?.trim() || publicationLanguage.current })
+  }, [fontSize, theme, fontFamily, lineHeight, textAlignment, readerWidth, renditionVersion, language])
 
   useEffect(() => {
     const view = rendition.current
@@ -864,7 +838,7 @@ function ImagePane({ lang = 'vi', book, bytes, onLocation, onControls, theme }: 
   </div>
 }
 
-function TextPane({ lang = 'vi', bytes, initial, fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme, onLocation, onSelection, onControls, onToc, navigateTarget, navigateProgression, annotations = [], format }: Props & { format: 'text' | 'html' | 'docx' }) {
+function TextPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme, onLocation, onSelection, onControls, onToc, navigateTarget, navigateProgression, annotations = [], format }: Props & { format: 'text' | 'html' | 'docx' }) {
   const langRef = useRef(lang)
   useEffect(() => { langRef.current = lang }, [lang])
   const host = useRef<HTMLDivElement>(null)
@@ -1027,7 +1001,7 @@ function TextPane({ lang = 'vi', bytes, initial, fontSize, fontFamily, lineHeigh
       <article
         style={{
           fontSize: `${fontSize * 0.18}px`,
-          fontFamily: fontStack(fontFamily),
+          fontFamily: readerTypeface(fontFamily, sourceBook.language).stack,
           lineHeight: lineHeight || 1.65,
           textAlign: textAlignment || 'left',
           maxWidth: readingMeasure(readerWidth),

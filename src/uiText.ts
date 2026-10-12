@@ -52,7 +52,6 @@ const english: Record<string, string> = {
   "Cỡ chữ": "Font size",
   "Kiểu chữ": "Typeface",
   "Literata · Sách": "Literata · Books",
-  "Atkinson · Dễ đọc": "Atkinson · Accessible",
   "Đơn cách": "Monospace",
   "Căn lề": "Alignment",
   "Trái": "Left",

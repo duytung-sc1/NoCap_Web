@@ -36,6 +36,23 @@ afterEach(() => {
 })
 
 describe('document reader restoration', () => {
+  it.each([
+    { language: 'vi-VN', ui: 'en' as const, expected: 'Be Vietnam Pro' },
+    { language: 'en-US', ui: 'vi' as const, expected: 'Atkinson Hyperlegible' },
+    { language: undefined, ui: 'en' as const, expected: 'Be Vietnam Pro' },
+  ])('uses document language $language for sans reading with $ui controls', async ({ language, ui, expected }) => {
+    const text = 'Tiếng Việt: Nguyễn, trường, quyền riêng tư, ĐỖ. English text.'
+    const bytes = new TextEncoder().encode(text).buffer as ArrayBuffer
+    const book = { id: 'qa-text', title: 'QA', author: 'QA', format: 'TXT', language }
+    const { rerender } = render(<ReaderPane {...base} book={book} bytes={bytes} lang={ui} fontFamily="sans" />)
+    const paragraph = await screen.findByText(text)
+    expect(paragraph.closest('article')?.style.fontFamily).toMatch(new RegExp(`^"${expected}"`))
+
+    // Changing only the controls must keep the document's typeface and content.
+    rerender(<ReaderPane {...base} book={book} bytes={bytes} lang={ui === 'vi' ? 'en' : 'vi'} fontFamily="sans" />)
+    expect(screen.getByText(text).closest('article')?.style.fontFamily).toMatch(new RegExp(`^"${expected}"`))
+  })
+
   it('never renders or publishes an out-of-range page restored from an older PDF', async () => {
     render(<ReaderPane {...base} book={{ id: 'qa-pdf', title: 'QA', author: 'QA', format: 'PDF' }} bytes={new ArrayBuffer(20)} initial={JSON.stringify({ type: 'PDF', pageNumber: 99 })} />)
     await screen.findByText('Trang 3 / 3')
