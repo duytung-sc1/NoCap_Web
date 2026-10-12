@@ -4,7 +4,8 @@ export const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'https://nocap-ebo
 
 export class ApiError extends Error {
   status: number
-  constructor(status: number, message: string) { super(message); this.status = status }
+  code?: string
+  constructor(status: number, message: string, code?: string) { super(message); this.status = status; this.code = code }
 }
 
 class RequestTimeoutError extends Error {}
@@ -44,8 +45,8 @@ async function fetchWithTimeout<T>(input: RequestInfo | URL, init: RequestInit, 
 }
 
 async function parseError(response: Response): Promise<never> {
-  const result = await response.json().catch(() => null) as { error?: { message?: string } } | null
-  throw new ApiError(response.status, result?.error?.message || `Máy chủ trả về lỗi ${response.status}`)
+  const result = await response.json().catch(() => null) as { error?: { message?: string; code?: string } } | null
+  throw new ApiError(response.status, result?.error?.message || `Máy chủ trả về lỗi ${response.status}`, result?.error?.code)
 }
 
 export async function api<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {

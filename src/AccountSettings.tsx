@@ -23,10 +23,11 @@ interface Props {
   onEditName: () => void
   onDeleteAccount: () => void
   onPaid: (entitlement: Entitlement) => void
+  onAdmin?: () => void
 }
 
 export function AccountSettings({ session, entitlement, lang, now, section, onSectionChange, comfort,
-  onComfortChange, onSignIn, onSignOut, onEditName, onDeleteAccount, onPaid }: Props) {
+  onComfortChange, onSignIn, onSignOut, onEditName, onDeleteAccount, onPaid, onAdmin }: Props) {
   const curT = t[lang]
   const labels = curT.accountPage
   const { fontSize, fontFamily, textAlignment, theme } = comfort
@@ -67,6 +68,7 @@ export function AccountSettings({ session, entitlement, lang, now, section, onSe
       <div className="settings-grid account-settings-grid">
         <div id="account-panel-profile" className={`account-settings-panel account-settings-profile ${session ? 'has-session' : ''} ${section === 'profile' ? 'active' : ''}`}>
           <section className="settings-card account-profile-card">
+            {onAdmin && <button type="button" className="secondary" onClick={onAdmin}><ShieldAlert size={15} />{lang === 'vi' ? 'Mở khu vực quản trị' : 'Open administration'}</button>}
             <div className="account-profile-heading">
               <h2>{labels.accountHeading}</h2>
               {session && <button type="button" className="secondary account-profile-desktop" onClick={onEditName}><Edit3 size={15} />{labels.editDisplayName}</button>}

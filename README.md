@@ -38,6 +38,13 @@ especially for HTML and `sw.js`, so installed clients can receive updates.
 Authenticated API requests bypass service-worker caching and use `no-store`.
 No admin credentials or payment-confirmation secrets belong in this bundle.
 
+Administrator accounts can use `/admin` after ordinary Web sign-in. The server
+checks the existing administrator identity list; regular users cannot use its
+APIs. This workspace reuses the backend dashboard operations and shared D1/R2
+data. The separate backend dashboard remains available for app administration.
+See [Web administration integration](docs/web-admin-integration-2026-10-12.md)
+for the authentication contract, available functions and validation.
+
 ## Navigation and documents
 
 - `/`, `/explore`, `/library`, `/memory`, `/stats`, `/account`.

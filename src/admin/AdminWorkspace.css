@@ -1,0 +1,66 @@
+.admin-workspace { max-width: 1440px; margin: 12px auto 40px; color: var(--ink, #152b3d); }
+.admin-workspace-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 32px; }
+.admin-workspace-heading h1 { font-family: 'Literata Variable', serif; font-size: clamp(26px, 3vw, 38px); margin: 10px 0; }
+.admin-workspace-heading p { line-height: 1.7; margin: 8px 0; }
+.admin-identity { display: grid; gap: 6px; text-align: right; font-size: 13px; overflow-wrap: anywhere; }
+.admin-identity span { color: #526a7b; }
+.admin-workspace-layout { display: grid; grid-template-columns: 205px minmax(0, 1fr); gap: 28px; }
+.admin-navigation { display: flex; flex-direction: column; gap: 7px; align-self: start; position: sticky; top: 95px; }
+.admin-navigation button { display: flex; align-items: center; gap: 10px; border: none; border-radius: 10px; background: transparent; padding: 13px 12px; text-align: left; color: inherit; font-size: 13px; cursor: pointer; }
+.admin-navigation button[aria-current=page] { background: #e2f3ee; color: #087d6d; font-weight: 700; }
+.admin-navigation button:hover { background: #eef5f2; }
+.admin-main { background: rgba(255, 255, 255, .94); border: 1px solid #dce3e4; border-radius: 18px; padding: clamp(16px, 2.5vw, 30px); min-width: 0; min-height: 420px; }
+.admin-heading-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
+.admin-heading-row h2 { margin: 0; font-size: 22px; }
+.admin-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.admin-workspace .secondary, .admin-workspace .primary { min-height: 38px; white-space: normal; text-align: center; font-size: 12px; }
+.admin-workspace button:disabled { cursor: default; opacity: .55; }
+.admin-search { display: flex; gap: 10px; margin-bottom: 20px; }
+.admin-workspace .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.admin-search input { flex: 1; min-width: 0; }
+.admin-workspace input:not([type=checkbox]), .admin-workspace textarea, .admin-workspace select { width: 100%; border: 1px solid #cbd7dc; border-radius: 8px; padding: 10px 12px; background: #fff; color: #152b3d; font: inherit; font-size: 13px; }
+.admin-workspace input:read-only { background: #f4f6f7; }
+.admin-workspace :focus-visible { outline: 2px solid #0a9580; outline-offset: 3px; }
+.admin-table-wrap { overflow: auto; border: 1px solid #e1e7e9; border-radius: 12px; margin: 20px 0; }
+.admin-table-wrap table { width: 100%; border-collapse: collapse; min-width: 630px; font-size: 12px; }
+.admin-table-wrap th { background: #f7f9f8; font-weight: 600; color: #526a7b; }
+.admin-table-wrap td, .admin-table-wrap th { padding: 14px; text-align: left; vertical-align: top; border-bottom: 1px solid #e1e7e9; overflow-wrap: anywhere; max-width: 360px; }
+.admin-table-wrap th { overflow-wrap: normal; white-space: nowrap; }
+.admin-table-wrap tr:last-child td { border-bottom: none; }
+.admin-table-wrap small { display: block; color: #637a89; font-size: 11px; line-height: 1.7; }
+.admin-table-wrap .admin-actions { min-width: 180px; }
+.admin-users-table { table-layout: fixed; }
+.admin-table-wrap .admin-users-table { min-width: 860px; font-size: 13px; line-height: 1.5; }
+.admin-users-table th, .admin-users-table td { padding: 14px 12px; }
+.admin-users-table th:nth-child(1) { width: 22%; }
+.admin-users-table th:nth-child(2) { width: 11%; }
+.admin-users-table th:nth-child(3) { width: 16%; }
+.admin-users-table th:nth-child(4) { width: 22%; }
+.admin-users-table th:nth-child(5) { width: 29%; }
+.admin-users-table td:nth-child(2) { white-space: nowrap; overflow-wrap: normal; }
+.admin-users-table small { font-size: 12px; line-height: 1.6; }
+.admin-users-table .admin-account-email { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.admin-users-table .admin-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); min-width: 0; align-items: stretch; }
+.admin-users-table .admin-actions button { padding: 8px 10px; line-height: 1.4; }
+.admin-badge { display: inline-block; margin-top: 7px; padding: 3px 9px; border-radius: 12px; background: #e2f3ee; color: #087d6d; }
+.admin-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 14px; }
+.admin-metric { border: 1px solid #dce3e4; border-radius: 12px; padding: 20px; display: grid; gap: 12px; }
+.admin-metric span { font-size: 12px; color: #526a7b; }
+.admin-metric strong { font-size: 30px; }
+.admin-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 18px; font-size: 12px; }
+.admin-notice { border: 1px solid #bfd7d1; background: #eef8f5; padding: 14px; border-radius: 10px; font-size: 13px; line-height: 1.7; }
+.admin-modal-shade { z-index: 1100; }
+.admin-dialog { max-width: 780px; width: min(780px, 94vw); max-height: 90dvh; overflow-y: auto; }
+.admin-dialog fieldset { padding: 0; border: 0; margin: 0; min-width: 0; }
+.admin-form-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.admin-form-fields label { display: grid; gap: 7px; font-size: 12px; font-weight: 600; }
+.admin-form-wide { grid-column: 1 / -1; }
+.admin-form-fields .admin-checkbox { display: flex; align-items: center; gap: 10px; }
+.admin-checkbox input { width: 17px; height: 17px; accent-color: #0a9580; }
+.admin-form-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
+.admin-form-error { color: #a4262c; font-size: 13px; line-height: 1.7; }
+.admin-avatar-preview { display: block; width: 96px; height: 96px; object-fit: contain; margin: 16px 0; border-radius: 12px; }
+.admin-access-gate { padding: 50px 20px; text-align: center; }
+.admin-access-gate .admin-actions { justify-content: center; }
+@media (max-width: 1050px) { .admin-workspace-layout { grid-template-columns: 1fr; gap: 18px; } .admin-navigation { position: static; flex-direction: row; flex-wrap: wrap; } }
+@media (max-width: 600px) { .admin-workspace-heading { flex-direction: column; gap: 12px; } .admin-identity { text-align: left; } .admin-form-fields { grid-template-columns: 1fr; } .admin-navigation button { padding: 10px; font-size: 12px; } .admin-dialog { padding: 22px 16px; } }

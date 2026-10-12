@@ -2,7 +2,7 @@ import { expect, it } from 'vitest'
 import { parseRoute, routePath, type Page } from './routing'
 
 it('round-trips every page URL, including the requested /explore path', () => {
-  for (const page of ['home', 'catalog', 'library', 'memory', 'stats', 'account'] as Page[]) {
+  for (const page of ['home', 'catalog', 'library', 'memory', 'stats', 'account', 'admin'] as Page[]) {
     const route = { kind: 'page' as const, page }
     expect(parseRoute(routePath(route))).toEqual(route)
     expect(parseRoute(`${routePath(route)}/`)).toEqual(route)

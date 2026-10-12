@@ -19,10 +19,13 @@ const StealthReader = lazy(() => importWithChunkRecovery(() => import('./stealth
 import type { Page } from './routing'
 import { useAppRoute } from './useAppRoute'
 import { AccountSettings, type AccountSettingsSection } from './AccountSettings'
+import { useAdminAccess } from './admin/useAdminAccess'
 import { AnnotationEditor, AnnotationDeleteDialog } from './AnnotationDialogs'
 import { ProRequiredDialog } from './ProRequiredDialog'
 import { addAnnotationReview, annotationId, deleteAnnotation, rateAnnotationReview, updateAnnotation, type HighlightColor } from './annotations'
 import { allowsPro, proAccessExpiresAt, verifyProAccess, type ProFeature } from './entitlements'
+
+const AdminWorkspace = lazy(() => import('./admin/AdminWorkspace'))
 import { readingActivity } from './readingStats'
 import { translate } from './uiText'
 import { ImportDocumentDialog } from './ImportDocumentDialog'
@@ -111,6 +114,8 @@ function App() {
   const [loadedProfile, setLoadedProfile] = useState<string | null>(null)
   const [session, setSession] = useState<Session | null>(() => readSession())
   const sessionToken = session?.token
+  const { access: adminAccess, reload: reloadAdminAccess } = useAdminAccess(sessionToken)
+  const isAdmin = adminAccess?.status === 'allowed'
   const profile = profileFor(session)
   const [catalog, setCatalog] = useState<Book[]>([])
   const [categories, setCategories] = useState<Category[]>([])
@@ -732,7 +737,7 @@ function App() {
     setRecords([]); setLocalFiles([]); setOfflineIds(new Set())
     sessionRef.current = value; profileRef.current = profileFor(value)
     saveSession(value); setSession(value); setAuthOpen(false)
-    if (route.kind !== 'book' && route.kind !== 'read') setPage('home')
+    if (route.kind !== 'book' && route.kind !== 'read' && !(route.kind === 'page' && route.page === 'admin')) setPage('home')
     setNotice(curT.auth.signedIn(value.user.email))
   }
 
@@ -1397,11 +1402,12 @@ async function sha256Hex(file: Blob): Promise<string> {
     { id: 'memory', label: curT.nav.memory, icon: Highlighter },
     { id: 'stats', label: curT.nav.stats, icon: BarChart3 },
     { id: 'account', label: curT.nav.account, icon: Settings2 },
+    ...(isAdmin ? [{ id: 'admin' as const, label: lang === 'vi' ? 'Quản trị' : 'Administration', icon: Settings2 }] : []),
   ]
 
   return <div className="app-shell">
     <div className="analog-grain-overlay" aria-hidden="true" />
-    <OceanWaves />
+    <OceanWaves enabled={!reader} />
     <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
       <div className="brand"><div className="brand-mark"><BookOpen size={24} /></div><div><strong>NoCap</strong><span>Quiet Knowledge Workspace</span></div><button className="mobile-close icon-button" onClick={() => setSidebarOpen(false)} aria-label={translate("Đóng menu", lang)}><X size={20} /></button></div>
       <div className="sidebar-caption">{curT.nav.mySpace}</div>
@@ -1426,6 +1432,7 @@ async function sha256Hex(file: Blob): Promise<string> {
           <button className={`swiss-nav-link ${page === 'memory' ? 'active' : ''}`} onClick={() => { setPage('memory'); setQuery(''); setCategory('all') }}>{curT.nav.memory}</button>
           <button className={`swiss-nav-link ${page === 'stats' ? 'active' : ''}`} onClick={() => { setPage('stats'); setQuery(''); setCategory('all') }}>{curT.nav.stats}</button>
           <button className={`swiss-nav-link ${page === 'account' ? 'active' : ''}`} onClick={() => { setPage('account'); setQuery(''); setCategory('all') }}>{curT.nav.account}</button>
+          {isAdmin && <button className={`swiss-nav-link ${page === 'admin' ? 'active' : ''}`} onClick={() => setPage('admin')}>{lang === 'vi' ? 'Quản trị' : 'Admin'}</button>}
         </nav>
         <div className="swiss-header-actions">
           <button
@@ -1617,6 +1624,40 @@ async function sha256Hex(file: Blob): Promise<string> {
       </>}
 
       <div className="content">
+        {page === 'admin' && (session && adminAccess?.status === 'allowed'
+          ? <Suspense fallback={<p role="status">{lang === 'vi' ? 'Đang mở khu vực quản trị…' : 'Opening administration…'}</p>}><AdminWorkspace
+            key={session.token}
+            token={session.token}
+            admin={adminAccess.admin}
+            lang={lang}
+            onSignIn={() => setAuthOpen(true)}
+            onAccessLost={reloadAdminAccess}
+            onCatalogChanged={() => {
+              const token = session.token
+              void getCatalog().then(result => { if (sessionRef.current?.token === token) { setCatalog(result.books); setCategories(result.categories) } }).catch(() => {})
+            }}
+            onProfileChanged={() => {
+              const token = session.token
+              reloadAdminAccess()
+              void getUser(token).then(result => {
+                const current = sessionRef.current
+                if (current?.token !== token) return
+                const updated = { ...current, user: result.user }
+                saveSession(updated); setSession(updated)
+              }).catch(() => {})
+            }}
+          /></Suspense>
+          : <div className="empty-state admin-access-gate">
+            <h2>{lang === 'vi' ? 'Khu vực quản trị' : 'Administration'}</h2>
+            <p>{!session ? (lang === 'vi' ? 'Đăng nhập bằng tài khoản có quyền admin để tiếp tục.' : 'Sign in with an administrator account to continue.')
+              : !adminAccess ? (lang === 'vi' ? 'Đang kiểm tra quyền quản trị…' : 'Checking administrator access…')
+              : adminAccess.status === 'error' ? (lang === 'vi' ? 'Chưa kiểm tra được quyền quản trị. Hãy thử lại.' : 'Could not verify administrator access. Try again.')
+              : (lang === 'vi' ? 'Tài khoản này không có quyền quản trị.' : 'This account does not have administrator access.')}</p>
+            <div className="admin-actions">{!session && <button className="primary" onClick={() => setAuthOpen(true)}>{curT.header.login}</button>}
+              {session && adminAccess?.status === 'error' && <button className="secondary" onClick={reloadAdminAccess}>{lang === 'vi' ? 'Thử lại' : 'Retry'}</button>}
+              <button className="secondary" onClick={() => setPage('home')}>{curT.nav.home}</button>
+            </div>
+          </div>)}
         {page === 'notFound' && <div className="empty-state"><h2>{lang === 'vi' ? 'Không tìm thấy trang' : 'Page not found'}</h2><button className="secondary" onClick={() => setPage('home')}>{lang === 'vi' ? 'Về trang chủ' : 'Go home'}</button></div>}
         {(route.kind === 'book' || route.kind === 'read') && !routeBook && <div className="empty-state">
           <h2>{!catalogReady || loadedProfile !== profile || syncing ? (lang === 'vi' ? 'Đang tìm sách…' : 'Finding book…') : (lang === 'vi' ? 'Không tìm thấy sách trong thư viện hiện tại' : 'Book not found in this library')}</h2>
@@ -1757,6 +1798,7 @@ async function sha256Hex(file: Blob): Promise<string> {
           onEditName={() => { setEditNameInput(session?.user.displayName || ''); setEditNameOpen(true) }}
           onDeleteAccount={() => setDeleteAccountOpen(true)}
           onPaid={setEntitlement}
+          onAdmin={isAdmin ? () => setPage('admin') : undefined}
         />}
       </div>
 

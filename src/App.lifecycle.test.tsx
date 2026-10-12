@@ -4,12 +4,16 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import type { LocalFile, Session } from './types'
 import { readSession, saveSession, SESSION_STORAGE_KEY } from './store'
 import App from './App'
+import { ApiError } from './api'
 
 const fixtures = vi.hoisted(() => ({
-  login: vi.fn(), googleLogin: vi.fn(), getFiles: vi.fn(), mutate: vi.fn(), loadBytes: vi.fn(), downloadHttps: vi.fn(), readerThrows: false,
+  login: vi.fn(), googleLogin: vi.fn(), getFiles: vi.fn(), mutate: vi.fn(), loadBytes: vi.fn(), downloadHttps: vi.fn(), adminIdentity: vi.fn(), adminRequest: vi.fn(), readerThrows: false,
 }))
 vi.mock('./httpsImport', async importOriginal => ({
   ...await importOriginal<typeof import('./httpsImport')>(), downloadHttpsPublication: fixtures.downloadHttps,
+}))
+vi.mock('./admin/api', async importOriginal => ({
+  ...await importOriginal<typeof import('./admin/api')>(), getAdminIdentity: fixtures.adminIdentity, adminRequest: fixtures.adminRequest,
 }))
 vi.mock('./api', async importOriginal => ({
   ...await importOriginal<typeof import('./api')>(),
@@ -69,11 +73,46 @@ beforeEach(() => {
   fixtures.login.mockReset(); fixtures.googleLogin.mockReset()
   fixtures.loadBytes.mockReset().mockResolvedValue(new TextEncoder().encode('QA document').buffer)
   fixtures.downloadHttps.mockReset()
+  fixtures.adminIdentity.mockReset().mockRejectedValue(new ApiError(403, 'Not an admin', 'ADMIN_REQUIRED'))
+  fixtures.adminRequest.mockReset().mockResolvedValue({ books: 4, categories: 2, users: 3, activeUsers: 3, syncRecords: 2, syncConflicts: 0, proSnapshots: 1, playConfigured: false })
   fixtures.readerThrows = false
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks(); delete (window as unknown as { google?: unknown }).google })
 
 describe('account and reader lifecycle', () => {
+  it('keeps the /admin deep link after sign-in and opens the server-approved workspace', async () => {
+    window.history.replaceState(null, '', '/admin')
+    fixtures.login.mockResolvedValue(session)
+    fixtures.adminIdentity.mockResolvedValue({ id: session.user.id, email: session.user.email, name: 'QA Admin', photoUrl: null, adminExpiresAt: Date.now() + 3600000 })
+    render(<App />)
+    await openLogin()
+    expect(await screen.findByRole('heading', { name: 'Quản trị thư viện' })).toBeTruthy()
+    expect(window.location.pathname).toBe('/admin')
+    expect(fixtures.adminRequest).toHaveBeenCalledWith(session.token, 'overview', expect.any(AbortSignal))
+  })
+
+  it('denies ordinary accounts a directly entered /admin route', async () => {
+    saveSession(session); window.history.replaceState(null, '', '/admin')
+    render(<App />)
+    expect(await screen.findByText('Tài khoản này không có quyền quản trị.')).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: 'Quản trị thư viện' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Mở khu vực quản trị' })).toBeNull()
+    expect(fixtures.adminRequest).not.toHaveBeenCalled()
+  })
+
+  it('discards late administrator verification after another tab signs out', async () => {
+    const pending = deferred<import('./admin/api').AdminIdentity>()
+    fixtures.adminIdentity.mockReturnValue(pending.promise)
+    saveSession(session)
+    render(<App />)
+    await waitFor(() => expect(fixtures.adminIdentity).toHaveBeenCalled())
+    saveSession(null)
+    fireEvent(window, new StorageEvent('storage', { key: SESSION_STORAGE_KEY, storageArea: localStorage }))
+    await act(async () => { pending.resolve({ id: session.user.id, email: session.user.email, photoUrl: null, adminExpiresAt: Date.now() + 3600000 }); await pending.promise })
+    expect(screen.queryByRole('button', { name: 'Quản trị' })).toBeNull()
+    expect(fixtures.adminIdentity.mock.calls[0][1].aborted).toBe(true)
+  })
+
   it('closes and cancels a private HTTPS import when another tab signs out', async () => {
     saveSession(session)
     const pending = deferred<File>(); fixtures.downloadHttps.mockReturnValue(pending.promise)

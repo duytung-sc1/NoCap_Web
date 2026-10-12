@@ -1,7 +1,7 @@
-export type Page = 'home' | 'catalog' | 'library' | 'memory' | 'stats' | 'account'
+export type Page = 'home' | 'catalog' | 'library' | 'memory' | 'stats' | 'account' | 'admin'
 export type AppRoute = { kind: 'page'; page: Page } | { kind: 'book' | 'read'; bookId: string } | { kind: 'notFound' }
 
-const paths: Record<Page, string> = { home: '/', catalog: '/explore', library: '/library', memory: '/memory', stats: '/stats', account: '/account' }
+const paths: Record<Page, string> = { home: '/', catalog: '/explore', library: '/library', memory: '/memory', stats: '/stats', account: '/account', admin: '/admin' }
 
 export function routePath(route: Exclude<AppRoute, { kind: 'notFound' }>): string {
   return route.kind === 'page' ? paths[route.page] : `/${route.kind === 'read' ? 'read' : 'books'}/${encodeURIComponent(route.bookId)}`
