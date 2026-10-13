@@ -1394,7 +1394,7 @@ async function sha256Hex(file: Blob): Promise<string> {
 
   return <div className="app-shell">
     <div className="analog-grain-overlay" aria-hidden="true" />
-    <OceanWaves enabled={!reader} />
+    <OceanWaves enabled={!reader && !reviewOpen} />
     <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
       <div className="brand"><div className="brand-mark"><BookOpen size={24} /></div><div><strong>NoCap</strong><span>Quiet Knowledge Workspace</span></div><button className="mobile-close icon-button" onClick={() => setSidebarOpen(false)} aria-label={translate("Đóng menu", lang)}><X size={20} /></button></div>
       <div className="sidebar-caption">{curT.nav.mySpace}</div>
@@ -1861,7 +1861,13 @@ async function sha256Hex(file: Blob): Promise<string> {
 
     {noteOpen && reader && <div className="modal-shade" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setNoteOpen(false) }}><div className="dialog" role="dialog" aria-modal="true" aria-labelledby="note-title"><button className="icon-button dialog-close" onClick={() => setNoteOpen(false)} aria-label={translate("Đóng", lang)}><X size={19} /></button><p className="eyebrow">READING MEMORY</p><h2 id="note-title">{translate("Lưu điều đáng nhớ", lang)}</h2>{selection?.text && <blockquote className="selection-preview">“{selection.text.slice(0, 300)}{selection.text.length > 300 ? '…' : ''}”</blockquote>}<div className="color-selector"><span>{translate("Màu highlight:", lang)}</span>{(['YELLOW', 'GREEN', 'BLUE', 'PINK', 'PURPLE'] as const).map(c => <button key={c} type="button" className={`color-dot ${c.toLowerCase()} ${noteColor === c ? 'active' : ''}`} onClick={() => setNoteColor(c)} aria-label={`${translate('Màu', lang)} ${c}`} />)}</div><label htmlFor="note-input">{translate("Ghi chú của bạn", lang)}</label><textarea id="note-input" value={noteText} onChange={event => setNoteText(event.target.value)} maxLength={10000} rows={5} placeholder={translate("Điều gì khiến bạn muốn giữ đoạn này?", lang)} autoFocus /><div className="dialog-actions"><button className="secondary" onClick={() => setNoteOpen(false)}>{translate("Hủy", lang)}</button><button className="primary" onClick={() => void saveNote()} disabled={(!noteText.trim() && !selection?.text) || noteSaving}><Check size={17} /> {noteSaving ? translate("Đang lưu…", lang) : noteText.trim() ? translate("Lưu ghi chú", lang) : translate("Lưu đoạn trích", lang)}</button></div></div></div>}
 
-    {reviewOpen && reviewQueue.every(card => card.profile === profile) && <div className="modal-shade" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setReviewOpen(false) }}><div className="flashcard-modal" role="dialog" aria-modal="true" aria-label={translate("Ôn tập ghi chú Flashcards", lang)}><button className="icon-button dialog-close" onClick={() => setReviewOpen(false)} aria-label={translate("Đóng", lang)}><X size={19} /></button>{reviewIndex < reviewQueue.length ? (() => {
+    {reviewOpen && reviewQueue.every(card => card.profile === profile) && <div className="modal-shade" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setReviewOpen(false) }}><div className="flashcard-modal" role="dialog" aria-modal="true" aria-label={translate("Ôn tập ghi chú Flashcards", lang)}>
+      <div className="flashcard-header">
+        <div className="flashcard-header-copy"><p className="eyebrow">{translate('ÔN TẬP GHI CHÚ', lang)}</p><p className="flashcard-count">{reviewIndex < reviewQueue.length ? `${translate('Thẻ', lang)} ${reviewIndex + 1} / ${reviewQueue.length}` : translate('Đã hoàn thành', lang)}</p></div>
+        <span className="flashcard-mastered"><strong>{reviewStats.mastered}</strong><span>{translate('đã thuộc', lang)}</span></span>
+        <button type="button" className="icon-button flashcard-close" onClick={() => setReviewOpen(false)} aria-label={translate('Đóng', lang)} autoFocus><X size={20} /></button>
+      </div>
+      {reviewIndex < reviewQueue.length ? (() => {
       const card = reviewQueue[reviewIndex]
       const book = books.find(b => b.id === card.payload.book_id)
       const quote = toText(card.payload.text)
@@ -1869,38 +1875,36 @@ async function sha256Hex(file: Blob): Promise<string> {
       const chapter = toText(card.payload.chapter_title)
       const progressPct = Math.round((reviewIndex / reviewQueue.length) * 100)
       return <>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><p className="eyebrow" style={{ margin: 0 }}>{translate("FLASHCARD REVIEW · THẺ", lang)} {reviewIndex + 1}/{reviewQueue.length}</p><span style={{ fontSize: '11px', fontWeight: 700, color: '#167e70' }}>{reviewStats.mastered}  {translate("đã thuộc", lang)}</span></div>
-        <div className="flashcard-progress-bar"><span style={{ width: `${progressPct}%` }} /></div>
-        <div className={`flashcard ${cardFlipped ? 'flipped' : ''}`} onClick={() => setCardFlipped(!cardFlipped)}>
+        <div className="flashcard-progress-bar" role="progressbar" aria-label={translate('Tiến độ ôn tập', lang)} aria-valuemin={0} aria-valuemax={reviewQueue.length} aria-valuenow={reviewIndex}><span style={{ width: `${progressPct}%` }} /></div>
+        <div className={`flashcard ${cardFlipped ? 'flipped' : ''}`} role="button" tabIndex={0} aria-label={cardFlipped ? translate('Xem lại mặt trước', lang) : translate('Lật thẻ xem ghi chú', lang)} aria-pressed={cardFlipped} onClick={() => setCardFlipped(!cardFlipped)} onKeyDown={event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); setCardFlipped(value => !value) } }}>
           <div className="flashcard-inner">
-            <div className="flashcard-front">
-              <div className="flashcard-book">📚 {book?.title || translate("Tài liệu", lang)} {chapter ? `· ${chapter}` : ''}</div>
+            <div className="flashcard-front" aria-hidden={cardFlipped}>
+              <div className="flashcard-book"><span className="flashcard-book-title" title={book?.title}>{book?.title || translate('Tài liệu', lang)}</span>{chapter && <span className="flashcard-chapter">{chapter}</span>}</div>
               <div className="flashcard-quote">“{quote || note || translate("Ghi nhớ quan trọng", lang)}”</div>
-              <div className="flashcard-hint">{translate("💡 Bấm thẻ để lật xem ghi chú suy ngẫm", lang)}</div>
+              <div className="flashcard-hint">{translate('Bấm thẻ để xem ghi chú', lang)}</div>
             </div>
-            <div className="flashcard-back">
-              <div className="flashcard-book" style={{ opacity: 0.7 }}>{translate("GHI CHÚ & SUY NGẪM", lang)}</div>
+            <div className="flashcard-back" aria-hidden={!cardFlipped}>
+              <div className="flashcard-book">{translate('GHI CHÚ & SUY NGẪM', lang)}</div>
               <div className="flashcard-note-title">{translate("Nội dung ghi chú của bạn:", lang)}</div>
               <div className="flashcard-note">{note || translate("Không có ghi chú riêng; hãy ghi nhớ lại đoạn trích trên.", lang)}</div>
-              <div className="flashcard-hint" style={{ marginTop: '14px' }}>{translate("Đánh giá khả năng ghi nhớ bên dưới:", lang)}</div>
+              <div className="flashcard-hint">{translate('Đánh giá khả năng ghi nhớ bên dưới:', lang)}</div>
             </div>
           </div>
         </div>
-        <button className="flip-card-btn" onClick={() => setCardFlipped(!cardFlipped)}><RotateCcw size={15} style={{ display: 'inline', marginRight: '6px' }} /> {cardFlipped ? translate("Xem lại mặt trước", lang) : translate("Lật thẻ xem ghi chú", lang)}</button>
+        <button className="flip-card-btn" onClick={() => setCardFlipped(!cardFlipped)}><RotateCcw size={15} /> {cardFlipped ? translate('Xem lại mặt trước', lang) : translate('Lật thẻ xem ghi chú', lang)}</button>
         <div className="flashcard-actions">
-          <button className="rating-btn again" onClick={() => void handleFlashcardRating('again')}>{translate("🔴 Cần ôn lại", lang)}</button>
-          <button className="rating-btn good" onClick={() => void handleFlashcardRating('good')}>{translate("🟢 Đã nhớ rõ", lang)}</button>
+          <button className="rating-btn again" onClick={() => void handleFlashcardRating('again')}>{translate('Cần ôn lại', lang)}</button>
+          <button className="rating-btn good" onClick={() => void handleFlashcardRating('good')}>{translate('Đã nhớ rõ', lang)}</button>
         </div>
       </>
     })() : <div className="review-complete">
-      <CheckCircle2 size={54} color="#167e70" style={{ margin: '0 auto' }} />
       <h2>{translate("Hoàn thành phiên ôn tập!", lang)}</h2>
       <p className="muted">{translate("Tuyệt vời! Bạn đã xem lại toàn bộ các thẻ ghi chú trong phiên này.", lang)}</p>
       <div className="review-stats-row">
-        <div className="review-stat-pill" style={{ color: '#166534', background: '#dcfce7' }}>{translate("✓ Đã nhớ:", lang)} {reviewStats.mastered}  {translate("thẻ", lang)}</div>
-        <div className="review-stat-pill" style={{ color: '#991b1b', background: '#fee2e2' }}>{translate("↺ Ôn lại:", lang)} {reviewStats.reviewAgain}  {translate("lần", lang)}</div>
+        <div className="review-stat-pill">{translate('Đã nhớ:', lang)} {reviewStats.mastered} {lang === 'en' && reviewStats.mastered === 1 ? 'card' : translate('thẻ', lang)}</div>
+        <div className="review-stat-pill">{translate('Ôn lại:', lang)} {reviewStats.reviewAgain} {lang === 'en' && reviewStats.reviewAgain === 1 ? 'time' : translate('lần', lang)}</div>
       </div>
-      <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginTop: '16px' }}>
+      <div className="review-complete-actions">
         <button className="secondary" onClick={() => void startFlashcardReview()}>{translate("Ôn tập lại", lang)}</button>
         <button className="primary" onClick={() => setReviewOpen(false)}>{translate("Hoàn tất", lang)}</button>
       </div>
