@@ -2,7 +2,7 @@ import type { Entitlement } from './api'
 import type { Session } from './types'
 
 export type ProFeature = 'ADVANCED_READING_MEMORY' | 'KNOWLEDGE_EXPORT' | 'STEALTH_READING'
-export const freeFeatures = ['LOCAL_READING', 'NOTES', 'BOOKMARKS', 'HIGHLIGHTS', 'READING_MEMORY', 'MARKDOWN_EXPORT'] as const
+export const freeFeatures = ['LOCAL_READING', 'NOTES', 'BOOKMARKS', 'HIGHLIGHTS', 'READING_MEMORY'] as const
 
 /** Matches Android: account-bound, active, unexpired and recently verified. */
 export function allowsPro(entitlement: Entitlement | null, session: Session | null, now = Date.now()): boolean {

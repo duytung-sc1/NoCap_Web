@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import type { LocalFile, Session } from './types'
+import type { LocalFile, Session, SyncRecord } from './types'
 import { readSession, saveSession, SESSION_STORAGE_KEY } from './store'
 import App from './App'
 import { ApiError } from './api'
 
 const fixtures = vi.hoisted(() => ({
-  login: vi.fn(), googleLogin: vi.fn(), getFiles: vi.fn(), mutate: vi.fn(), loadBytes: vi.fn(), downloadHttps: vi.fn(), adminIdentity: vi.fn(), adminRequest: vi.fn(), readerThrows: false,
+  login: vi.fn(), googleLogin: vi.fn(), getFiles: vi.fn(), mutate: vi.fn(), loadBytes: vi.fn(), downloadHttps: vi.fn(), adminIdentity: vi.fn(), adminRequest: vi.fn(), localRecords: vi.fn(), entitlement: vi.fn(), preparePdf: vi.fn(), saveDownload: vi.fn(), readerThrows: false,
 }))
 vi.mock('./httpsImport', async importOriginal => ({
   ...await importOriginal<typeof import('./httpsImport')>(), downloadHttpsPublication: fixtures.downloadHttps,
@@ -20,7 +20,7 @@ vi.mock('./api', async importOriginal => ({
   getCatalog: async () => ({ books: [], categories: [] }),
   login: fixtures.login, loginWithGoogle: fixtures.googleLogin,
   getUser: async () => ({ user: session.user }),
-  getEntitlement: async () => ({ userId: session.user.id, plan: 'FREE' }),
+  getEntitlement: fixtures.entitlement,
   getSePayPlans: async () => ({ plans: [] }),
   loadBookBytes: fixtures.loadBytes,
 }))
@@ -33,11 +33,15 @@ vi.mock('./store', async importOriginal => ({
 }))
 vi.mock('./sync', async importOriginal => ({
   ...await importOriginal<typeof import('./sync')>(),
-  localRecords: async () => [], getConflicts: async () => [],
+  localRecords: fixtures.localRecords, getConflicts: async () => [],
   syncNow: async () => ({ conflicts: 0, changes: 0 }),
   connectLiveSync: () => () => {}, mutate: fixtures.mutate,
 }))
 vi.mock('./OceanWaves', () => ({ OceanWaves: () => null }))
+vi.mock('./notesPdf', () => ({ prepareNotesPdf: fixtures.preparePdf }))
+vi.mock('./bookDownload', async importOriginal => ({
+  ...await importOriginal<typeof import('./bookDownload')>(), saveBookDownload: fixtures.saveDownload,
+}))
 vi.mock('./Reader', async () => {
   const { useEffect } = await import('react')
   return { ReaderPane: ({ onLocation }: { onLocation: (location: object) => void }) => {
@@ -76,8 +80,67 @@ beforeEach(() => {
   fixtures.adminIdentity.mockReset().mockRejectedValue(new ApiError(403, 'Not an admin', 'ADMIN_REQUIRED'))
   fixtures.adminRequest.mockReset().mockResolvedValue({ books: 4, categories: 2, users: 3, activeUsers: 3, syncRecords: 2, syncConflicts: 0, proSnapshots: 1, playConfigured: false })
   fixtures.readerThrows = false
+  fixtures.localRecords.mockReset().mockResolvedValue([])
+  fixtures.entitlement.mockReset().mockResolvedValue({ userId: session.user.id, plan: 'FREE' })
+  fixtures.preparePdf.mockReset().mockResolvedValue({ filename: 'notes.pdf', blob: new Blob(['%PDF-1.3'], { type: 'application/pdf' }) })
+  fixtures.saveDownload.mockReset()
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks(); delete (window as unknown as { google?: unknown }).google })
+
+describe('Reading Memory PDF export', () => {
+  async function memory(pro: boolean) {
+    saveSession(session)
+    window.history.replaceState(null, '', '/memory')
+    fixtures.getFiles.mockResolvedValue([file('QA document')])
+    const annotation: SyncRecord = { key: 'ACCOUNT:qa-user:highlights:note', profile: 'ACCOUNT:qa-user', kind: 'highlights', id: 'note', version: 1, deleted: false,
+      payload: { book_id: 'QA document', text: 'Trích dẫn tiếng Việt', note: 'Ghi chú riêng', created_at: Date.now() } }
+    fixtures.localRecords.mockResolvedValue([annotation])
+    if (pro) fixtures.entitlement.mockResolvedValue({ userId: session.user.id, plan: 'PRO', status: 'ACTIVE', updatedAt: Date.now(), expiresAt: Date.now() + 86400000 })
+    render(<App />)
+    return screen.findByRole('button', { name: 'Xuất PDF · Pro' })
+  }
+
+  it('replaces Markdown with PDF and prompts Free accounts without generating a document', async () => {
+    fireEvent.click(await memory(false))
+    expect(await screen.findByText(/Xuất trích dẫn, ghi chú và dấu trang thành tệp PDF cần gói Pro/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /\.md|Markdown/ })).toBeNull()
+    expect(fixtures.preparePdf).not.toHaveBeenCalled()
+    expect(fixtures.saveDownload).not.toHaveBeenCalled()
+  })
+
+  it('downloads one actual PDF result for Pro and prevents repeated concurrent exports', async () => {
+    const pending = deferred<{ filename: string; blob: Blob }>()
+    fixtures.preparePdf.mockReturnValue(pending.promise)
+    const button = await memory(true)
+    fireEvent.click(button); fireEvent.click(button)
+    await waitFor(() => expect(fixtures.preparePdf).toHaveBeenCalledTimes(1))
+    expect(screen.getByRole('button', { name: 'Đang tạo PDF…' }).hasAttribute('disabled')).toBe(true)
+    const download = { filename: 'notes.pdf', blob: new Blob(['%PDF-1.3'], { type: 'application/pdf' }) }
+    await act(async () => { pending.resolve(download); await pending.promise })
+    await waitFor(() => expect(fixtures.saveDownload).toHaveBeenCalledExactlyOnceWith(download))
+    expect(await screen.findByText('Đã xuất trích dẫn và ghi chú ra tệp PDF.')).toBeTruthy()
+  })
+
+  it('discards a generated private PDF when the user signs out in another tab', async () => {
+    const pending = deferred<{ filename: string; blob: Blob }>()
+    fixtures.preparePdf.mockReturnValue(pending.promise)
+    fireEvent.click(await memory(true))
+    await waitFor(() => expect(fixtures.preparePdf).toHaveBeenCalledTimes(1))
+    saveSession(null)
+    fireEvent(window, new StorageEvent('storage', { key: SESSION_STORAGE_KEY, storageArea: localStorage }))
+    await act(async () => { pending.resolve({ filename: 'private.pdf', blob: new Blob(['%PDF-1.3']) }); await pending.promise })
+    expect(fixtures.saveDownload).not.toHaveBeenCalled()
+    expect(screen.queryByText('Đã xuất trích dẫn và ghi chú ra tệp PDF.')).toBeNull()
+  })
+
+  it('releases the export button after a generation error and allows retry', async () => {
+    fixtures.preparePdf.mockRejectedValueOnce(new Error('Font unavailable'))
+    fireEvent.click(await memory(true))
+    expect(await screen.findByText('Không xuất được PDF. Vui lòng thử lại.')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Xuất PDF · Pro' }))
+    await waitFor(() => expect(fixtures.saveDownload).toHaveBeenCalledTimes(1))
+  })
+})
 
 describe('account and reader lifecycle', () => {
   it('keeps the /admin deep link after sign-in and opens the server-approved workspace', async () => {

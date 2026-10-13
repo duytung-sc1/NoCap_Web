@@ -83,21 +83,34 @@ is not changed by this redesign.
 | Feature | Free | Pro |
 | --- | --- | --- |
 | Reading, bookmarks, highlights, note editing/deletion | Yes | Yes |
-| Markdown export | Yes | Yes |
 | Manually add an individual note to the review schedule | Yes | Yes |
 | Basic scheduled review | Yes | Yes |
 | Stealth Reading (Excel, VS Code, office-document disguises) on Web | No | Yes |
 | Automatically generate review cards from saved notes | No | Yes |
-| PDF/Anki note export and quick review | No | Android only; not yet implemented on Web |
+| PDF note export | No | Yes, on Web and Android |
+| Anki note export and quick review | No | Android only; not yet implemented on Web |
 
 The policy follows Android `EntitlementPolicy` and `ReadingMemoryScreen`:
-Markdown/basic review are free; automatic card generation is
-`ADVANCED_READING_MEMORY`. Web checks the server entitlement before automatic
+Basic review is free; automatic card generation is
+`ADVANCED_READING_MEMORY`, and PDF note export is `KNOWLEDGE_EXPORT`.
+Web checks the server entitlement before PDF export, automatic
 creation and every Stealth Reading entry point (book cards, details, settings,
 reader toolbar and F2). Stealth access ends when the account or entitlement
 expires; normal reading remains available. It must belong to the current account, have an accepted status, remain
 unexpired and have been verified within 24 hours. SePay monthly/yearly plans
 are quoted by the backend; only the backend confirms payment.
+
+Reading Memory exports a searchable PDF grouped by book, with highlights, notes,
+bookmark snippets and chapter labels. Existing Markdown in notes becomes actual
+PDF typography, headings, lists and tables; formatting delimiters are not printed.
+Be Vietnam Pro regular/bold/italic/bold-italic fonts are
+embedded for Vietnamese text. The generator and fonts load only when exporting;
+notes and generated PDFs remain on the device. Account changes or expired Pro
+access prevent a pending download. Markdown note export was removed from Web.
+Markdown document imports and original-format document downloads are unaffected.
+PDF generation uses [pdfmake's client API](https://pdfmake.github.io/docs/0.3/getting-started/client-side/methods/).
+The full TTF fonts come from [Google Fonts' Be Vietnam Pro source](https://github.com/google/fonts/tree/main/ofl/bevietnampro)
+under the existing `public/font-licenses/be-vietnam-pro.txt` license.
 
 Reading Memory edits preserve the annotation identity, quotation and locator.
 Deleting an annotation tombstones its linked review cards as well. Account

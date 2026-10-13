@@ -17,7 +17,16 @@ describe('Pro upgrade prompts', () => {
   it('keeps the automatic review-card prompt specific to that feature', () => {
     const html = renderToStaticMarkup(<ProRequiredDialog feature="ADVANCED_READING_MEMORY" lang="en" onClose={() => {}} onPlans={() => {}} />)
     expect(html).toContain('Automatic review-card generation requires an active Pro plan')
-    expect(html).toContain('Markdown export')
+    expect(html).toContain('editing notes')
+    expect(html).not.toContain('Markdown')
     expect(html).not.toContain('Stealth Reading')
+  })
+  it('explains PDF export and keeps ordinary notes free in both languages', () => {
+    for (const lang of ['vi', 'en'] as const) {
+      const html = renderToStaticMarkup(<ProRequiredDialog feature="KNOWLEDGE_EXPORT" lang={lang} onClose={() => {}} onPlans={() => {}} />)
+      expect(html).toContain('PDF')
+      expect(html).not.toContain('Markdown')
+      expect(html).toContain(lang === 'vi' ? 'Xem và sửa ghi chú vẫn miễn phí' : 'Viewing and editing notes remain free')
+    }
   })
 })

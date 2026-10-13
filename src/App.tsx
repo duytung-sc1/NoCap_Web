@@ -155,6 +155,8 @@ function App() {
   const [editingAnnotation, setEditingAnnotation] = useState<SyncRecord | null>(null)
   const [deletingAnnotation, setDeletingAnnotation] = useState<SyncRecord | null>(null)
   const [annotationBusy, setAnnotationBusy] = useState(false)
+  const [pdfExportBusy, setPdfExportBusy] = useState(false)
+  const pdfExportActive = useRef(false)
   const [annotationError, setAnnotationError] = useState('')
   const [proRequiredFeature, setProRequiredFeature] = useState<ProFeature | null>(null)
   const [statsNow, setStatsNow] = useState(ms)
@@ -1201,38 +1203,23 @@ async function sha256Hex(file: Blob): Promise<string> {
     finally { setNoteSaving(false) }
   }
 
-  function exportMarkdown() {
-    if (!annotations.length) return
-    let md = `# NoCap - ${lang === 'vi' ? 'Sổ tay trích dẫn & Ghi chú' : 'Highlights & Notes'}\n\n*${lang === 'vi' ? 'Xuất ngày' : 'Exported on'}: ${new Date().toLocaleDateString(lang === 'vi' ? 'vi-VN' : 'en-US')}*\n\n---\n\n`
-    const booksWithNotes = new Map<string, SyncRecord[]>()
-    for (const ann of annotations) {
-      const bId = ann.payload.book_id as string
-      if (!booksWithNotes.has(bId)) booksWithNotes.set(bId, [])
-      booksWithNotes.get(bId)!.push(ann)
-    }
-    for (const [bId, notes] of booksWithNotes.entries()) {
-      const book = books.find(b => b.id === bId)
-      md += `## 📚 ${book?.title || translate("Tài liệu không tên", lang)}\n`
-      if (book?.author) md += `*${translate('Tác giả', lang)}: ${book.author}*\n\n`
-      for (const item of notes) {
-        const text = toText(item.payload.text)
-        const note = toText(item.payload.note)
-        const chapter = toText(item.payload.chapter_title)
-        const color = toText(item.payload.color) || 'YELLOW'
-        if (text) md += `> ${text.split('\n').join('\n> ')}\n\n`
-        if (note) md += `**${translate('Ghi chú', lang)} [${color}]:** ${note}\n\n`
-        if (chapter) md += `*${translate('Vị trí', lang)}: ${chapter}*\n\n`
-        md += `---\n\n`
-      }
-    }
-    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `NoCap_Reading_Notes_${new Date().toISOString().slice(0, 10)}.md`
-    a.click()
-    URL.revokeObjectURL(url)
-    setNotice(translate("Đã xuất toàn bộ ghi chú ra tệp Markdown (.md)!", lang))
+  async function exportPdf() {
+    if (!annotations.length || pdfExportActive.current) return
+    pdfExportActive.current = true
+    setPdfExportBusy(true)
+    const targetProfile = profileRef.current
+    try {
+      const access = await requireProFeature('KNOWLEDGE_EXPORT')
+      if (!access || profileRef.current !== targetProfile) return
+      const { prepareNotesPdf } = await importWithChunkRecovery(() => import('./notesPdf'))
+      if (sessionRef.current?.token !== access.session.token || profileRef.current !== targetProfile) return
+      const download = await prepareNotesPdf(annotations, books, lang)
+      if (sessionRef.current?.token !== access.session.token || profileRef.current !== targetProfile || !allowsPro(access.entitlement, sessionRef.current)) return
+      saveBookDownload(download)
+      setNotice(translate('Đã xuất trích dẫn và ghi chú ra tệp PDF.', lang))
+    } catch {
+      if (profileRef.current === targetProfile) setNotice(translate('Không xuất được PDF. Vui lòng thử lại.', lang))
+    } finally { pdfExportActive.current = false; setPdfExportBusy(false) }
   }
 
   async function requireProFeature(feature: ProFeature) {
@@ -1736,7 +1723,7 @@ async function sha256Hex(file: Blob): Promise<string> {
             </div>
             <div className="banner-action" style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
               <div className="count-chip" style={{ background: 'rgba(255,255,255,0.08)', color: '#c8d8f8', border: '1px solid rgba(100,140,255,0.2)' }}>{curT.banners.memory.statsSnippet(annotations.length, dueReviewCount)}</div>
-              {annotations.length > 0 && <><button className="light-button" onClick={() => void startFlashcardReview()}><Sparkles size={15} /> {curT.banners.memory.reviewBtn}</button><button className="light-button" onClick={() => void startFlashcardReview(true)}><Sparkles size={15} />{lang === 'vi' ? 'Tạo thẻ tự động · Pro' : 'Auto-generate cards · Pro'}</button><button className="light-button" onClick={exportMarkdown}><FileDown size={15} /> {curT.banners.memory.exportBtn}</button></>}
+              {annotations.length > 0 && <><button className="light-button" onClick={() => void startFlashcardReview()}><Sparkles size={15} /> {curT.banners.memory.reviewBtn}</button><button className="light-button" onClick={() => void startFlashcardReview(true)}><Sparkles size={15} />{lang === 'vi' ? 'Tạo thẻ tự động · Pro' : 'Auto-generate cards · Pro'}</button><button className="light-button" disabled={pdfExportBusy} aria-busy={pdfExportBusy} onClick={() => void exportPdf()}><FileDown size={15} /> {pdfExportBusy ? (lang === 'vi' ? 'Đang tạo PDF…' : 'Creating PDF…') : curT.banners.memory.exportBtn}</button></>}
             </div>
           </div><label className="search-field memory-search"><Search size={18} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder={curT.memoryPage.searchPlaceholder} aria-label={translate("Tìm ghi chú", lang)} /></label>{annotations.filter(record => `${record.payload.text || ''} ${record.payload.note || ''} ${record.payload.chapter_title || ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())).length ? <div className="memory-list">{annotations.filter(record => `${record.payload.text || ''} ${record.payload.note || ''} ${record.payload.chapter_title || ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())).map(record => { const book = books.find(item => item.id === record.payload.book_id); return <div className="memory-item" key={record.key}><div className="memory-icon">{record.kind === 'highlights' ? <Highlighter size={18} /> : <Bookmark size={18} />}</div><div><div className="memory-book">{book?.title || curT.memoryPage.privateDoc}</div><blockquote>{toText(record.payload.text) || toText(record.payload.chapter_title) || curT.memoryPage.bookmarkFallback}</blockquote>{!!record.payload.note && <p>{toText(record.payload.note)}</p>}</div><div className="memory-item-actions">
           {book && <button className="text-button" onClick={() => void openBook(book, toText(record.payload.locator_json))}>{curT.memoryPage.openBook} <ArrowRight size={15} /></button>}

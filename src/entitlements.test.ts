@@ -6,8 +6,9 @@ const now = 1_900_000_000_000
 const session: Session = { token: 'test', expiresAt: (now + 60_000) / 1000, user: { id: 'A', email: 'a@example.test', emailVerified: true } }
 const state = { userId: 'A', plan: 'PRO' as const, status: 'ACTIVE', expiresAt: now + 120_000, updatedAt: now }
 describe('Android-compatible web access', () => {
-  it('keeps Markdown and basic review free', () => {
-    expect(freeFeatures).toContain('MARKDOWN_EXPORT')
+  it('keeps notes and basic review free while PDF export remains a Pro feature', () => {
+    expect(freeFeatures).toContain('NOTES')
+    expect(freeFeatures).not.toContain('KNOWLEDGE_EXPORT')
     expect(freeFeatures).toContain('READING_MEMORY')
   })
   it('allows a current Pro account including canceled but unexpired purchases', () => {

@@ -114,7 +114,7 @@ export const t = {
         desc: 'Tìm lại ghi chú, đoạn đánh dấu và dấu trang trong một chỗ.',
         statsSnippet: (saved: number, due: number) => `${saved} mục · ${due} cần ôn`,
         reviewBtn: 'Ôn tập',
-        exportBtn: 'Xuất .md',
+        exportBtn: 'Xuất PDF · Pro',
       },
       stats: {
         eyebrow: 'READING ANALYTICS',
@@ -434,7 +434,7 @@ export const t = {
         desc: 'Rediscover notes, highlights, and bookmarks all in one quiet place.',
         statsSnippet: (saved: number, due: number) => `${saved} saved · ${due} due for review`,
         reviewBtn: 'Review',
-        exportBtn: 'Export .md',
+        exportBtn: 'Export PDF · Pro',
       },
       stats: {
         eyebrow: 'READING ANALYTICS',
