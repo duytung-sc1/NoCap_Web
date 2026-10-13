@@ -7,7 +7,7 @@ import App from './App'
 import { ApiError } from './api'
 
 const fixtures = vi.hoisted(() => ({
-  login: vi.fn(), googleLogin: vi.fn(), getFiles: vi.fn(), mutate: vi.fn(), loadBytes: vi.fn(), downloadHttps: vi.fn(), adminIdentity: vi.fn(), adminRequest: vi.fn(), localRecords: vi.fn(), entitlement: vi.fn(), preparePdf: vi.fn(), saveDownload: vi.fn(), conflicts: vi.fn(), resolveConflict: vi.fn(), readerThrows: false,
+  login: vi.fn(), googleLogin: vi.fn(), getFiles: vi.fn(), mutate: vi.fn(), loadBytes: vi.fn(), downloadHttps: vi.fn(), adminIdentity: vi.fn(), adminRequest: vi.fn(), localRecords: vi.fn(), entitlement: vi.fn(), preparePdf: vi.fn(), saveDownload: vi.fn(), conflicts: vi.fn(), resolveConflict: vi.fn(), updateProfile: vi.fn(), deleteAccount: vi.fn(), readerThrows: false, adminThrows: false,
 }))
 vi.mock('./httpsImport', async importOriginal => ({
   ...await importOriginal<typeof import('./httpsImport')>(), downloadHttpsPublication: fixtures.downloadHttps,
@@ -21,6 +21,7 @@ vi.mock('./api', async importOriginal => ({
   login: fixtures.login, loginWithGoogle: fixtures.googleLogin,
   getUser: async (token: string) => ({ user: readSession()?.token === token ? readSession()!.user : session.user }),
   getEntitlement: fixtures.entitlement,
+  updateProfile: fixtures.updateProfile, deleteAccount: fixtures.deleteAccount,
   getSePayPlans: async () => ({ plans: [] }),
   loadBookBytes: fixtures.loadBytes,
 }))
@@ -38,6 +39,13 @@ vi.mock('./sync', async importOriginal => ({
   connectLiveSync: () => () => {}, mutate: fixtures.mutate,
 }))
 vi.mock('./OceanWaves', () => ({ OceanWaves: () => null }))
+vi.mock('./admin/AdminWorkspace', async importOriginal => {
+  const { default: Original } = await importOriginal<typeof import('./admin/AdminWorkspace')>()
+  return { default: (props: Parameters<typeof Original>[0]) => {
+    if (fixtures.adminThrows) throw new Error('QA admin bundle/render failure')
+    return <Original {...props} />
+  } }
+})
 vi.mock('./notesPdf', () => ({ prepareNotesPdf: fixtures.preparePdf }))
 vi.mock('./bookDownload', async importOriginal => ({
   ...await importOriginal<typeof import('./bookDownload')>(), saveBookDownload: fixtures.saveDownload,
@@ -80,6 +88,9 @@ beforeEach(() => {
   fixtures.adminIdentity.mockReset().mockRejectedValue(new ApiError(403, 'Not an admin', 'ADMIN_REQUIRED'))
   fixtures.adminRequest.mockReset().mockResolvedValue({ books: 4, categories: 2, users: 3, activeUsers: 3, syncRecords: 2, syncConflicts: 0, proSnapshots: 1, playConfigured: false })
   fixtures.readerThrows = false
+  fixtures.adminThrows = false
+  fixtures.updateProfile.mockReset().mockResolvedValue(session.user)
+  fixtures.deleteAccount.mockReset().mockResolvedValue(undefined)
   fixtures.localRecords.mockReset().mockResolvedValue([])
   fixtures.entitlement.mockReset().mockResolvedValue({ userId: session.user.id, plan: 'FREE' })
   fixtures.preparePdf.mockReset().mockResolvedValue({ filename: 'notes.pdf', blob: new Blob(['%PDF-1.3'], { type: 'application/pdf' }) })
@@ -145,6 +156,116 @@ describe('Reading Memory PDF export', () => {
 })
 
 describe('account and reader lifecycle', () => {
+  it('does not show an old display-name error after the account is replaced', async () => {
+    saveSession(session)
+    window.history.replaceState(null, '', '/account')
+    render(<App />)
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Đổi tên hiển thị' }))[0])
+    const dialog = screen.getByRole('dialog')
+    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'Old account name' } })
+    let reject!: (error: Error) => void
+    const pending = new Promise<void>((_resolve, fail) => { reject = fail })
+    fixtures.updateProfile.mockReturnValue(pending)
+    fireEvent.submit(dialog.querySelector('form')!)
+    await waitFor(() => expect(fixtures.updateProfile).toHaveBeenCalled())
+    saveSession({ ...session, token: 'replacement-token', user: { ...session.user, id: 'other-user' } })
+    fireEvent(window, new StorageEvent('storage', { key: SESSION_STORAGE_KEY, storageArea: localStorage }))
+    await act(async () => { reject(new Error('Old account update failed')); await pending.catch(() => {}) })
+    expect(screen.queryByText('Old account update failed')).toBeNull()
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('prevents repeated organization submissions and preserves text typed while saving', async () => {
+    window.history.replaceState(null, '', '/library')
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Quản lý Thẻ & Bộ sưu tập' }))
+    const dialog = screen.getByRole('dialog')
+    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'First tag' } })
+    const pending = deferred<void>()
+    fixtures.mutate.mockReturnValue(pending.promise)
+    fireEvent.submit(dialog.querySelector('form')!); fireEvent.submit(dialog.querySelector('form')!)
+    expect(fixtures.mutate).toHaveBeenCalledOnce()
+    expect(within(dialog).getByRole('button', { name: 'Đang xử lý…' }).hasAttribute('disabled')).toBe(true)
+    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'Next tag draft' } })
+    await act(async () => { pending.resolve(); await pending.promise })
+    expect((within(dialog).getByRole('textbox') as HTMLInputElement).value).toBe('Next tag draft')
+    expect(within(dialog).getByRole('button', { name: 'Thêm' }).hasAttribute('disabled')).toBe(false)
+  })
+
+  it('reports failed inline renames, keeps the draft, and allows retry', async () => {
+    const tag: SyncRecord = { key: 'DEVICE_LOCAL:tags:qa-tag', profile: 'DEVICE_LOCAL', kind: 'tags', id: 'qa-tag', payload: { id: 'qa-tag', name: 'QA tag' }, version: 1, deleted: false }
+    fixtures.localRecords.mockResolvedValue([tag])
+    window.history.replaceState(null, '', '/library')
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Quản lý Thẻ & Bộ sưu tập' }))
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Sửa QA tag' }))
+    const save = within(screen.getByRole('dialog')).getByRole('button', { name: 'Lưu tên' })
+    const input = save.closest('form')!.querySelector('input')!
+    fireEvent.change(input, { target: { value: 'Renamed tag' } })
+    fixtures.mutate.mockRejectedValueOnce(new Error('Tag storage unavailable'))
+    fireEvent.submit(save.closest('form')!)
+    expect(await screen.findByText('Tag storage unavailable')).toBeTruthy()
+    expect(input.value).toBe('Renamed tag')
+    expect(save.hasAttribute('disabled')).toBe(false)
+    fireEvent.submit(save.closest('form')!)
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Lưu tên' })).toBeNull())
+    expect(fixtures.mutate).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps navigation available after an administrator component fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    saveSession(session)
+    window.history.replaceState(null, '', '/admin')
+    fixtures.adminIdentity.mockResolvedValue({ id: session.user.id, email: session.user.email, photoUrl: null, adminExpiresAt: Date.now() + 3600000 })
+    fixtures.adminThrows = true
+    render(<App />)
+    expect(await screen.findByRole('heading', { name: 'Khu vực quản trị gặp lỗi' })).toBeTruthy()
+    fireEvent.click(within(screen.getByRole('alert')).getByRole('button', { name: 'Về trang chủ' }))
+    expect(window.location.pathname).toBe('/')
+    expect(readSession()?.token).toBe(session.token)
+  })
+
+  it.each(['tags', 'collections'] as const)('does not clear a new account %s draft when an old save completes', async kind => {
+    saveSession(session)
+    window.history.replaceState(null, '', '/library')
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Quản lý Thẻ & Bộ sưu tập' }))
+    if (kind === 'collections') fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Bộ sưu tập' }))
+    fireEvent.change(within(screen.getByRole('dialog')).getByRole('textbox'), { target: { value: 'Old account item' } })
+    const pending = deferred<void>()
+    fixtures.mutate.mockReturnValue(pending.promise)
+    fireEvent.submit(screen.getByRole('dialog').querySelector('form')!)
+    await waitFor(() => expect(fixtures.mutate).toHaveBeenCalled())
+    const replacement: Session = { ...session, token: 'replacement-token', user: { ...session.user, id: 'other-user' } }
+    saveSession(replacement)
+    fireEvent(window, new StorageEvent('storage', { key: SESSION_STORAGE_KEY, storageArea: localStorage }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Tủ sách' })[0])
+    fireEvent.click(screen.getByRole('button', { name: 'Quản lý Thẻ & Bộ sưu tập' }))
+    if (kind === 'collections') fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Bộ sưu tập' }))
+    fireEvent.change(within(screen.getByRole('dialog')).getByRole('textbox'), { target: { value: 'New account draft' } })
+    await act(async () => { pending.resolve(); await pending.promise })
+    expect((within(screen.getByRole('dialog')).getByRole('textbox') as HTMLInputElement).value).toBe('New account draft')
+    expect(fixtures.mutate.mock.calls[0][0]).toBe('ACCOUNT:qa-user')
+  })
+
+  it('does not force another account to sign in after an old deletion request fails with 401', async () => {
+    saveSession(session)
+    window.history.replaceState(null, '', '/account')
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Xóa tài khoản vĩnh viễn' }))
+    let reject!: (error: Error) => void
+    const pending = new Promise<void>((_resolve, fail) => { reject = fail })
+    fixtures.deleteAccount.mockReturnValue(pending)
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Xóa tài khoản vĩnh viễn' }))
+    await waitFor(() => expect(fixtures.deleteAccount).toHaveBeenCalled())
+    saveSession({ ...session, token: 'replacement-token', user: { ...session.user, id: 'other-user' } })
+    fireEvent(window, new StorageEvent('storage', { key: SESSION_STORAGE_KEY, storageArea: localStorage }))
+    await act(async () => { reject(new ApiError(401, 'Expired session')); await pending.catch(() => {}) })
+    expect(screen.queryByRole('dialog', { name: 'Chào mừng quay lại.' })).toBeNull()
+    expect(screen.queryByText('Vui lòng đăng nhập lại trước khi xóa tài khoản để xác minh bảo mật.')).toBeNull()
+    expect(readSession()?.token).toBe('replacement-token')
+  })
+
   it('clears the old conflict warning after the last item is resolved', async () => {
     saveSession(session)
     let remaining = [{ key: 'ACCOUNT:qa-user:highlights:note', profile: 'ACCOUNT:qa-user', operation: { kind: 'highlights', id: 'note', payload: { text: 'Conflict quotation' } }, conflicted: true }]

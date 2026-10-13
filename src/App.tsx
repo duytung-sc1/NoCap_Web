@@ -25,7 +25,7 @@ import { ProRequiredDialog } from './ProRequiredDialog'
 import { addAnnotationReview, annotationId, deleteAnnotation, rateAnnotationReview, updateAnnotation, type HighlightColor } from './annotations'
 import { allowsPro, proAccessExpiresAt, verifyProAccess, type ProFeature } from './entitlements'
 
-const AdminWorkspace = lazy(() => import('./admin/AdminWorkspace'))
+const AdminWorkspace = lazy(() => importWithChunkRecovery(() => import('./admin/AdminWorkspace')))
 import { readingActivity } from './readingStats'
 import { translate } from './uiText'
 import { ImportDocumentDialog } from './ImportDocumentDialog'
@@ -189,6 +189,8 @@ function App() {
   const [newCollectionName, setNewCollectionName] = useState('')
   const [editingItemId, setEditingItemId] = useState<string | null>(null)
   const [editingItemName, setEditingItemName] = useState('')
+  const [organizationBusy, setOrganizationBusy] = useState(false)
+  const organizationFlight = useRef<object | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const progressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const preferenceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -315,6 +317,13 @@ function App() {
     setStealthGrant(null)
     setReviewOpen(false); setReviewQueue([]); setReviewIndex(0)
   }, [profile])
+
+  useEffect(() => {
+    setEditNameOpen(false); setEditNameInput(''); setSavingName(false)
+    setDeleteAccountOpen(false); setDeleteAccountBusy(false)
+    setEditingItemId(null); setEditingItemName(''); setOrganizationBusy(false)
+    organizationFlight.current = null
+  }, [session?.token])
 
   const refreshLocal = useCallback(async (selectedProfile: string) => {
     if (profileRef.current !== selectedProfile) return
@@ -756,28 +765,30 @@ function App() {
 
   async function handleUpdateDisplayName() {
     if (!session || !editNameInput.trim()) return
+    const isCurrent = () => sessionRef.current?.token === session.token && readSession()?.token === session.token
     setSavingName(true)
     try {
       const updated = await updateProfile(session.token, { displayName: editNameInput.trim() })
-      if (sessionRef.current?.token !== session.token || readSession()?.token !== session.token) return
+      if (!isCurrent()) return
       const newSession: Session = { ...session, user: updated }
       saveSession(newSession)
       setSession(newSession)
       setEditNameOpen(false)
       setNotice(lang === 'vi' ? 'Đã cập nhật tên tài khoản thành công.' : 'Account name updated successfully.')
     } catch (err) {
-      setNotice(readableError(err, lang))
+      if (isCurrent()) setNotice(readableError(err, lang))
     } finally {
-      setSavingName(false)
+      if (isCurrent()) setSavingName(false)
     }
   }
 
   async function handleDeleteAccount() {
     if (!session) return
+    const isCurrent = () => sessionRef.current?.token === session.token && readSession()?.token === session.token
     setDeleteAccountBusy(true)
     try {
       await deleteAccount(session.token)
-      if (sessionRef.current?.token !== session.token || readSession()?.token !== session.token) return
+      if (!isCurrent()) return
       saveSession(null)
       setSession(null)
       setRecords([])
@@ -792,6 +803,7 @@ function App() {
       setDeleteAccountOpen(false)
       setNotice(lang === 'vi' ? 'Tài khoản của bạn đã được xóa thành công.' : 'Your account has been deleted.')
     } catch (err) {
+      if (!isCurrent()) return
       if (err instanceof ApiError && err.status === 401) {
         setDeleteAccountOpen(false)
         setNotice(lang === 'vi' ? 'Vui lòng đăng nhập lại trước khi xóa tài khoản để xác minh bảo mật.' : 'Please sign in again before deleting your account.')
@@ -800,7 +812,7 @@ function App() {
         setNotice(readableError(err, lang))
       }
     } finally {
-      setDeleteAccountBusy(false)
+      if (isCurrent()) setDeleteAccountBusy(false)
     }
   }
 
@@ -828,60 +840,69 @@ function App() {
     }
   }
 
+  async function changeOrganization(kind: 'tags' | 'collections', id: string, payload: Record<string, unknown>, deleted = false, onSaved?: () => void) {
+    if (organizationFlight.current) return
+    const flight = {}
+    organizationFlight.current = flight
+    setOrganizationBusy(true)
+    const targetProfile = profile
+    const token = session?.token
+    const isCurrent = () => profileRef.current === targetProfile && sessionRef.current?.token === token && readSession()?.token === token
+    try {
+      await mutate(targetProfile, kind, androidRecordId(kind, id), payload, deleted, !session)
+      broadcastSyncRequired(targetProfile)
+      if (!isCurrent()) return
+      onSaved?.()
+      await refreshLocal(targetProfile)
+      if (isCurrent() && session) void synchronize(session, true)
+    } catch (error) {
+      if (isCurrent()) setNotice(readableError(error, lang))
+    } finally {
+      if (organizationFlight.current === flight) {
+        organizationFlight.current = null
+        setOrganizationBusy(false)
+      }
+    }
+  }
+
   async function handleCreateTag() {
     if (!newTagName.trim()) return
     const id = crypto.randomUUID()
-    const payload = { id, name: newTagName.trim(), created_at: ms() }
-    await mutate(profile, 'tags', androidRecordId('tags', id), payload, false, !session)
-    broadcastSyncRequired(profile)
-    setNewTagName('')
-    await refreshLocal(profile)
-    if (session) void synchronize(session, true)
+    const name = newTagName.trim()
+    await changeOrganization('tags', id, { id, name, created_at: ms() }, false,
+      () => setNewTagName(current => current.trim() === name ? '' : current))
   }
 
   async function handleDeleteTag(tagId: string) {
-    await mutate(profile, 'tags', androidRecordId('tags', tagId), { id: tagId }, true, !session)
-    broadcastSyncRequired(profile)
-    await refreshLocal(profile)
-    if (session) void synchronize(session, true)
+    await changeOrganization('tags', tagId, { id: tagId }, true)
   }
 
   async function handleCreateCollection() {
     if (!newCollectionName.trim()) return
     const id = crypto.randomUUID()
-    const payload = { id, name: newCollectionName.trim(), created_at: ms() }
-    await mutate(profile, 'collections', androidRecordId('collections', id), payload, false, !session)
-    broadcastSyncRequired(profile)
-    setNewCollectionName('')
-    await refreshLocal(profile)
-    if (session) void synchronize(session, true)
+    const name = newCollectionName.trim()
+    await changeOrganization('collections', id, { id, name, created_at: ms() }, false,
+      () => setNewCollectionName(current => current.trim() === name ? '' : current))
   }
 
   async function handleDeleteCollection(colId: string) {
-    await mutate(profile, 'collections', androidRecordId('collections', colId), { id: colId }, true, !session)
-    broadcastSyncRequired(profile)
-    await refreshLocal(profile)
-    if (session) void synchronize(session, true)
+    await changeOrganization('collections', colId, { id: colId }, true)
   }
 
   async function handleUpdateTag(tagId: string, name: string) {
     if (!name.trim()) return
     const existing = records.find(r => r.kind === 'tags' && !r.deleted && (r.payload.id === tagId || r.id === androidRecordId('tags', tagId)))
     const payload = { ...(existing?.payload || {}), id: tagId, name: name.trim(), updated_at: ms() }
-    await mutate(profile, 'tags', androidRecordId('tags', tagId), payload, false, !session)
-    broadcastSyncRequired(profile)
-    await refreshLocal(profile)
-    if (session) void synchronize(session, true)
+    await changeOrganization('tags', tagId, payload, false,
+      () => setEditingItemId(current => current === tagId ? null : current))
   }
 
   async function handleUpdateCollection(colId: string, name: string) {
     if (!name.trim()) return
     const existing = records.find(r => r.kind === 'collections' && !r.deleted && (r.payload.id === colId || r.id === androidRecordId('collections', colId)))
     const payload = { ...(existing?.payload || {}), id: colId, name: name.trim(), updated_at: ms() }
-    await mutate(profile, 'collections', androidRecordId('collections', colId), payload, false, !session)
-    broadcastSyncRequired(profile)
-    await refreshLocal(profile)
-    if (session) void synchronize(session, true)
+    await changeOrganization('collections', colId, payload, false,
+      () => setEditingItemId(current => current === colId ? null : current))
   }
 
   async function handleToggleBookTag(bookId: string, tagId: string) {
@@ -1617,7 +1638,7 @@ async function sha256Hex(file: Blob): Promise<string> {
 
       <div className="content">
         {page === 'admin' && (session && adminAccess?.status === 'allowed'
-          ? <Suspense fallback={<p role="status">{lang === 'vi' ? 'Đang mở khu vực quản trị…' : 'Opening administration…'}</p>}><AdminWorkspace
+          ? <ReaderErrorBoundary key={session.token} area="admin" lang={lang} onClose={() => setPage('home')}><Suspense fallback={<p role="status">{lang === 'vi' ? 'Đang mở khu vực quản trị…' : 'Opening administration…'}</p>}><AdminWorkspace
             key={session.token}
             token={session.token}
             admin={adminAccess.admin}
@@ -1638,7 +1659,7 @@ async function sha256Hex(file: Blob): Promise<string> {
                 saveSession(updated); setSession(updated)
               }).catch(() => {})
             }}
-          /></Suspense>
+          /></Suspense></ReaderErrorBoundary>
           : <div className="empty-state admin-access-gate">
             <h2>{lang === 'vi' ? 'Khu vực quản trị' : 'Administration'}</h2>
             <p>{!session ? (lang === 'vi' ? 'Đăng nhập bằng tài khoản có quyền admin để tiếp tục.' : 'Sign in with an administrator account to continue.')
@@ -1943,10 +1964,10 @@ async function sha256Hex(file: Blob): Promise<string> {
       <button className="icon-button dialog-close" onClick={() => setTagsCollectionsOpen(false)} aria-label={curT.auth.close}><X size={19} /></button>
       <h2 id="organization-title">{curT.accountPage.manageTagsCollections}</h2>
       <div className="toggle-row"><button className={`choice-chip ${tagTab === 'tags' ? 'active' : ''}`} onClick={() => setTagTab('tags')}>{curT.filters.tagsGroup}</button><button className={`choice-chip ${tagTab === 'collections' ? 'active' : ''}`} onClick={() => setTagTab('collections')}>{curT.filters.collectionsGroup}</button></div>
-      <form onSubmit={event => { event.preventDefault(); void (tagTab === 'tags' ? handleCreateTag() : handleCreateCollection()).catch(error => setNotice(readableError(error, lang))) }}>
+      <form onSubmit={event => { event.preventDefault(); void (tagTab === 'tags' ? handleCreateTag() : handleCreateCollection()) }}>
         <label htmlFor="organization-name">{tagTab === 'tags' ? curT.filters.tagsGroup : curT.filters.collectionsGroup}</label>
         <input id="organization-name" value={tagTab === 'tags' ? newTagName : newCollectionName} onChange={event => tagTab === 'tags' ? setNewTagName(event.target.value) : setNewCollectionName(event.target.value)} maxLength={80} required />
-        <div className="dialog-actions"><button className="primary" disabled={!(tagTab === 'tags' ? newTagName : newCollectionName).trim()}><Plus size={16} />{lang === 'vi' ? 'Thêm' : 'Add'}</button></div>
+        <div className="dialog-actions"><button className="primary" disabled={organizationBusy || !(tagTab === 'tags' ? newTagName : newCollectionName).trim()}><Plus size={16} />{organizationBusy ? curT.auth.processing : (lang === 'vi' ? 'Thêm' : 'Add')}</button></div>
       </form>
       <div style={{ maxHeight: '40vh', overflow: 'auto', marginTop: '12px' }}>
         {(tagTab === 'tags' ? tags : collections).map(item => (
@@ -1955,7 +1976,7 @@ async function sha256Hex(file: Blob): Promise<string> {
               <form
                 onSubmit={e => {
                   e.preventDefault()
-                  void (tagTab === 'tags' ? handleUpdateTag(item.id, editingItemName) : handleUpdateCollection(item.id, editingItemName)).then(() => setEditingItemId(null))
+                  void (tagTab === 'tags' ? handleUpdateTag(item.id, editingItemName) : handleUpdateCollection(item.id, editingItemName))
                 }}
                 style={{ display: 'flex', gap: '6px', width: '100%' }}
               >
@@ -1965,7 +1986,7 @@ async function sha256Hex(file: Blob): Promise<string> {
                   autoFocus
                   style={{ flex: 1, padding: '4px 8px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
                 />
-                <button type="submit" className="primary" style={{ padding: '4px 8px' }}><Check size={14} /></button>
+                <button type="submit" className="primary" disabled={organizationBusy} aria-label={lang === 'vi' ? 'Lưu tên' : 'Save name'} style={{ padding: '4px 8px' }}><Check size={14} /></button>
                 <button type="button" className="secondary" style={{ padding: '4px 8px' }} onClick={() => setEditingItemId(null)}><X size={14} /></button>
               </form>
             ) : (
@@ -1974,6 +1995,7 @@ async function sha256Hex(file: Blob): Promise<string> {
                 <div style={{ display: 'flex', gap: '4px' }}>
                   <button
                     className="icon-button"
+                    disabled={organizationBusy}
                     title={lang === 'vi' ? 'Đổi tên' : 'Rename'}
                     aria-label={`${lang === 'vi' ? 'Sửa' : 'Edit'} ${item.name}`}
                     onClick={() => { setEditingItemId(item.id); setEditingItemName(item.name) }}
@@ -1982,11 +2004,12 @@ async function sha256Hex(file: Blob): Promise<string> {
                   </button>
                   <button
                     className="icon-button"
+                    disabled={organizationBusy}
                     title={lang === 'vi' ? 'Xóa' : 'Delete'}
                     aria-label={`${lang === 'vi' ? 'Xóa' : 'Delete'} ${item.name}`}
                     onClick={() => {
                       if (confirm(`${lang === 'vi' ? 'Xóa' : 'Delete'} ${item.name}?`)) {
-                        void (tagTab === 'tags' ? handleDeleteTag(item.id) : handleDeleteCollection(item.id)).catch(error => setNotice(readableError(error, lang)))
+                        void (tagTab === 'tags' ? handleDeleteTag(item.id) : handleDeleteCollection(item.id))
                       }
                     }}
                   >
