@@ -1,6 +1,15 @@
 import 'fake-indexeddb/auto'
 import { expect, it } from 'vitest'
-import { getCachedCatalog, getFile, getFiles, getOfflineBook, getPending, getRecords, removeFile, removeLocalDocument, removeOfflineBook, saveCachedCatalog, saveFile, saveOfflineBook, savePending, saveRecord } from './store'
+import { getCachedCatalog, getFile, getFiles, getOfflineBook, getPending, getRecords, removeFile, removeLocalDocument, removeOfflineBook, saveCachedCatalog, saveFile, saveOfflineBook, savePending, saveRecord, saveLocalMutation } from './store'
+
+it.each([0.65, 0.98, 1])('keeps completed progress %s while saving a new resume locator', async completed => {
+  const profile = `ACCOUNT:${crypto.randomUUID()}`, id = crypto.randomUUID(), key = `${profile}:reading_progress:${id}`
+  await saveRecord({ key, profile, kind: 'reading_progress', id, version: 2, deleted: false, payload: { book_id: 'book', progression: completed, locator_json: 'old', last_read_at: 100 } })
+  await saveLocalMutation(profile, 'reading_progress', id, { book_id: 'book', progression: 0.17, locator_json: 'new position', last_read_at: 200 }, false, false)
+  const expectedProgress = completed >= 0.98 ? completed : 0.17
+  expect((await getRecords(profile))[0].payload).toMatchObject({ progression: expectedProgress, locator_json: 'new position', last_read_at: 200 })
+  expect((await getPending(profile))[0].operation.payload).toMatchObject({ progression: expectedProgress, locator_json: 'new position', last_read_at: 200 })
+})
 
 it('keeps Guest and two accounts separate and removes only a deleted local document', async () => {
   const documentId = `web-${crypto.randomUUID()}`

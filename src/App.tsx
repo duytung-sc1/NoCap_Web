@@ -310,6 +310,8 @@ function App() {
   useEffect(() => {
     setEditingAnnotation(null); setDeletingAnnotation(null); setAnnotationError(''); setProRequiredFeature(null)
     setImportOpen(false)
+    setTagsCollectionsOpen(false); setNewTagName(''); setNewCollectionName('')
+    setOrganizationFilter('all')
     setStealthGrant(null)
     setReviewOpen(false); setReviewQueue([]); setReviewIndex(0)
   }, [profile])
@@ -804,15 +806,25 @@ function App() {
 
   async function handleResolveConflict(key: string, strategy: 'keep_local' | 'take_remote') {
     if (!session) return
+    const targetProfile = profileFor(session)
+    const token = session.token
+    const isCurrent = () => profileRef.current === targetProfile && sessionRef.current?.token === token
     try {
       await resolveConflict(session, key, strategy)
-      const nextConflicts = await getConflicts(profileFor(session))
+      if (!isCurrent()) return
+      const nextConflicts = await getConflicts(targetProfile)
+      if (!isCurrent()) return
       setConflicts(nextConflicts)
-      if (!nextConflicts.length) setConflictModalOpen(false)
+      if (!nextConflicts.length) {
+        setConflictModalOpen(false)
+        setNotice(lang === 'vi' ? 'Đã giải quyết xung đột đồng bộ.' : 'Sync conflicts resolved.')
+      } else {
+        setNotice(lang === 'vi' ? `${nextConflicts.length} xung đột đồng bộ cần giải quyết.` : `${nextConflicts.length} sync conflicts need your attention.`)
+      }
       void refreshLocal(profileFor(session))
       void synchronize(session, true)
     } catch (err) {
-      setNotice(readableError(err, lang))
+      if (isCurrent()) setNotice(readableError(err, lang))
     }
   }
 
@@ -1190,6 +1202,10 @@ async function sha256Hex(file: Blob): Promise<string> {
 
   async function saveNote() {
     if (!reader || !location || (!noteText.trim() && !selection?.text)) return
+    const targetProfile = profile
+    const token = session?.token
+    const targetBookId = reader.book.id
+    const isCurrent = () => profileRef.current === targetProfile && sessionRef.current?.token === token && readerRef.current?.id === targetBookId
     setNoteSaving(true)
     try {
       const id = crypto.randomUUID()
@@ -1197,9 +1213,10 @@ async function sha256Hex(file: Blob): Promise<string> {
       const payload = { id, book_id: reader.book.id, locator_json: selection?.locator || location.locatorJson, text: selected, color: noteColor, note: noteText.trim().slice(0, 10000), created_at: ms(), updated_at: ms() }
       await mutate(profile, 'highlights', androidRecordId('highlights', id), payload, false, reader.book.source === 'local')
       await refreshLocal(profile)
+      if (!isCurrent()) return
       setNoteOpen(false); setNoteText(''); setSelection(null); setNotice(translate("Đã lưu ghi chú.", lang))
       if (session && online && reader.book.source !== 'local') void synchronize(session)
-    } catch (error) { setNotice(readableError(error, lang)) }
+    } catch (error) { if (isCurrent()) setNotice(readableError(error, lang)) }
     finally { setNoteSaving(false) }
   }
 
@@ -1472,14 +1489,6 @@ async function sha256Hex(file: Blob): Promise<string> {
             </button>
             <button className="pill-btn invert-pill" onClick={() => setImportOpen(true)}>
               <Plus size={16} /> {curT.banners.library.addDoc}
-            </button>
-            <button
-              className="pill-btn"
-              style={{ background: 'rgba(212, 175, 55, 0.12)', border: '1px solid rgba(212, 175, 55, 0.35)', color: '#d4af37' }}
-              onClick={() => window.dispatchEvent(new CustomEvent('replay-nocap-intro'))}
-              title={lang === 'vi' ? 'Xem lại hiệu ứng 3D lật sách vào NoCap' : 'Replay 3D Book Portal Animation'}
-            >
-              <Sparkles size={16} /> {lang === 'vi' ? 'Hiệu ứng 3D' : '3D Portal'}
             </button>
           </div>
           <div className="editorial-pills-row" style={{ justifyContent: 'center' }}>

@@ -15,6 +15,20 @@ vi.mock('./api', () => ({
 
 beforeEach(() => vi.clearAllMocks())
 
+it('resolves a rewind conflict while retaining the server-protected completed status and local reading position', async () => {
+  const session: Session = { token: 'qa', expiresAt: Date.now() / 1000 + 600, user: { id: crypto.randomUUID(), email: 'rewind@example.test', emailVerified: true } }
+  const profile = profileFor(session), id = crypto.randomUUID(), key = `${profile}:reading_progress:${id}`
+  const payload = { book_id: 'completed-book', progression: 0.17, locator_json: 'local note position', last_read_at: 300 }
+  const operation: SyncOperation = { kind: 'reading_progress', id, opId: crypto.randomUUID(), baseVersion: 1, deleted: false, payload }
+  await saveRecord({ key, profile, kind: operation.kind, id, version: 1, deleted: false, payload })
+  await savePending({ key, profile, operation, attempted: true, conflicted: true })
+  vi.mocked(getChanges).mockResolvedValueOnce({ changes: [{ seq: 2, kind: 'reading_progress', id, version: 2, deleted: 0, payload: { book_id: 'completed-book', progression: 1, locator_json: 'end of book', last_read_at: 200 } }], cursor: 2, hasMore: false })
+  vi.mocked(pushOperation).mockImplementationOnce(async (_token, op) => ({ receipts: [{ opId: op.opId, status: Number(op.payload.progression) < 0.98 ? 'CONFLICT' : 'APPLIED', current: { version: 3, deleted: 0, payload: op.payload } }] }))
+  await resolveConflict(session, key, 'keep_local')
+  expect((await getRecord(key))?.payload).toMatchObject({ progression: 1, locator_json: 'local note position', last_read_at: 300 })
+  expect(await getPending(profile)).toEqual([])
+})
+
 async function conflict() {
   const session: Session = { token: 'test', expiresAt: Date.now() / 1000 + 600, user: { id: crypto.randomUUID(), email: 'test@example.invalid', emailVerified: true } }
   const profile = profileFor(session)

@@ -136,6 +136,15 @@ async function withSyncTransaction<T>(operation: (transaction: SyncTransaction) 
   })
 }
 
+/** Server sync protects completion; the locator can still move back for rereading. */
+function retainCompletedProgress(kind: SyncKind, payload: Record<string, unknown>, previous: Record<string, unknown> | undefined, deleted: boolean, previousDeleted: boolean) {
+  const current = previous?.progression, next = payload.progression
+  return kind === 'reading_progress' && !deleted && !previousDeleted &&
+    typeof current === 'number' && current >= 0.98 && current <= 1 &&
+    typeof next === 'number' && next >= 0 && next < 0.98
+    ? { ...payload, progression: current } : payload
+}
+
 /** Commit the visible record and its outbox together, including across tabs. */
 export async function saveLocalMutation(profile: string, kind: SyncKind, id: string, payload: Record<string, unknown>, deleted: boolean, localOnly: boolean) {
   const key = keyFor(profile, `${kind}:${id}`)
@@ -144,13 +153,14 @@ export async function saveLocalMutation(profile: string, kind: SyncKind, id: str
     const pendingStore = transaction.objectStore('pending')
     const current = await records.get(key)
     const pending = await pendingStore.get(key)
-    await records.put({ key, profile, kind, id, version: current?.version || 0, deleted, payload })
+    const nextPayload = retainCompletedProgress(kind, payload, current?.payload, deleted, !!current?.deleted)
+    await records.put({ key, profile, kind, id, version: current?.version || 0, deleted, payload: nextPayload })
     if (profile === 'DEVICE_LOCAL' || localOnly || pending?.attempted) return
     await pendingStore.put({
       key, profile, attempted: false, needsBlobUpload: pending?.needsBlobUpload,
       operation: {
         opId: pending?.operation.opId || crypto.randomUUID(), kind, id,
-        baseVersion: current?.version || 0, deleted, payload,
+        baseVersion: current?.version || 0, deleted, payload: nextPayload,
         recreate: current?.deleted && !deleted ? true : pending?.operation.recreate,
       },
     })
@@ -249,9 +259,12 @@ export async function prepareLocalConflict(item: PendingOperation, remote?: Sync
     if (current?.operation.opId !== item.operation.opId) throw new Error('Mục đồng bộ đã thay đổi. Vui lòng thử lại.')
     const local = await transaction.objectStore('records').get(item.key)
     const deleted = local?.deleted ?? item.operation.deleted
+    const localPayload = local?.payload || item.operation.payload
+    const payload = retainCompletedProgress(item.operation.kind, localPayload, remote?.payload, deleted, !!remote?.deleted)
+    if (local && payload !== localPayload) await transaction.objectStore('records').put({ ...local, payload })
     const operation: SyncOperation = {
       ...item.operation, opId: crypto.randomUUID(), baseVersion: remote?.version ?? item.operation.baseVersion,
-      payload: local?.payload || item.operation.payload, deleted,
+      payload, deleted,
       recreate: remote?.deleted && !deleted ? true : undefined,
     }
     const next = { ...current, operation, attempted: true, conflicted: true,

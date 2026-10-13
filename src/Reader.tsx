@@ -412,6 +412,7 @@ function PdfPane({ lang = 'vi', bytes, initial, onLocation, onSelection, onContr
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null)
   const textLayerDiv = useRef<HTMLDivElement>(null)
   const [textLayerVersion, setTextLayerVersion] = useState(0)
+  const renderedTextPage = useRef(0)
   const [pdfHighlights, setPdfHighlights] = useState<{ page: number; rects: Array<PdfRect & { id: string; color: string }> }>({ page: 0, rects: [] })
   const [renderWidth, setRenderWidth] = useState(800)
   const [dimensions, setDimensions] = useState<{ width: number; height: number }>({ width: 800, height: 1100 })
@@ -488,6 +489,10 @@ function PdfPane({ lang = 'vi', bytes, initial, onLocation, onSelection, onContr
     let active = true
     let render: RenderTask | null = null
     let textLayer: TextLayer | null = null
+    renderedTextPage.current = 0
+    textLayerDiv.current?.replaceChildren()
+    setTextLayerVersion(0)
+    setPdfHighlights({ page: 0, rects: [] })
     void document.getPage(page).then(async pdfPage => {
       if (!active || !canvas.current) return
       const width = renderWidth
@@ -521,12 +526,15 @@ function PdfPane({ lang = 'vi', bytes, initial, onLocation, onSelection, onContr
           viewport,
         })
         await textLayer.render()
-        if (active) setTextLayerVersion(value => value + 1)
+        if (active) {
+          renderedTextPage.current = page
+          setTextLayerVersion(value => value + 1)
+        }
       }
     }).catch(error => { if (active && error?.name !== 'RenderingCancelledException') setError(translate("Không hiển thị được trang PDF này.", langRef.current)) })
     const progression = document.numPages > 1 ? (page - 1) / (document.numPages - 1) : 1
     onLocation({ locatorJson: JSON.stringify({ type: 'PDF', version: 1, pageIndex: page - 1, pageNumber: page, progression, selectedText: '', startOffset: 0, endOffset: 0 }), progression, chapterTitle: `${translate('Trang', langRef.current)} ${page}` })
-    return () => { active = false; render?.cancel(); textLayer?.cancel() }
+    return () => { active = false; renderedTextPage.current = 0; render?.cancel(); textLayer?.cancel() }
   }, [document, page, onLocation, renderWidth])
 
   useEffect(() => { onControls({ previous: () => setPage(value => Math.max(1, value - 1)), next: () => setPage(value => Math.min(document?.numPages || value, value + 1)) }) }, [document, onControls])
@@ -537,7 +545,7 @@ function PdfPane({ lang = 'vi', bytes, initial, onLocation, onSelection, onContr
     const root = textLayerDiv.current
     const range = sel?.rangeCount ? sel.getRangeAt(0) : null
     const offsets = root && range ? rangeOffsets(root, range) : null
-    if (text && document && root && range && offsets) {
+    if (text && document && root && range && offsets && renderedTextPage.current === page) {
       const progression = document.numPages > 1 ? (page - 1) / (document.numPages - 1) : 1
       const locatorJson = JSON.stringify({
         type: 'PDF',
@@ -941,7 +949,7 @@ function TextPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
     const article = host.current?.querySelector('article')
     if (!article) return
     for (const mark of Array.from(article.querySelectorAll('mark[data-nocap-highlight]'))) {
-      mark.replaceWith(document.createTextNode(mark.textContent || ''))
+      mark.replaceWith(...mark.childNodes)
     }
     article.normalize()
     const colors: Record<string, string> = {
@@ -952,24 +960,40 @@ function TextPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
       if (locator?.type !== 'TEXT' || typeof locator.blockIndex !== 'number') continue
       const block = article.querySelector(`[data-nocap-block="${locator.blockIndex}"]`)
       if (!block) continue
-      const fullText = block.textContent || ''
-      const requestedOffset = Math.max(0, Number(locator.characterOffset) || 0)
-      const matchedOffset = annotation.text ? fullText.indexOf(annotation.text, requestedOffset) : requestedOffset
-      const startOffset = matchedOffset >= 0 ? matchedOffset : requestedOffset
-      const endOffset = Math.min(fullText.length, startOffset + Math.max(1, annotation.text.length))
-      const start = pointAtTextOffset(block, startOffset)
-      const end = pointAtTextOffset(block, endOffset)
-      if (!start || !end) continue
+      const prefix = document.createRange()
+      prefix.selectNodeContents(article)
+      prefix.setEnd(block, 0)
+      const legacyStart = prefix.toString().length + Math.max(0, Number(locator.characterOffset) || 0)
+      const start = typeof locator.textStartOffset === 'number' ? locator.textStartOffset : legacyStart
+      const selectedText = typeof locator.selectedText === 'string' ? locator.selectedText : annotation.text
+      const end = typeof locator.textEndOffset === 'number' ? locator.textEndOffset : start + selectedText.length
+      const offsets = pdfTextOffsets(article.textContent || '', selectedText, start, end)
+      if (!offsets) continue
       try {
-        const range = document.createRange()
-        range.setStart(start.node, start.offset)
-        range.setEnd(end.node, end.offset)
-        const mark = document.createElement('mark')
-        mark.dataset.nocapHighlight = annotation.id
-        mark.style.backgroundColor = colors[annotation.color.toUpperCase()] || colors.YELLOW
-        mark.style.color = 'inherit'
-        mark.appendChild(range.extractContents())
-        range.insertNode(mark)
+        // Wrap text nodes separately so a selection can cross paragraphs and
+        // inline emphasis without extracting or restructuring the source HTML.
+        const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT)
+        const pieces: Array<{ node: Text; start: number; end: number }> = []
+        let position = 0
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          const length = node.textContent?.length || 0
+          const from = Math.max(0, offsets.start - position)
+          const to = Math.min(length, offsets.end - position)
+          if (to > from) pieces.push({ node: node as Text, start: from, end: to })
+          position += length
+          if (position >= offsets.end) break
+        }
+        for (const piece of pieces) {
+          const selected = piece.node.splitText(piece.start)
+          selected.splitText(piece.end - piece.start)
+          const mark = document.createElement('mark')
+          mark.dataset.nocapHighlight = annotation.id
+          mark.style.backgroundColor = colors[annotation.color.toUpperCase()] || colors.YELLOW
+          // These opaque, light highlight colors need dark text in night mode.
+          mark.style.color = '#172033'
+          selected.replaceWith(mark)
+          mark.appendChild(selected)
+        }
       } catch { /* a locator can become stale after the source document changes */ }
     }
   }, [annotations, content])
@@ -983,18 +1007,26 @@ function TextPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
   }
   function selected() {
     const selection = window.getSelection()
-    const text = selection?.toString().trim()
     const range = selection?.rangeCount ? selection.getRangeAt(0) : null
+    // Browser selection text adds layout line breaks between paragraphs. Keep
+    // the visible quotation but use DOM-range text for exact stored offsets.
+    const rawText = range?.toString() || ''
+    const selectedText = rawText.trim().slice(0, 5000)
+    const text = selection?.toString().trim().slice(0, 5000) || ''
     const element = range?.startContainer.nodeType === Node.ELEMENT_NODE ? range.startContainer as Element : range?.startContainer.parentElement
     const block = element?.closest('[data-nocap-block]')
-    if (!text || !range || !block || !host.current) return
+    const article = host.current?.querySelector('article')
+    const offsets = article && range ? rangeOffsets(article, range) : null
+    if (!text || !selectedText || !range || !block || !host.current || !article || !article.contains(block) || !offsets) return
     const offsetRange = document.createRange()
     offsetRange.selectNodeContents(block)
     offsetRange.setEnd(range.startContainer, range.startOffset)
-    const characterOffset = offsetRange.toString().length
+    const leadingWhitespace = rawText.length - rawText.trimStart().length
+    const characterOffset = offsetRange.toString().length + leadingWhitespace
+    const textStartOffset = offsets.start + leadingWhitespace
     const maxScroll = host.current.scrollHeight - host.current.clientHeight
     const progression = maxScroll > 0 ? host.current.scrollTop / maxScroll : 0
-    onSelection(text.slice(0, 5000), JSON.stringify({ type: 'TEXT', version: 1, blockIndex: Number(block.getAttribute('data-nocap-block')) || 0, characterOffset, scrollOffsetPx: Math.floor(host.current.scrollTop), progression }))
+    onSelection(text, JSON.stringify({ type: 'TEXT', version: 1, blockIndex: Number(block.getAttribute('data-nocap-block')) || 0, characterOffset, selectedText, textStartOffset, textEndOffset: textStartOffset + selectedText.length, scrollOffsetPx: Math.floor(host.current.scrollTop), progression }))
   }
   return error ? <div className="reader-error">{error}</div> : (
     <div ref={host} className={`text-host ${theme}`} onScroll={update} onMouseUp={selected} onTouchEnd={selected}>
@@ -1010,18 +1042,4 @@ function TextPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
       />
     </div>
   )
-}
-
-function pointAtTextOffset(root: Element, requestedOffset: number): { node: Text; offset: number } | null {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
-  let remaining = Math.max(0, requestedOffset)
-  let last: Text | null = null
-  while (walker.nextNode()) {
-    const node = walker.currentNode as Text
-    last = node
-    const length = node.data.length
-    if (remaining <= length) return { node, offset: remaining }
-    remaining -= length
-  }
-  return last ? { node: last, offset: last.data.length } : null
 }

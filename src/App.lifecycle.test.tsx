@@ -7,7 +7,7 @@ import App from './App'
 import { ApiError } from './api'
 
 const fixtures = vi.hoisted(() => ({
-  login: vi.fn(), googleLogin: vi.fn(), getFiles: vi.fn(), mutate: vi.fn(), loadBytes: vi.fn(), downloadHttps: vi.fn(), adminIdentity: vi.fn(), adminRequest: vi.fn(), localRecords: vi.fn(), entitlement: vi.fn(), preparePdf: vi.fn(), saveDownload: vi.fn(), readerThrows: false,
+  login: vi.fn(), googleLogin: vi.fn(), getFiles: vi.fn(), mutate: vi.fn(), loadBytes: vi.fn(), downloadHttps: vi.fn(), adminIdentity: vi.fn(), adminRequest: vi.fn(), localRecords: vi.fn(), entitlement: vi.fn(), preparePdf: vi.fn(), saveDownload: vi.fn(), conflicts: vi.fn(), resolveConflict: vi.fn(), readerThrows: false,
 }))
 vi.mock('./httpsImport', async importOriginal => ({
   ...await importOriginal<typeof import('./httpsImport')>(), downloadHttpsPublication: fixtures.downloadHttps,
@@ -19,7 +19,7 @@ vi.mock('./api', async importOriginal => ({
   ...await importOriginal<typeof import('./api')>(),
   getCatalog: async () => ({ books: [], categories: [] }),
   login: fixtures.login, loginWithGoogle: fixtures.googleLogin,
-  getUser: async () => ({ user: session.user }),
+  getUser: async (token: string) => ({ user: readSession()?.token === token ? readSession()!.user : session.user }),
   getEntitlement: fixtures.entitlement,
   getSePayPlans: async () => ({ plans: [] }),
   loadBookBytes: fixtures.loadBytes,
@@ -33,7 +33,7 @@ vi.mock('./store', async importOriginal => ({
 }))
 vi.mock('./sync', async importOriginal => ({
   ...await importOriginal<typeof import('./sync')>(),
-  localRecords: fixtures.localRecords, getConflicts: async () => [],
+  localRecords: fixtures.localRecords, getConflicts: fixtures.conflicts, resolveConflict: fixtures.resolveConflict,
   syncNow: async () => ({ conflicts: 0, changes: 0 }),
   connectLiveSync: () => () => {}, mutate: fixtures.mutate,
 }))
@@ -84,6 +84,8 @@ beforeEach(() => {
   fixtures.entitlement.mockReset().mockResolvedValue({ userId: session.user.id, plan: 'FREE' })
   fixtures.preparePdf.mockReset().mockResolvedValue({ filename: 'notes.pdf', blob: new Blob(['%PDF-1.3'], { type: 'application/pdf' }) })
   fixtures.saveDownload.mockReset()
+  fixtures.conflicts.mockReset().mockResolvedValue([])
+  fixtures.resolveConflict.mockReset().mockResolvedValue(undefined)
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks(); delete (window as unknown as { google?: unknown }).google })
 
@@ -143,6 +145,78 @@ describe('Reading Memory PDF export', () => {
 })
 
 describe('account and reader lifecycle', () => {
+  it('clears the old conflict warning after the last item is resolved', async () => {
+    saveSession(session)
+    let remaining = [{ key: 'ACCOUNT:qa-user:highlights:note', profile: 'ACCOUNT:qa-user', operation: { kind: 'highlights', id: 'note', payload: { text: 'Conflict quotation' } }, conflicted: true }]
+    fixtures.conflicts.mockImplementation(async () => remaining)
+    fixtures.resolveConflict.mockImplementation(async () => { remaining = [] })
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Xem & Giải quyết' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Giữ bản trên máy' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Xung đột đồng bộ' })).toBeNull())
+    expect(screen.queryByText('1 xung đột đồng bộ cần giải quyết.')).toBeNull()
+    expect(screen.getByText('Đã giải quyết xung đột đồng bộ.')).toBeTruthy()
+  })
+
+  it('discards conflict results belonging to an account that was replaced in another tab', async () => {
+    saveSession(session)
+    const pending = deferred<void>()
+    const oldConflict = { key: 'ACCOUNT:qa-user:highlights:private-note', profile: 'ACCOUNT:qa-user', operation: { kind: 'highlights', id: 'private-note', payload: { text: 'Private quotation from the old account' } }, conflicted: true }
+    fixtures.conflicts.mockImplementation(async (profile: string) => profile === 'ACCOUNT:qa-user' ? [oldConflict] : [])
+    fixtures.resolveConflict.mockReturnValue(pending.promise)
+    window.history.replaceState(null, '', '/library')
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Xem & Giải quyết' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Giữ bản trên máy' }))
+    await waitFor(() => expect(fixtures.resolveConflict).toHaveBeenCalled())
+    const replacement: Session = { ...session, token: 'replacement-qa-token', user: { ...session.user, id: 'other-user', email: 'other@example.test' } }
+    saveSession(replacement)
+    fireEvent(window, new StorageEvent('storage', { key: SESSION_STORAGE_KEY, storageArea: localStorage }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Tủ sách' })[0])
+    fixtures.conflicts.mockClear()
+    await act(async () => { pending.resolve(); await pending.promise })
+    expect(fixtures.conflicts.mock.calls.some(call => call[0] === 'ACCOUNT:qa-user')).toBe(false)
+    expect(screen.queryByRole('button', { name: 'Xem & Giải quyết' })).toBeNull()
+    expect(screen.queryByText('Private quotation from the old account')).toBeNull()
+    expect(readSession()?.user.id).toBe('other-user')
+  })
+
+  it('closes the organization editor and clears its draft when an account signs out', async () => {
+    saveSession(session)
+    window.history.replaceState(null, '', '/library')
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Quản lý Thẻ & Bộ sưu tập' }))
+    const dialog = screen.getByRole('dialog')
+    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'Private tag draft' } })
+    saveSession(null)
+    fireEvent(window, new StorageEvent('storage', { key: SESSION_STORAGE_KEY, storageArea: localStorage }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    fireEvent.click(screen.getAllByRole('button', { name: 'Tủ sách' })[0])
+    fireEvent.click(screen.getByRole('button', { name: 'Quản lý Thẻ & Bộ sưu tập' }))
+    expect((within(screen.getByRole('dialog')).getByRole('textbox') as HTMLInputElement).value).toBe('')
+  })
+
+  it('does not show an old note-save completion after another tab signs out', async () => {
+    saveSession(session)
+    fixtures.getFiles.mockResolvedValue([file('QA document')])
+    window.history.replaceState(null, '', '/read/QA%20document')
+    render(<App />)
+    await screen.findByText('QA reader content')
+    fireEvent.click(screen.getByRole('button', { name: 'Thêm ghi chú' }))
+    const dialog = screen.getByRole('dialog', { name: 'Lưu điều đáng nhớ' })
+    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'Private note belonging to the old account' } })
+    const pending = deferred<void>()
+    fixtures.mutate.mockImplementation((_profile, kind) => kind === 'highlights' ? pending.promise : Promise.resolve())
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Lưu ghi chú' }))
+    await waitFor(() => expect(fixtures.mutate.mock.calls.some(call => call[1] === 'highlights')).toBe(true))
+    saveSession(null)
+    fireEvent(window, new StorageEvent('storage', { key: SESSION_STORAGE_KEY, storageArea: localStorage }))
+    await act(async () => { pending.resolve(); await pending.promise })
+    expect(screen.queryByText('Đã lưu ghi chú.')).toBeNull()
+    expect(readSession()).toBeNull()
+    expect(fixtures.mutate.mock.calls.find(call => call[1] === 'highlights')?.[0]).toBe('ACCOUNT:qa-user')
+  })
+
   it('keeps the /admin deep link after sign-in and opens the server-approved workspace', async () => {
     window.history.replaceState(null, '', '/admin')
     fixtures.login.mockResolvedValue(session)
