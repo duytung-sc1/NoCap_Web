@@ -37,9 +37,21 @@ type Props = {
   annotations?: ReaderAnnotation[]
 }
 
+// New bytes must reset every format's document state, even when file size is unchanged.
+const contentVersions = new WeakMap<ArrayBuffer, number>()
+let nextContentVersion = 0
+function contentVersion(bytes: ArrayBuffer): number {
+  let version = contentVersions.get(bytes)
+  if (version === undefined) {
+    version = ++nextContentVersion
+    contentVersions.set(bytes, version)
+  }
+  return version
+}
+
 export function ReaderPane(props: Props) {
   const format = detectReaderFormat(props.book, props.bytes)
-  const contentKey = `${props.book.id}:${props.book.fileUrl || ''}:${props.bytes.byteLength}`
+  const contentKey = `${props.book.id}:${props.book.fileUrl || ''}:${contentVersion(props.bytes)}`
   if (format === 'pdf') return <PdfPane key={contentKey} {...props} />
   if (format === 'epub') return <EpubPane key={contentKey} {...props} />
   if (format === 'cbz') return <CbzPane key={contentKey} {...props} />

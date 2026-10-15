@@ -43,6 +43,16 @@ afterEach(() => {
 })
 
 describe('document reader restoration', () => {
+  it('recovers from a failed DOCX conversion when replacement bytes have the same length', async () => {
+    fixture.convert.mockRejectedValueOnce(new Error('Corrupt DOCX')).mockResolvedValueOnce({ value: '<p>Recovered DOCX</p>' })
+    const book = { id: 'qa-docx', title: 'QA', author: 'QA', format: 'DOCX' }
+    const { rerender } = render(<ReaderPane {...base} book={book} bytes={new ArrayBuffer(20)} />)
+    await screen.findByText('Không đọc được nội dung tài liệu này.')
+    rerender(<ReaderPane {...base} book={book} bytes={new ArrayBuffer(20)} />)
+    expect(await screen.findByText('Recovered DOCX')).toBeTruthy()
+    expect(screen.queryByText('Không đọc được nội dung tài liệu này.')).toBeNull()
+  })
+
   it('does not save a selection from the preceding PDF page while the next page is loading', async () => {
     const pending = deferred<Awaited<ReturnType<typeof fixture.getPage>>>()
     const original = fixture.getPage.getMockImplementation()!

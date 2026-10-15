@@ -7,7 +7,7 @@ import App from './App'
 import { ApiError } from './api'
 
 const fixtures = vi.hoisted(() => ({
-  login: vi.fn(), googleLogin: vi.fn(), getFiles: vi.fn(), mutate: vi.fn(), loadBytes: vi.fn(), downloadHttps: vi.fn(), adminIdentity: vi.fn(), adminRequest: vi.fn(), localRecords: vi.fn(), entitlement: vi.fn(), preparePdf: vi.fn(), saveDownload: vi.fn(), conflicts: vi.fn(), resolveConflict: vi.fn(), updateProfile: vi.fn(), deleteAccount: vi.fn(), readerThrows: false, adminThrows: false,
+  login: vi.fn(), googleLogin: vi.fn(), getFiles: vi.fn(), getCatalog: vi.fn(), removeLocalDocument: vi.fn(), mutate: vi.fn(), loadBytes: vi.fn(), downloadHttps: vi.fn(), adminIdentity: vi.fn(), adminRequest: vi.fn(), localRecords: vi.fn(), entitlement: vi.fn(), preparePdf: vi.fn(), saveDownload: vi.fn(), conflicts: vi.fn(), resolveConflict: vi.fn(), updateProfile: vi.fn(), deleteAccount: vi.fn(), readerThrows: false, adminThrows: false,
 }))
 vi.mock('./httpsImport', async importOriginal => ({
   ...await importOriginal<typeof import('./httpsImport')>(), downloadHttpsPublication: fixtures.downloadHttps,
@@ -17,7 +17,7 @@ vi.mock('./admin/api', async importOriginal => ({
 }))
 vi.mock('./api', async importOriginal => ({
   ...await importOriginal<typeof import('./api')>(),
-  getCatalog: async () => ({ books: [], categories: [] }),
+  getCatalog: fixtures.getCatalog,
   login: fixtures.login, loginWithGoogle: fixtures.googleLogin,
   getUser: async (token: string) => ({ user: readSession()?.token === token ? readSession()!.user : session.user }),
   getEntitlement: fixtures.entitlement,
@@ -27,7 +27,7 @@ vi.mock('./api', async importOriginal => ({
 }))
 vi.mock('./store', async importOriginal => ({
   ...await importOriginal<typeof import('./store')>(),
-  getFiles: fixtures.getFiles, getFile: async () => undefined,
+  getFiles: fixtures.getFiles, getFile: async () => undefined, removeLocalDocument: fixtures.removeLocalDocument,
   getOfflineBooks: async () => [], getOfflineBook: async () => undefined,
   getPending: async () => [], getCachedCatalog: async () => undefined,
   saveCachedCatalog: async () => {},
@@ -81,6 +81,8 @@ beforeEach(() => {
   localStorage.clear(); sessionStorage.clear(); window.history.replaceState(null, '', '/')
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
   fixtures.getFiles.mockReset().mockResolvedValue([])
+  fixtures.getCatalog.mockReset().mockResolvedValue({ books: [], categories: [] })
+  fixtures.removeLocalDocument.mockReset().mockResolvedValue(undefined)
   fixtures.mutate.mockReset().mockResolvedValue(undefined)
   fixtures.login.mockReset(); fixtures.googleLogin.mockReset()
   fixtures.loadBytes.mockReset().mockResolvedValue(new TextEncoder().encode('QA document').buffer)
@@ -99,6 +101,139 @@ beforeEach(() => {
   fixtures.resolveConflict.mockReset().mockResolvedValue(undefined)
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks(); delete (window as unknown as { google?: unknown }).google })
+
+describe('library write failures and concurrent actions', () => {
+  async function reader() {
+    fixtures.getFiles.mockResolvedValue([file('QA document')])
+    window.history.replaceState(null, '', '/read/QA%20document')
+    render(<App />)
+    await screen.findByText('QA reader content')
+    return screen.getByRole('button', { name: 'Đánh dấu vị trí' })
+  }
+
+  it('creates only one bookmark while its storage write is pending', async () => {
+    const button = await reader()
+    const pending = deferred<void>()
+    fixtures.mutate.mockImplementation((_profile, kind) => kind === 'bookmarks' ? pending.promise : Promise.resolve())
+    fireEvent.click(button); fireEvent.click(button)
+    try {
+      expect(fixtures.mutate.mock.calls.filter(([, kind]) => kind === 'bookmarks')).toHaveLength(1)
+      expect(button.hasAttribute('disabled')).toBe(true)
+    } finally {
+      await act(async () => { pending.resolve(); await pending.promise })
+    }
+    expect(button.hasAttribute('disabled')).toBe(false)
+  })
+
+  it('reports a failed bookmark write and permits retry', async () => {
+    const button = await reader()
+    fixtures.mutate.mockImplementation((_profile, kind) => kind === 'bookmarks' ? Promise.reject(new Error('Bookmark storage unavailable')) : Promise.resolve())
+    fireEvent.click(button)
+    const error = await screen.findByText('Bookmark storage unavailable')
+    expect(error.closest('.reader-notice')).toBeTruthy()
+    expect(error.closest('.reader-shell')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Đóng thông báo' }))
+    expect(screen.queryByText('Bookmark storage unavailable')).toBeNull()
+    fixtures.mutate.mockResolvedValue(undefined)
+    fireEvent.click(button)
+    expect(await screen.findByText('Đã thêm dấu trang.')).toBeTruthy()
+  })
+
+  it('does not show a bookmark completion in a replacement account', async () => {
+    saveSession(session)
+    const button = await reader()
+    const pending = deferred<void>()
+    fixtures.mutate.mockImplementation((_profile, kind) => kind === 'bookmarks' ? pending.promise : Promise.resolve())
+    fireEvent.click(button)
+    saveSession(null)
+    fireEvent(window, new StorageEvent('storage', { key: SESSION_STORAGE_KEY, storageArea: localStorage }))
+    await act(async () => { pending.resolve(); await pending.promise })
+    expect(screen.queryByText('Đã thêm dấu trang.')).toBeNull()
+  })
+
+  it('shows note storage errors above the reader while preserving the open draft', async () => {
+    await reader()
+    fireEvent.click(screen.getByRole('button', { name: 'Thêm ghi chú' }))
+    const dialog = screen.getByRole('dialog', { name: 'Lưu điều đáng nhớ' })
+    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'Keep my draft' } })
+    fixtures.mutate.mockImplementation((_profile, kind) => kind === 'highlights' ? Promise.reject(new Error('Note storage unavailable')) : Promise.resolve())
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Lưu ghi chú' }))
+    const error = await screen.findByText('Note storage unavailable')
+    expect(error.closest('.reader-notice')).toBeTruthy()
+    expect(error.closest('.reader-shell')).toBeNull()
+    expect((within(dialog).getByRole('textbox') as HTMLTextAreaElement).value).toBe('Keep my draft')
+  })
+
+  it('reports a failed library save and prevents repeated pending favorite writes', async () => {
+    fixtures.getCatalog.mockResolvedValue({ books: [{ id: 'qa-public', title: 'QA public', author: 'QA', source: 'public', format: 'TXT' }], categories: [] })
+    window.history.replaceState(null, '', '/explore')
+    render(<App />)
+    const button = await screen.findByRole('button', { name: 'Lưu vào tủ sách: QA public' })
+    fixtures.mutate.mockRejectedValueOnce(new Error('Favorite storage unavailable'))
+    fireEvent.click(button)
+    expect(await screen.findByText('Favorite storage unavailable')).toBeTruthy()
+    const pending = deferred<void>()
+    fixtures.mutate.mockReturnValue(pending.promise)
+    fireEvent.click(button); fireEvent.click(button)
+    try { expect(fixtures.mutate.mock.calls.filter(([, kind]) => kind === 'favorites')).toHaveLength(2) }
+    finally { await act(async () => { pending.resolve(); await pending.promise }) }
+  })
+
+  it('reports a failed local deletion and allows a successful retry', async () => {
+    fixtures.getFiles.mockResolvedValue([file('QA document')])
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    window.history.replaceState(null, '', '/library')
+    render(<App />)
+    const button = await screen.findByRole('button', { name: 'Xóa tệp trên trình duyệt' })
+    fixtures.removeLocalDocument.mockRejectedValueOnce(new Error('Deletion storage unavailable'))
+    fireEvent.click(button)
+    expect(await screen.findByText('Deletion storage unavailable')).toBeTruthy()
+    fireEvent.click(button)
+    expect(await screen.findByText('Đã xóa tài liệu.')).toBeTruthy()
+    expect(fixtures.removeLocalDocument).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not repeat a pending deletion or show its completion after an account switch', async () => {
+    saveSession(session)
+    fixtures.getFiles.mockResolvedValue([file('QA document')])
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const pending = deferred<void>()
+    fixtures.removeLocalDocument.mockReturnValue(pending.promise)
+    window.history.replaceState(null, '', '/library')
+    render(<App />)
+    const button = await screen.findByRole('button', { name: 'Xóa tệp trên trình duyệt' })
+    fireEvent.click(button); fireEvent.click(button)
+    expect(fixtures.removeLocalDocument).toHaveBeenCalledExactlyOnceWith('ACCOUNT:qa-user', 'QA document')
+    expect(window.confirm).toHaveBeenCalledOnce()
+    saveSession(null)
+    fireEvent(window, new StorageEvent('storage', { key: SESSION_STORAGE_KEY, storageArea: localStorage }))
+    await act(async () => { pending.resolve(); await pending.promise })
+    expect(screen.queryByText('Đã xóa tài liệu.')).toBeNull()
+  })
+
+  it('keeps a failed favorite write in its original account', async () => {
+    saveSession(session)
+    fixtures.getCatalog.mockResolvedValue({ books: [{ id: 'qa-public', title: 'QA public', author: 'QA', source: 'public', format: 'TXT' }], categories: [] })
+    let reject!: (error: Error) => void
+    const pending = new Promise<void>((_resolve, fail) => { reject = fail })
+    fixtures.mutate.mockImplementation((_profile, kind) => kind === 'favorites' ? pending : Promise.resolve())
+    window.history.replaceState(null, '', '/explore')
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Lưu vào tủ sách: QA public' }))
+    saveSession(null)
+    fireEvent(window, new StorageEvent('storage', { key: SESSION_STORAGE_KEY, storageArea: localStorage }))
+    await act(async () => { reject(new Error('Old account favorite failed')); await pending.catch(() => {}) })
+    expect(screen.queryByText('Old account favorite failed')).toBeNull()
+  })
+
+  it('never queues a browser-only document favorite for cloud sync from the home page', async () => {
+    fixtures.getFiles.mockResolvedValue([file('QA document')])
+    fixtures.localRecords.mockResolvedValue([{ key: 'DEVICE_LOCAL:reading_progress:qa', profile: 'DEVICE_LOCAL', kind: 'reading_progress', id: 'qa', version: 1, deleted: false, payload: { book_id: 'QA document', progression: 0.2, updated_at: Date.now() } }])
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Lưu vào tủ sách: QA document' }))
+    await waitFor(() => expect(fixtures.mutate.mock.calls.find(([, kind]) => kind === 'favorites')?.[5]).toBe(true))
+  })
+})
 
 describe('Reading Memory PDF export', () => {
   async function memory(pro: boolean) {

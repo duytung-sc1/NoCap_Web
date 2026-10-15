@@ -1975,6 +1975,9 @@ body, .main-area {
 
 /* The site header/drawer must not intercept reader controls or dialogs. */
 .reader-shell { z-index: 130; }
+.reader-notice { position: fixed; top: 72px; left: 50%; transform: translateX(-50%); width: min(580px, calc(100% - 32px)); max-height: calc(100dvh - 160px); overflow-y: auto; z-index: 160; margin: 0; box-shadow: 0 6px 24px #10243c1a; }
+.reader-notice span { min-width: 0; overflow-wrap: anywhere; }
+.reader-notice button { flex-shrink: 0; min-width: 24px; min-height: 24px; }
 .overlay, .modal-shade { z-index: 140; grid-template-columns: minmax(0, 1fr); }
 .dialog, .loading-card { min-width: 0; max-width: 100%; }
 /* Keep the upgrade prompt above book details and reader settings. */
