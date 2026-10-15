@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { StealthReader } from './StealthReader'
 import { readStealthCheckpoint, saveStealthCheckpoint } from './checkpoint'
 
@@ -21,27 +21,25 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('Excel reading pages and restoration', () => {
-  it('shows labelled paging buttons, opens each new page at the top and prevents out-of-range navigation', async () => {
+  it('keeps paging on the keyboard, opens each new page at the top and prevents out-of-range navigation', async () => {
     const { container } = render(<StealthReader {...props} />)
-    const navigation = await screen.findByRole('navigation', { name: 'Điều hướng trang đọc' })
     await screen.findByRole('cell', { name: 'Paragraph 0' })
     const grid = container.querySelector<HTMLDivElement>('.excel-grid-container')!
-    expect(within(navigation).getByRole('button', { name: 'Trang trước' }).hasAttribute('disabled')).toBe(true)
+    expect(screen.queryByRole('navigation', { name: 'Điều hướng trang đọc' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Trang trước' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Trang sau' })).toBeNull()
     grid.scrollTop = 600
-    fireEvent.click(within(navigation).getByRole('button', { name: 'Trang sau' }))
-    expect(screen.getByText('Trang 2 / 3')).toBeTruthy()
+    await act(async () => { fireEvent.keyDown(window, { key: 'PageDown' }) })
     expect(grid.scrollTop).toBe(0)
     expect(screen.queryByRole('cell', { name: 'Paragraph 0' })).toBeNull()
     expect(screen.getByRole('cell', { name: 'Paragraph 40' })).toBeTruthy()
-    fireEvent.keyDown(window, { key: 'PageDown' })
-    expect(screen.getByText('Trang 3 / 3')).toBeTruthy()
-    expect(within(navigation).getByRole('button', { name: 'Trang sau' }).hasAttribute('disabled')).toBe(true)
+    await act(async () => { fireEvent.keyDown(window, { key: 'PageDown' }) })
+    expect(screen.getByRole('cell', { name: 'Paragraph 80' })).toBeTruthy()
     fireEvent.click(screen.getByRole('cell', { name: 'Paragraph 94' }))
-    fireEvent.keyDown(window, { key: 'PageDown' })
+    await act(async () => { fireEvent.keyDown(window, { key: 'PageDown' }) })
     expect(readStealthCheckpoint(props.profile, book.id)?.rowIndex).toBe(94)
     grid.scrollTop = 400
-    fireEvent.keyDown(window, { key: 'ArrowLeft' })
-    expect(screen.getByText('Trang 2 / 3')).toBeTruthy()
+    await act(async () => { fireEvent.keyDown(window, { key: 'ArrowLeft' }) })
     expect(grid.scrollTop).toBe(0)
     expect(readStealthCheckpoint(props.profile, book.id)?.rowIndex).toBe(40)
   })
@@ -49,7 +47,7 @@ describe('Excel reading pages and restoration', () => {
   it('restores the exact chapter row on re-entry and marks the preceding reading position', async () => {
     saveStealthCheckpoint(props.profile, book.id, { progression: 73 / 94, sourceHref: 'chapter.xhtml', rowIndex: 73, rowCount: 95, rowId: 'REC-73', rowOffset: 10 })
     const { container, unmount } = render(<StealthReader {...props} />)
-    await screen.findByText('Trang 2 / 3')
+    await screen.findByRole('cell', { name: 'Paragraph 73' })
     expect(container.querySelector('.excel-tr.last-read')?.textContent).toContain('Paragraph 73')
     expect(progress.mock.calls.at(-1)?.[0]).toMatchObject({ rowIndex: 73, rowOffset: 10 })
     fireEvent.keyDown(window, { key: 'PageDown' })
@@ -57,7 +55,7 @@ describe('Excel reading pages and restoration', () => {
     expect(readStealthCheckpoint(props.profile, book.id)?.rowIndex).toBe(80)
     unmount()
     render(<StealthReader {...props} />)
-    await screen.findByText('Trang 3 / 3')
+    await screen.findByRole('cell', { name: 'Paragraph 80' })
     expect(screen.getByLabelText('Vị trí lần đọc trước')).toBeTruthy()
     fireEvent.keyDown(window, { key: 'F2' })
     expect(close).toHaveBeenLastCalledWith(expect.objectContaining({ rowIndex: 80, rowCount: 95 }))

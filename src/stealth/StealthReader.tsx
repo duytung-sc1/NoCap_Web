@@ -346,6 +346,9 @@ export function StealthReader({
         </div>
         {fullscreenError && <p role="alert">{curT.fullscreenUnavailable}</p>}
         <div className="stealth-settings-actions">
+          {!panic && lastReadIndex !== null && <button type="button" onClick={() => {
+            setSearch(''); selectSourceRow(lastReadIndex); setHelpOpen(false)
+          }}>{lang === 'vi' ? 'Về mốc lần trước' : 'Last reading position'}</button>}
           <button type="button" onClick={toggleFullscreen}>{fullscreen ? curT.exitFullscreenLabel : curT.fullscreenLabel} (F10)</button>
           <button type="button" onClick={togglePanic}>{panic ? curT.unpanicBtn : curT.panicBtn}</button>
           <button type="button" onClick={closeStealth}>{curT.exitStealth}</button>
@@ -363,10 +366,8 @@ export function StealthReader({
           activeRowRef={activeRowRef}
           onSelectRow={selectDisplayRow}
           onViewportChange={trackViewport}
-          onPageChange={movePage}
           initialRowOffset={initialRowOffset}
           lastReadRowIndex={lastReadIndex === null ? null : displayEntries.findIndex(entry => entry.sourceIndex === lastReadIndex)}
-          onResumeLastRead={() => { if (lastReadIndex !== null) { setSearch(''); selectSourceRow(lastReadIndex); wrapperRef.current?.focus({ preventScroll: true }) } }}
           checkpointError={checkpointError}
           fontSize={fontSize}
           panic={panic}

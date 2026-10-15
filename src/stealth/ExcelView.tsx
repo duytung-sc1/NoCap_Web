@@ -20,10 +20,8 @@ interface Props {
   activeRowRef: RefObject<HTMLTableRowElement | HTMLDivElement | null>
   onSelectRow: (index: number) => void
   onViewportChange: (index: number, offset: number) => void
-  onPageChange: (direction: number) => void
   initialRowOffset?: number
   lastReadRowIndex: number | null
-  onResumeLastRead: () => void
   checkpointError: boolean
   fontSize: number
   onFontSizeChange: (size: number) => void
@@ -54,8 +52,8 @@ const CELL_CLASSES = ['id-col', 'cat-col', 'text-col', 'status-col', 'var-col', 
 
 export function ExcelView({ rows, currentRow, activeRowIndex, activeRowRef, onSelectRow, fontSize,
   onFontSizeChange, panic, loading, curT, lang = 'vi', search, onSearchChange, onOpenSettings,
-  onToggleFullscreen, onClose, fullscreen, onViewportChange, onPageChange, initialRowOffset = 0,
-  lastReadRowIndex, onResumeLastRead, checkpointError }: Props) {
+  onToggleFullscreen, onClose, fullscreen, onViewportChange, initialRowOffset = 0,
+  lastReadRowIndex, checkpointError }: Props) {
   const [column, setColumn] = useState<WorksheetColumn>('C')
   const [fontFamily, setFontFamily] = useState('Calibri')
   const [bold, setBold] = useState(false)
@@ -308,27 +306,15 @@ export function ExcelView({ rows, currentRow, activeRowIndex, activeRowRef, onSe
       </table>
     </div>
 
-    <nav className="excel-reading-navigation" aria-label={lang === 'vi' ? 'Điều hướng trang đọc' : 'Reading page navigation'}>
-      <div className="excel-page-buttons">
-        <button type="button" disabled={panic || loading || page.page === 0 || !rows.length} onClick={() => onPageChange(-1)} title="Page Up / ←"><ChevronLeft />{lang === 'vi' ? 'Trang trước' : 'Previous page'}</button>
-        <span role="status">{lang === 'vi' ? 'Trang' : 'Page'} {page.page + 1} / {page.count}</span>
-        <button type="button" disabled={panic || loading || page.page >= page.count - 1 || !rows.length} onClick={() => onPageChange(1)} title="Page Down / →">{lang === 'vi' ? 'Trang sau' : 'Next page'}<ChevronRight /></button>
-      </div>
-      <span className="excel-page-guide">PgUp / PgDn · ← / →</span>
-      {!panic && <span className="excel-position-saved" role={checkpointError ? 'alert' : undefined}>{checkpointError
-        ? (lang === 'vi' ? 'Chưa lưu được vị trí trên máy' : 'Could not save position on this device')
-        : loading ? (lang === 'vi' ? 'Đang mở…' : 'Opening…')
-        : (lang === 'vi' ? `Tự lưu · Dòng ${worksheetRowNumber(currentRow)}` : `Auto-saved · Row ${worksheetRowNumber(currentRow)}`)}</span>}
-      {!panic && lastReadRowIndex !== null && <button type="button" className="excel-resume-position" onClick={onResumeLastRead}>{lang === 'vi' ? 'Về mốc lần trước' : 'Last reading position'}</button>}
-    </nav>
-
     <div className="excel-footer-tabs">
       <div className="excel-sheet-navigation"><button type="button" aria-label="Scroll sheet tabs left" onClick={() => tabsRef.current?.scrollBy({ left: -180, behavior: 'smooth' })}><ChevronLeft /></button><button type="button" aria-label="Scroll sheet tabs right" onClick={() => tabsRef.current?.scrollBy({ left: 180, behavior: 'smooth' })}><ChevronRight /></button><span aria-hidden="true">···</span></div>
       <div ref={tabsRef} className="excel-tabs-list"><span className="excel-sheet-tab active">{curT.excelSheetMain}</span><span className="excel-sheet-tab">{curT.excelSheetAudit}</span><span className="excel-sheet-tab">{curT.excelSheetMetrics}</span><span className="excel-new-sheet" aria-hidden="true"><Plus /></span></div>
       <input className="excel-horizontal-scroll" type="range" min="0" max={horizontalMax} value={horizontalPosition} disabled={!horizontalMax} aria-label="Horizontal scroll"
         onChange={event => { if (gridRef.current) gridRef.current.scrollLeft = Number(event.target.value) }} />
     </div>
-    <div className="excel-statusbar"><span>{clipboardStatus || 'Ready'}</span><span className="excel-accessibility"><Check />Accessibility: Good to go</span>
+    <div className="excel-statusbar"><span role={!panic && checkpointError ? 'alert' : undefined}>{!panic && checkpointError
+      ? (lang === 'vi' ? 'Chưa lưu được vị trí trên máy' : 'Could not save position on this device')
+      : clipboardStatus || 'Ready'}</span><span className="excel-accessibility"><Check />Accessibility: Good to go</span>
       <div className="excel-status-right"><span className="excel-sheet-views" aria-hidden="true"><Grid2X2 className="active" /><FileSpreadsheet /><Table2 /></span>
         <button type="button" aria-label="Zoom out" onClick={() => setZoom(previous => Math.max(50, previous - 10))}><Minus /></button>
         <input type="range" min="50" max="200" step="10" value={zoom} aria-label="Zoom" onChange={event => setZoom(Number(event.target.value))} />
