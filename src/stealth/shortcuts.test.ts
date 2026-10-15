@@ -56,4 +56,11 @@ describe('stealth keyboard controls', () => {
     expect(stealthShortcut({ key: 'PageDown', panic: true })).toBeNull()
     expect(stealthShortcut({ key: 'F12', panic: true })).toEqual({ type: 'panic' })
   })
+
+  it('uses explicit page navigation for page keys and horizontal arrows', () => {
+    for (const key of ['PageDown', 'ArrowRight']) expect(stealthShortcut({ key })).toEqual({ type: 'page', delta: 1 })
+    for (const key of ['PageUp', 'ArrowLeft']) expect(stealthShortcut({ key })).toEqual({ type: 'page', delta: -1 })
+    expect(stealthShortcut({ key: 'ArrowRight', editing: true })).toBeNull()
+    expect(stealthShortcut({ key: 'ArrowRight', panic: true })).toBeNull()
+  })
 })

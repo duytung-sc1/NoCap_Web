@@ -7,6 +7,8 @@ import {
   rowIndexFromProgression,
   rowIndexFromLocator,
   sourceIndexForDisplay,
+  worksheetPage,
+  adjacentPageStart,
 } from './navigation'
 
 function row(index: number, text: string): StealthRow {
@@ -51,5 +53,25 @@ describe('stealth navigation', () => {
     ]
     const locator = JSON.stringify({ href: 'chapter-2.xhtml', progression: 0.1 })
     expect(rowIndexFromLocator(rows, locator, 0.1)).toBe(1)
+  })
+
+  it('restores the exact saved row inside an EPUB chapter rather than its beginning', () => {
+    const rows = Array.from({ length: 100 }, (_, index) => ({ ...row(index, `Paragraph ${index}`), sourceHref: 'chapter.xhtml' }))
+    expect(rowIndexFromLocator(rows, JSON.stringify({ type: 'STEALTH', rowIndex: 73, rowCount: 100, rowId: 'REC-73', href: 'chapter.xhtml' }), 0.73)).toBe(73)
+    expect(rowIndexFromLocator(rows, JSON.stringify({ type: 'STEALTH', href: 'chapter.xhtml', progression: 0.73 }), 0.73)).toBe(72)
+  })
+
+  it('uses percentage fallback when a replacement edition has a different row count', () => {
+    const rows = Array.from({ length: 11 }, (_, index) => row(index, 'Changed edition'))
+    expect(rowIndexFromLocator(rows, JSON.stringify({ type: 'STEALTH', rowIndex: 8, rowCount: 100, progression: 0.5 }), 0.5)).toBe(5)
+    expect(rowIndexFromProgression(NaN, 11)).toBe(0)
+  })
+
+  it('moves to page starts and clamps both ends including the partial final page', () => {
+    expect(worksheetPage(76, 91)).toEqual({ page: 1, count: 3, start: 40, end: 80 })
+    expect(adjacentPageStart(76, 91, 1)).toBe(80)
+    expect(adjacentPageStart(85, 91, -1)).toBe(40)
+    expect(adjacentPageStart(1, 91, -1)).toBe(0)
+    expect(worksheetPage(0, 0)).toEqual({ page: 0, count: 1, start: 0, end: 0 })
   })
 })

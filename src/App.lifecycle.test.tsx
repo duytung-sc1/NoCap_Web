@@ -5,6 +5,7 @@ import type { LocalFile, Session, SyncRecord } from './types'
 import { readSession, saveSession, SESSION_STORAGE_KEY } from './store'
 import App from './App'
 import { ApiError } from './api'
+import { saveStealthCheckpoint } from './stealth/checkpoint'
 
 const fixtures = vi.hoisted(() => ({
   login: vi.fn(), googleLogin: vi.fn(), getFiles: vi.fn(), getCatalog: vi.fn(), removeLocalDocument: vi.fn(), mutate: vi.fn(), loadBytes: vi.fn(), downloadHttps: vi.fn(), adminIdentity: vi.fn(), adminRequest: vi.fn(), localRecords: vi.fn(), entitlement: vi.fn(), preparePdf: vi.fn(), saveDownload: vi.fn(), conflicts: vi.fn(), resolveConflict: vi.fn(), updateProfile: vi.fn(), deleteAccount: vi.fn(), readerThrows: false, adminThrows: false,
@@ -55,9 +56,15 @@ vi.mock('./Reader', async () => {
   return { ReaderPane: ({ onLocation }: { onLocation: (location: object) => void }) => {
     useEffect(() => { onLocation({ locatorJson: '{"type":"TEXT","progression":0.6}', progression: 0.6, chapterTitle: 'QA' }) }, [onLocation])
     if (fixtures.readerThrows) throw new Error('QA reader bundle/render failure')
-    return <p>QA reader content</p>
+    return <><p>QA reader content</p><button onClick={() => onLocation({ locatorJson: '{"type":"TEXT","progression":0.1}', progression: 0.1, chapterTitle: 'Old normal view' })}>QA background reader location</button></>
   } }
 })
+vi.mock('./stealth/StealthReader', () => ({ StealthReader: ({ onProgressChange, onClose }: {
+  onProgressChange: (position: object) => void; onClose: (position: object) => void
+}) => {
+  const position = { progression: 0.73, rowIndex: 73, rowCount: 101, rowId: 'REC-73', sourceHref: 'chapter.xhtml', rowOffset: 8 }
+  return <><button onClick={() => onProgressChange(position)}>QA stealth advance</button><button onClick={() => onClose(position)}>QA stealth close</button></>
+} }))
 const session: Session = { token: 'qa-only-token', expiresAt: Date.now() / 1000 + 86400,
   user: { id: 'qa-user', email: 'qa@example.test', displayName: 'QA Reader', emailVerified: true } }
 function deferred<T>() {
@@ -291,6 +298,36 @@ describe('Reading Memory PDF export', () => {
 })
 
 describe('account and reader lifecycle', () => {
+  it('keeps the stealth row on pagehide even if the hidden normal reader publishes another location', async () => {
+    saveSession(session)
+    fixtures.getFiles.mockResolvedValue([file('QA document')])
+    fixtures.entitlement.mockResolvedValue({ userId: session.user.id, plan: 'PRO', status: 'ACTIVE', updatedAt: Date.now(), expiresAt: Date.now() + 86400000 })
+    window.history.replaceState(null, '', '/read/QA%20document')
+    render(<App />)
+    await screen.findByText('QA reader content')
+    fireEvent.keyDown(window, { key: 'F2' })
+    fireEvent.click(await screen.findByRole('button', { name: 'QA stealth advance' }))
+    fireEvent.click(screen.getByRole('button', { name: 'QA background reader location' }))
+    fireEvent(window, new Event('pagehide'))
+    await waitFor(() => expect(fixtures.mutate.mock.calls.some(([, kind, , payload]) => kind === 'reading_progress' && payload.progression === 0.73 && JSON.parse(payload.locator_json).rowIndex === 73)).toBe(true))
+    expect(fixtures.mutate.mock.calls.some(([, kind, , payload]) => kind === 'reading_progress' && payload.progression === 0.1)).toBe(false)
+    fixtures.mutate.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: 'QA stealth close' }))
+    expect(fixtures.mutate.mock.calls.some(([, kind, , payload]) => kind === 'reading_progress' && JSON.parse(payload.locator_json).rowOffset === 8)).toBe(true)
+  })
+
+  it('uses a synchronous stealth checkpoint if the tab closed before its database write finished', async () => {
+    fixtures.getFiles.mockResolvedValue([file('QA document')])
+    saveStealthCheckpoint('DEVICE_LOCAL', 'QA document', { progression: 0.73, rowIndex: 73, rowCount: 101, rowId: 'REC-73', rowOffset: 8 })
+    window.history.replaceState(null, '', '/read/QA%20document')
+    render(<App />)
+    await screen.findByText('QA reader content')
+    // Opening at a checkpoint also starts its reading session at the restored percentage.
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 6000)
+    fireEvent(window, new Event('pagehide'))
+    await waitFor(() => expect(fixtures.mutate.mock.calls.some(([, kind, , payload]) => kind === 'reading_sessions' && payload.start_progress === 0.73)).toBe(true))
+  })
+
   it('does not show an old display-name error after the account is replaced', async () => {
     saveSession(session)
     window.history.replaceState(null, '', '/account')

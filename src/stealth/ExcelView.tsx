@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import {
   AlignCenter, AlignEndVertical, AlignLeft, AlignRight, AlignStartVertical, Bold,
   Check, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Copy, DollarSign,
@@ -11,6 +11,7 @@ import type { Lang } from '../i18n'
 import type { StealthTranslations } from './StealthReader'
 import type { StealthRow } from './textExtractor'
 import { findWorksheetCell, WORKSHEET_COLUMNS, worksheetCellValue, worksheetRowNumber, type WorksheetColumn } from './worksheet'
+import { worksheetPage } from './navigation'
 
 interface Props {
   rows: StealthRow[]
@@ -18,6 +19,12 @@ interface Props {
   activeRowIndex: number
   activeRowRef: RefObject<HTMLTableRowElement | HTMLDivElement | null>
   onSelectRow: (index: number) => void
+  onViewportChange: (index: number, offset: number) => void
+  onPageChange: (direction: number) => void
+  initialRowOffset?: number
+  lastReadRowIndex: number | null
+  onResumeLastRead: () => void
+  checkpointError: boolean
   fontSize: number
   onFontSizeChange: (size: number) => void
   panic: boolean
@@ -47,7 +54,8 @@ const CELL_CLASSES = ['id-col', 'cat-col', 'text-col', 'status-col', 'var-col', 
 
 export function ExcelView({ rows, currentRow, activeRowIndex, activeRowRef, onSelectRow, fontSize,
   onFontSizeChange, panic, loading, curT, lang = 'vi', search, onSearchChange, onOpenSettings,
-  onToggleFullscreen, onClose, fullscreen }: Props) {
+  onToggleFullscreen, onClose, fullscreen, onViewportChange, onPageChange, initialRowOffset = 0,
+  lastReadRowIndex, onResumeLastRead, checkpointError }: Props) {
   const [column, setColumn] = useState<WorksheetColumn>('C')
   const [fontFamily, setFontFamily] = useState('Calibri')
   const [bold, setBold] = useState(false)
@@ -65,11 +73,51 @@ export function ExcelView({ rows, currentRow, activeRowIndex, activeRowRef, onSe
   const tableRef = useRef<HTMLTableElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const tabsRef = useRef<HTMLDivElement>(null)
-  const windowSize = 70
-  const start = Math.max(0, activeRowIndex - 20)
-  const end = Math.min(rows.length, start + windowSize)
+  const page = worksheetPage(activeRowIndex, rows.length)
+  const { start, end } = page
+  const previousPage = useRef<number | null>(null)
+  const fromScroll = useRef(false)
+  const expectedScroll = useRef<number | null>(null)
   const address = `${column}${worksheetRowNumber(currentRow)}`
   const cellValue = worksheetCellValue(currentRow, column)
+
+  useLayoutEffect(() => {
+    const grid = gridRef.current
+    const row = activeRowRef.current
+    if (!grid || !row || loading) return
+    const initial = previousPage.current === null
+    const pageChanged = !initial && previousPage.current !== page.page
+    previousPage.current = page.page
+    if (pageChanged) {
+      grid.scrollTop = 0
+      grid.scrollLeft = 0
+      // Paging selects the page's first row; an explicit cell address or saved
+      // marker can target a later row and must still become visible.
+      if (activeRowIndex !== page.start) row.scrollIntoView({ block: 'start', behavior: 'auto' })
+    } else if (initial) {
+      const headers = (tableRef.current?.querySelector('thead')?.getBoundingClientRect().height || 0)
+        + (tableRef.current?.querySelector('.excel-field-row')?.getBoundingClientRect().height || 0)
+      grid.scrollTop += row.getBoundingClientRect().top - grid.getBoundingClientRect().top - headers + initialRowOffset
+    } else if (!fromScroll.current) {
+      row.scrollIntoView({ block: 'nearest', behavior: 'auto' })
+    }
+    fromScroll.current = false
+    expectedScroll.current = grid.scrollTop
+  }, [activeRowIndex, page.page, page.start, loading, rows, activeRowRef, initialRowOffset])
+
+  const trackScroll = (grid: HTMLDivElement) => {
+    setHorizontalPosition(grid.scrollLeft)
+    if (panic || loading || !rows.length || grid.scrollTop === expectedScroll.current) return
+    expectedScroll.current = null
+    const headers = (tableRef.current?.querySelector('thead')?.getBoundingClientRect().height || 0)
+      + (tableRef.current?.querySelector('.excel-field-row')?.getBoundingClientRect().height || 0)
+    const readingTop = grid.getBoundingClientRect().top + headers
+    const visible = Array.from(grid.querySelectorAll<HTMLTableRowElement>('.excel-tr'))
+      .find(row => row.getBoundingClientRect().bottom > readingTop + 1)
+    if (!visible) return
+    fromScroll.current = true
+    onViewportChange(Number(visible.dataset.displayIndex), Math.max(0, readingTop - visible.getBoundingClientRect().top))
+  }
 
   useEffect(() => {
     activeRowRef.current?.scrollIntoView({ block: 'nearest' })
@@ -235,7 +283,7 @@ export function ExcelView({ rows, currentRow, activeRowIndex, activeRowRef, onSe
       <div className="excel-formula-input" title={cellValue}>{cellValue}</div><ChevronDown className="excel-formula-expand" aria-hidden="true" />
     </div>
 
-    <div ref={gridRef} className="excel-grid-container" onScroll={event => setHorizontalPosition(event.currentTarget.scrollLeft)}>
+    <div ref={gridRef} className="excel-grid-container" onScroll={event => trackScroll(event.currentTarget)}>
       <table ref={tableRef} className={`excel-table ${wrap ? '' : 'no-wrap'}`} style={{ fontSize: `${fontSize}px`, fontFamily: `${fontFamily}, 'Segoe UI', Arial, sans-serif`, zoom: zoom / 100 }}>
         <colgroup><col className="excel-number-column" /><col className="excel-id-column" /><col className="excel-category-column" /><col /><col className="excel-status-column" /><col className="excel-variance-column" />{['F', 'G', 'H', 'I'].map(key => <col className="excel-empty-column" key={key} />)}</colgroup>
         <thead><tr><th className="excel-th excel-corner" aria-label="Worksheet"><span /></th>{WORKSHEET_COLUMNS.map(key => <th key={key} scope="col" className={`excel-th ${column === key ? 'selected' : ''}`}>{key}</th>)}</tr></thead>
@@ -245,8 +293,9 @@ export function ExcelView({ rows, currentRow, activeRowIndex, activeRowRef, onSe
             {rows.slice(start, end).map((row, offset) => {
               const index = start + offset
               const selected = index === activeRowIndex
-              return <tr key={`${index}-${row.id}`} className={`excel-tr ${selected ? 'selected' : ''}`} ref={selected ? activeRowRef as RefObject<HTMLTableRowElement> : null}>
-                <th className="excel-row-num" scope="row" onClick={() => selectCell('C', index)}>{worksheetRowNumber(row)}</th>
+              const lastRead = !panic && index === lastReadRowIndex
+              return <tr key={`${index}-${row.id}`} data-display-index={index} className={`excel-tr ${selected ? 'selected' : ''} ${lastRead ? 'last-read' : ''}`} ref={selected ? activeRowRef as RefObject<HTMLTableRowElement> : null}>
+                <th className="excel-row-num" scope="row" title={lastRead ? (lang === 'vi' ? 'Vị trí lần đọc trước' : 'Last reading position') : undefined} onClick={() => selectCell('C', index)}>{worksheetRowNumber(row)}{lastRead && <span className="excel-last-read-dot" aria-label={lang === 'vi' ? 'Vị trí lần đọc trước' : 'Last reading position'} />}</th>
                 {WORKSHEET_COLUMNS.map((key, cellIndex) => <td key={key} className={`excel-td ${CELL_CLASSES[cellIndex]} ${selected && column === key ? 'selected-cell' : ''}`}
                   style={key === 'C' ? { fontWeight: bold ? 700 : 400, fontStyle: italic ? 'italic' : 'normal', textDecoration: underline ? 'underline' : 'none', textAlign: alignment } : undefined}
                   onClick={() => selectCell(key, index)}>{worksheetCellValue(row, key)}</td>)}
@@ -258,6 +307,20 @@ export function ExcelView({ rows, currentRow, activeRowIndex, activeRowRef, onSe
         </tbody>
       </table>
     </div>
+
+    <nav className="excel-reading-navigation" aria-label={lang === 'vi' ? 'Điều hướng trang đọc' : 'Reading page navigation'}>
+      <div className="excel-page-buttons">
+        <button type="button" disabled={panic || loading || page.page === 0 || !rows.length} onClick={() => onPageChange(-1)} title="Page Up / ←"><ChevronLeft />{lang === 'vi' ? 'Trang trước' : 'Previous page'}</button>
+        <span role="status">{lang === 'vi' ? 'Trang' : 'Page'} {page.page + 1} / {page.count}</span>
+        <button type="button" disabled={panic || loading || page.page >= page.count - 1 || !rows.length} onClick={() => onPageChange(1)} title="Page Down / →">{lang === 'vi' ? 'Trang sau' : 'Next page'}<ChevronRight /></button>
+      </div>
+      <span className="excel-page-guide">PgUp / PgDn · ← / →</span>
+      {!panic && <span className="excel-position-saved" role={checkpointError ? 'alert' : undefined}>{checkpointError
+        ? (lang === 'vi' ? 'Chưa lưu được vị trí trên máy' : 'Could not save position on this device')
+        : loading ? (lang === 'vi' ? 'Đang mở…' : 'Opening…')
+        : (lang === 'vi' ? `Tự lưu · Dòng ${worksheetRowNumber(currentRow)}` : `Auto-saved · Row ${worksheetRowNumber(currentRow)}`)}</span>}
+      {!panic && lastReadRowIndex !== null && <button type="button" className="excel-resume-position" onClick={onResumeLastRead}>{lang === 'vi' ? 'Về mốc lần trước' : 'Last reading position'}</button>}
+    </nav>
 
     <div className="excel-footer-tabs">
       <div className="excel-sheet-navigation"><button type="button" aria-label="Scroll sheet tabs left" onClick={() => tabsRef.current?.scrollBy({ left: -180, behavior: 'smooth' })}><ChevronLeft /></button><button type="button" aria-label="Scroll sheet tabs right" onClick={() => tabsRef.current?.scrollBy({ left: 180, behavior: 'smooth' })}><ChevronRight /></button><span aria-hidden="true">···</span></div>

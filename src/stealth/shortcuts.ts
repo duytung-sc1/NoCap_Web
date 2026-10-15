@@ -1,6 +1,7 @@
 export type StealthShortcut =
   | { type: 'panic' | 'close' | 'home' | 'help' | 'dismiss-help' | 'fullscreen' | 'exit-fullscreen' | 'clear-search' | 'auto-scroll' | 'consume' }
   | { type: 'mode'; mode: 'excel' | 'vscode' | 'doc' }
+  | { type: 'page'; delta: number }
   | { type: 'move' | 'font-size' | 'scroll-speed' | 'opacity'; delta: number }
 
 interface KeyInput {
@@ -55,7 +56,7 @@ export function stealthShortcut(input: KeyInput): StealthShortcut | null {
   if (input.panic) return null
   if (key === 'arrowdown' || key === ' ' || key === 'j') return { type: 'move', delta: 1 }
   if (key === 'arrowup' || key === 'k') return { type: 'move', delta: -1 }
-  if (key === 'pagedown') return { type: 'move', delta: 15 }
-  if (key === 'pageup') return { type: 'move', delta: -15 }
+  if (key === 'pagedown' || key === 'arrowright') return { type: 'page', delta: 1 }
+  if (key === 'pageup' || key === 'arrowleft') return { type: 'page', delta: -1 }
   return null
 }

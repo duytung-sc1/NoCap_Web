@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { AlignJustify, AlignLeft, ArrowLeft, ArrowRight, Award, BarChart3, BookMarked, BookOpen, Bookmark, Briefcase, Check, CheckCircle2, ChevronLeft, ChevronRight, Cloud, CloudOff, Download, Edit3, FileDown, FileText, Flame, FolderPlus, Globe, Highlighter, Home, Layers, Library, List, LogIn, Menu, Plus, RotateCcw, Search, Settings2, Sparkles, Tag, Trash2, Type, X } from 'lucide-react'
 import { ApiError, deleteAccount, forgotPassword, getCatalog, getEntitlement, getUser, loadBookBytes, login, loginWithGoogle, logout, register, updateProfile, type Entitlement } from './api'
 import type { StealthPosition } from './stealth/StealthReader'
+import { readStealthCheckpoint, stealthLocator } from './stealth/checkpoint'
 import { applyLibraryRestore, getCachedCatalog, getFile, getFiles, getOfflineBook, getOfflineBooks, getPending, keyFor, readSession, removeFile, removeLocalDocument, removeOfflineBook, saveCachedCatalog, saveSession, SESSION_STORAGE_KEY } from './store'
 import { androidCompositeRecordId, androidRecordId, broadcastSyncRequired, connectLiveSync, getConflicts, getDeviceId, localRecords, mutate, profileFor, readableError, resolveConflict, syncNow } from './sync'
 import { prepareBookDownload, saveBookDownload } from './bookDownload'
@@ -179,6 +180,8 @@ function App() {
   const [selectedBook, setSelectedBook] = useState<Book | null>(null)
   const [stealthGrant, setStealthGrant] = useState<{ token: string; bookId: string } | null>(null)
   const stealthActive = !!stealthGrant && stealthGrant.token === session?.token && stealthGrant.bookId === reader?.book.id && allowsPro(entitlement, session)
+  const stealthActiveRef = useRef(stealthActive)
+  stealthActiveRef.current = stealthActive
   const [stealthProgressRequest, setStealthProgressRequest] = useState<{ progression: number; requestId: number; href?: string } | null>(null)
   const [editNameOpen, setEditNameOpen] = useState(false)
   const [editNameInput, setEditNameInput] = useState('')
@@ -1097,10 +1100,13 @@ async function sha256Hex(file: Blob): Promise<string> {
       if (!bytes.byteLength) throw new Error(translate("Tệp sách không có nội dung.", lang))
       const savedComfort = comfortFromRecord(records.find(record => record.kind === 'per_book_preferences' && !record.deleted && record.payload.book_id === book.id), readerWidth)
       if (savedComfort) applyComfort(savedComfort)
-      const initialProgress = Number(progressFor(records, book.id)?.payload.progression || 0)
+      const savedProgress = progressFor(records, book.id)
+      const checkpoint = readStealthCheckpoint(targetProfile, book.id)
+      const useCheckpoint = !initialOverride && checkpoint && checkpoint.updatedAt > Number(savedProgress?.payload.last_read_at || 0)
+      const initialProgress = useCheckpoint ? checkpoint.progression : Number(savedProgress?.payload.progression || 0)
       beginReadingSession(book, initialProgress)
       readerRef.current = book
-      const initialLoc = initialOverride || toText(progressFor(records, book.id)?.payload.locator_json)
+      const initialLoc = initialOverride || (useCheckpoint ? stealthLocator(checkpoint) : toText(savedProgress?.payload.locator_json))
       locationRef.current = { locatorJson: initialLoc, progression: initialProgress, chapterTitle: '' }
       setLocation(locationRef.current)
       setReader({ book, bytes, initial: initialLoc })
@@ -1134,7 +1140,7 @@ async function sha256Hex(file: Blob): Promise<string> {
     finally { downloadActive.current = false; setDownloadBusy(null) }
   }
 
-  const onLocation = useCallback((next: ReaderLocation) => {
+  const recordLocation = useCallback((next: ReaderLocation) => {
     setLocation(next)
     locationRef.current = next
     const book = readerRef.current
@@ -1148,25 +1154,36 @@ async function sha256Hex(file: Blob): Promise<string> {
     }, 1500)
   }, [persistReadingProgress])
 
+  const onLocation = useCallback((next: ReaderLocation) => {
+    // The normal reader stays mounted underneath the disguise. Its layout or
+    // scroll callbacks must not overwrite the Excel row currently being read.
+    if (!stealthActiveRef.current) recordLocation(next)
+  }, [recordLocation])
+
   const onStealthProgressChange = useCallback((position: StealthPosition) => {
     const next: ReaderLocation = {
-      locatorJson: JSON.stringify({ type: 'STEALTH', version: 1, progression: position.progression, href: position.sourceHref }),
+      locatorJson: stealthLocator(position),
       progression: position.progression,
       chapterTitle: locationRef.current?.chapterTitle || '',
     }
-    onLocation(next)
-  }, [onLocation])
+    recordLocation(next)
+  }, [recordLocation])
 
   const closeStealthReader = useCallback((position?: StealthPosition) => {
     setStealthGrant(null)
     if (position) {
+      onStealthProgressChange(position)
+      const book = readerRef.current
+      const current = locationRef.current
+      if (progressTimer.current) { clearTimeout(progressTimer.current); progressTimer.current = null }
+      if (book && current) void persistReadingProgress(profileRef.current, book, current, sessionRef.current)
       setStealthProgressRequest(previous => ({
         progression: Math.min(1, Math.max(0, position.progression)),
         requestId: (previous?.requestId || 0) + 1,
         href: position.sourceHref,
       }))
     }
-  }, [])
+  }, [onStealthProgressChange, persistReadingProgress])
 
   useEffect(() => {
     if (!stealthGrant) return
@@ -1910,6 +1927,7 @@ async function sha256Hex(file: Blob): Promise<string> {
 
     {stealthActive && reader && (
       <ReaderErrorBoundary key={`${profile}:${reader.book.id}:stealth`} lang={lang} onClose={() => setPage('library')}><Suspense fallback={null}><StealthReader
+        profile={profile}
         book={reader.book}
         bytes={reader.bytes}
         lang={lang}

@@ -8,6 +8,8 @@ import {
 } from './textExtractor'
 import {
   buildDisplayEntries,
+  adjacentPageStart,
+  worksheetPage,
   displayIndexForSource,
   progressionFromRowIndex,
   rowIndexFromLocator,
@@ -17,15 +19,13 @@ import './StealthReader.css'
 import { stealthShortcut } from './shortcuts'
 import { DisguiseFullscreen } from './fullscreen'
 import { ExcelView } from './ExcelView'
+import { readStealthCheckpoint, saveStealthCheckpoint, stealthLocator, type StealthPosition } from './checkpoint'
+export type { StealthPosition } from './checkpoint'
 
 export type DisguiseMode = 'excel' | 'vscode' | 'doc'
 
-export interface StealthPosition {
-  progression: number
-  sourceHref?: string
-}
-
 interface Props {
+  profile: string
   book: Book
   bytes: ArrayBuffer
   lang: Lang
@@ -37,6 +37,7 @@ interface Props {
 }
 
 export function StealthReader({
+  profile,
   book,
   bytes,
   lang,
@@ -47,6 +48,7 @@ export function StealthReader({
   onProgressChange,
 }: Props) {
   const curT = t[lang].stealth
+  const checkpoint = useMemo(() => readStealthCheckpoint(profile, book.id), [profile, book.id])
   const [mode, setMode] = useState<DisguiseMode>('excel')
   const [panic, setPanic] = useState(false)
   const [rows, setRows] = useState<StealthRow[]>([])
@@ -60,6 +62,9 @@ export function StealthReader({
   const [helpOpen, setHelpOpen] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
   const [fullscreenError, setFullscreenError] = useState(false)
+  const [lastReadIndex, setLastReadIndex] = useState<number | null>(null)
+  const [initialRowOffset, setInitialRowOffset] = useState(0)
+  const [checkpointError, setCheckpointError] = useState(false)
 
   const wrapperRef = useRef<HTMLDivElement>(null)
   const settingsRef = useRef<HTMLDialogElement>(null)
@@ -68,7 +73,7 @@ export function StealthReader({
   const autoScrollTimer = useRef<ReturnType<typeof setInterval> | null>(null)
   const initialProgressionRef = useRef(initialProgression)
   const initialLocatorRef = useRef(initialLocator)
-  const progressChangedRef = useRef(false)
+  const positionRef = useRef<StealthPosition | undefined>(undefined)
   const onProgressChangeRef = useRef(onProgressChange)
   useEffect(() => { onProgressChangeRef.current = onProgressChange }, [onProgressChange])
   useEffect(() => { initialProgressionRef.current = initialProgression }, [initialProgression])
@@ -132,8 +137,19 @@ export function StealthReader({
         const extracted = await extractBookRows(book, bytes)
         if (!alive) return
         setRows(extracted)
-        setActiveRowIndex(rowIndexFromLocator(extracted, initialLocatorRef.current, initialProgressionRef.current))
-        progressChangedRef.current = false
+        const initialIndex = checkpoint
+          ? rowIndexFromLocator(extracted, stealthLocator(checkpoint), checkpoint.progression)
+          : rowIndexFromLocator(extracted, initialLocatorRef.current, initialProgressionRef.current)
+        setActiveRowIndex(initialIndex)
+        setLastReadIndex(checkpoint ? initialIndex : null)
+        setInitialRowOffset(checkpoint?.rowOffset || 0)
+        if (extracted.length) {
+          const position = { progression: progressionFromRowIndex(initialIndex, extracted.length), sourceHref: extracted[initialIndex]?.sourceHref,
+            rowIndex: initialIndex, rowCount: extracted.length, rowId: extracted[initialIndex]?.id, rowOffset: checkpoint?.rowOffset || 0 }
+          positionRef.current = position
+          setCheckpointError(!saveStealthCheckpoint(profile, book.id, position))
+          onProgressChangeRef.current?.(position)
+        }
       } catch {
         if (!alive) return
         setRows([])
@@ -143,7 +159,7 @@ export function StealthReader({
     })()
 
     return () => { alive = false }
-  }, [book, bytes])
+  }, [book, bytes, profile, checkpoint])
 
   // Filtered rows
   const displayEntries = useMemo(() => {
@@ -163,43 +179,65 @@ export function StealthReader({
     timestamp: '00:00:00'
   }
 
-  // Notify parent of progress
+  const selectSourceRow = useCallback((index: number, rowOffset = 0) => {
+    if (panic || !rows[index]) return
+    const position = { progression: progressionFromRowIndex(index, rows.length), sourceHref: rows[index].sourceHref,
+      rowIndex: index, rowCount: rows.length, rowId: rows[index].id, rowOffset }
+    positionRef.current = position
+    setActiveRowIndex(index)
+    // Keep a synchronous checkpoint: IndexedDB work started on pagehide alone
+    // is not guaranteed to finish when the browser closes the tab.
+    setCheckpointError(!saveStealthCheckpoint(profile, book.id, position))
+    onProgressChangeRef.current?.(position)
+  }, [rows, panic, profile, book.id])
+
   useEffect(() => {
-    if (panic || !rows.length || !progressChangedRef.current) return
-    onProgressChangeRef.current?.({
-      progression: progressionFromRowIndex(activeRowIndex, rows.length),
-      sourceHref: rows[activeRowIndex]?.sourceHref,
-    })
-  }, [activeRowIndex, rows, panic])
+    const flush = () => {
+      const position = positionRef.current
+      if (!position) return
+      saveStealthCheckpoint(profile, book.id, position)
+      onProgressChangeRef.current?.(position)
+    }
+    const hidden = () => { if (document.visibilityState === 'hidden') flush() }
+    window.addEventListener('pagehide', flush)
+    document.addEventListener('visibilitychange', hidden)
+    return () => {
+      window.removeEventListener('pagehide', flush)
+      document.removeEventListener('visibilitychange', hidden)
+    }
+  }, [profile, book.id])
 
   const selectDisplayRow = useCallback((displayIndex: number) => {
-    setActiveRowIndex(previous => {
-      const sourceIndex = sourceIndexForDisplay(displayEntries, displayIndex, previous)
-      if (sourceIndex !== previous) progressChangedRef.current = true
-      return sourceIndex
-    })
-  }, [displayEntries])
+    selectSourceRow(sourceIndexForDisplay(displayEntries, displayIndex, activeRowIndex))
+  }, [displayEntries, activeRowIndex, selectSourceRow])
+
+  const trackViewport = useCallback((displayIndex: number, offset: number) => {
+    selectSourceRow(sourceIndexForDisplay(displayEntries, displayIndex, activeRowIndex), offset)
+  }, [displayEntries, activeRowIndex, selectSourceRow])
 
   const moveDisplayRow = useCallback((delta: number) => {
     if (panic || displayEntries.length === 0) return
-    setActiveRowIndex(previous => {
-      const currentDisplayIndex = displayIndexForSource(displayEntries, previous)
-      const targetDisplayIndex = Math.min(displayEntries.length - 1, Math.max(0, currentDisplayIndex + delta))
-      const sourceIndex = sourceIndexForDisplay(displayEntries, targetDisplayIndex, previous)
-      if (sourceIndex !== previous) progressChangedRef.current = true
-      return sourceIndex
-    })
-  }, [displayEntries, panic])
+    const target = Math.min(displayEntries.length - 1, Math.max(0, displayActiveRowIndex + delta))
+    selectDisplayRow(target)
+  }, [displayEntries, panic, displayActiveRowIndex, selectDisplayRow])
+
+  const movePage = useCallback((direction: number) => {
+    if (panic || !displayEntries.length) return
+    setAutoScroll(false)
+    const target = adjacentPageStart(displayActiveRowIndex, displayEntries.length, direction)
+    if (worksheetPage(target, displayEntries.length).page === worksheetPage(displayActiveRowIndex, displayEntries.length).page) return
+    selectDisplayRow(target)
+    wrapperRef.current?.focus({ preventScroll: true })
+  }, [panic, displayEntries, displayActiveRowIndex, selectDisplayRow])
 
   const closeStealth = useCallback(() => {
-    const position = progressChangedRef.current
-      ? {
-          progression: progressionFromRowIndex(activeRowIndex, rows.length),
-          sourceHref: rows[activeRowIndex]?.sourceHref,
-        }
-      : undefined
+    const position = positionRef.current
+    if (position) {
+      saveStealthCheckpoint(profile, book.id, position)
+      onProgressChangeRef.current?.(position)
+    }
     onClose(position)
-  }, [activeRowIndex, onClose, rows])
+  }, [onClose, profile, book.id])
 
   const togglePanic = useCallback(() => {
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
@@ -232,6 +270,7 @@ export function StealthReader({
         case 'mode': setMode(action.mode); break
         case 'auto-scroll': setAutoScroll(previous => !previous); break
         case 'move': moveDisplayRow(action.delta); break
+        case 'page': movePage(action.delta); break
         case 'font-size': setFontSize(previous => Math.min(16, Math.max(10, previous + action.delta))); break
         case 'scroll-speed': setAutoScrollSpeed(previous => Math.min(20, Math.max(2, previous + action.delta))); break
         case 'opacity': setOpacity(previous => Math.min(1, Math.max(0.1, Math.round((previous + action.delta) * 100) / 100))); break
@@ -241,7 +280,7 @@ export function StealthReader({
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [closeStealth, moveDisplayRow, onExitHome, panic, helpOpen, togglePanic, toggleFullscreen, exitFullscreen])
+  }, [closeStealth, moveDisplayRow, movePage, onExitHome, panic, helpOpen, togglePanic, toggleFullscreen, exitFullscreen])
 
   // Auto-advance rows
   useEffect(() => {
@@ -252,27 +291,19 @@ export function StealthReader({
 
     if (autoScroll && !panic && !helpOpen && displayEntries.length > 0) {
       autoScrollTimer.current = setInterval(() => {
-        setActiveRowIndex(previous => {
-          const currentDisplayIndex = displayIndexForSource(displayEntries, previous)
-          if (currentDisplayIndex >= displayEntries.length - 1) {
-            setAutoScroll(false)
-            return previous
-          }
-          const sourceIndex = sourceIndexForDisplay(displayEntries, currentDisplayIndex + 1, previous)
-          if (sourceIndex !== previous) progressChangedRef.current = true
-          return sourceIndex
-        })
+        if (displayActiveRowIndex >= displayEntries.length - 1) setAutoScroll(false)
+        else moveDisplayRow(1)
       }, autoScrollSpeed * 1000)
     }
 
     return () => {
       if (autoScrollTimer.current) clearInterval(autoScrollTimer.current)
     }
-  }, [autoScroll, autoScrollSpeed, panic, helpOpen, displayEntries])
+  }, [autoScroll, autoScrollSpeed, panic, helpOpen, displayEntries, displayActiveRowIndex, moveDisplayRow])
 
   // Auto-scroll the active row into viewport
   useEffect(() => {
-    if (activeRowRef.current) {
+    if (mode !== 'excel' && activeRowRef.current) {
       activeRowRef.current.scrollIntoView({
         behavior: 'auto',
         block: 'nearest'
@@ -296,7 +327,7 @@ export function StealthReader({
           <div><dt><kbd>F12</kbd> / <kbd>Alt + P</kbd></dt><dd>{curT.panicHelp}</dd></div>
           <div><dt><kbd>Alt + 1 / 2 / 3</kbd></dt><dd>Excel / VS Code / Word</dd></div>
           <div><dt><kbd>↑ / ↓ / Space</kbd></dt><dd>{curT.rowNavigation}</dd></div>
-          <div><dt><kbd>Page Up / Page Down</kbd></dt><dd>{curT.pageNavigation}</dd></div>
+          <div><dt><kbd>Page Up / Page Down</kbd> · <kbd>← / →</kbd></dt><dd>{curT.pageNavigation}</dd></div>
           <div><dt><kbd>Alt + A</kbd></dt><dd>{curT.autoScroll}</dd></div>
           <div><dt><kbd>Alt + ← / →</kbd></dt><dd>{curT.speedHelp}</dd></div>
           <div><dt><kbd>Alt + ↑ / ↓</kbd></dt><dd>{curT.fontSizeLabel}</dd></div>
@@ -331,6 +362,12 @@ export function StealthReader({
           activeRowIndex={displayActiveRowIndex}
           activeRowRef={activeRowRef}
           onSelectRow={selectDisplayRow}
+          onViewportChange={trackViewport}
+          onPageChange={movePage}
+          initialRowOffset={initialRowOffset}
+          lastReadRowIndex={lastReadIndex === null ? null : displayEntries.findIndex(entry => entry.sourceIndex === lastReadIndex)}
+          onResumeLastRead={() => { if (lastReadIndex !== null) { setSearch(''); selectSourceRow(lastReadIndex); wrapperRef.current?.focus({ preventScroll: true }) } }}
+          checkpointError={checkpointError}
           fontSize={fontSize}
           panic={panic}
           loading={loading}
