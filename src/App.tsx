@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlignJustify, AlignLeft, ArrowLeft, ArrowRight, Award, BarChart3, BookMarked, BookOpen, Bookmark, Briefcase, Check, CheckCircle2, ChevronLeft, ChevronRight, Cloud, CloudOff, Download, Edit3, FileDown, FileText, Flame, FolderPlus, Globe, Highlighter, Home, Layers, Library, List, LogIn, Menu, Plus, RotateCcw, Search, Settings2, Sparkles, Tag, Trash2, Type, X } from 'lucide-react'
+import { AlignJustify, AlignLeft, ArrowLeft, ArrowRight, Award, BarChart3, BookMarked, BookOpen, Bookmark, Briefcase, Check, CheckCircle2, ChevronLeft, ChevronRight, Cloud, CloudOff, Download, Edit3, FileDown, FileText, Flame, FolderPlus, Globe, Highlighter, Home, Layers, Library, List, LogIn, Menu, PanelRightOpen, Plus, RotateCcw, Search, Settings2, Sparkles, Tag, Trash2, Type, X } from 'lucide-react'
 import { ApiError, deleteAccount, forgotPassword, getCatalog, getEntitlement, getUser, loadBookBytes, login, loginWithGoogle, logout, register, updateProfile, type Entitlement } from './api'
 import type { StealthPosition } from './stealth/StealthReader'
 import { readStealthCheckpoint, stealthLocator } from './stealth/checkpoint'
@@ -31,6 +31,10 @@ import { readingActivity } from './readingStats'
 import { translate } from './uiText'
 import { ImportDocumentDialog } from './ImportDocumentDialog'
 import { ReaderErrorBoundary } from './ReaderErrorBoundary'
+import { ReaderNotesPanel } from './ReaderNotesPanel'
+import { ReaderSearchPanel } from './ReaderSearchPanel'
+import type { ReaderSearchHit, ReaderSearchSource } from './readerSearch'
+import { detectReaderFormat } from './readerFormat'
 type ShelfFilter = 'all' | 'reading' | 'favorites' | 'completed' | 'local'
 type AuthMode = 'login' | 'register' | 'forgot'
 type Theme = 'paper' | 'sepia' | 'night'
@@ -153,6 +157,20 @@ function App() {
   const [noteText, setNoteText] = useState('')
   const [noteColor, setNoteColor] = useState<'YELLOW' | 'GREEN' | 'BLUE' | 'PINK' | 'PURPLE'>('YELLOW')
   const [noteSaving, setNoteSaving] = useState(false)
+  const noteFlight = useRef<object | null>(null)
+  const noteAnchor = useRef<ReaderLocation | null>(null)
+  const notesToggle = useRef<HTMLButtonElement>(null)
+  const [noteNavigation, setNoteNavigation] = useState<{ locatorJson: string; requestId: number } | null>(null)
+  const noteNavigationId = useRef(0)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [readerSearchSource, setReaderSearchSource] = useState<ReaderSearchSource | null>(null)
+  const [activeSearchHit, setActiveSearchHit] = useState<ReaderSearchHit | null>(null)
+  const searchToggle = useRef<HTMLButtonElement>(null)
+  const onReaderSearchReady = useCallback((source: ReaderSearchSource | null) => setReaderSearchSource(() => source), [])
+  const openReaderSearch = useCallback(() => {
+    setNoteOpen(false); setSearchOpen(true); setTocOpen(false); setSettingsOpen(false)
+    requestAnimationFrame(() => document.querySelector<HTMLInputElement>('#reader-search-panel input[type="search"]')?.focus())
+  }, [])
   const [bookmarkSaving, setBookmarkSaving] = useState<string | null>(null)
   const bookmarkFlights = useRef(new Set<string>())
   const favoriteFlights = useRef(new Set<string>())
@@ -209,6 +227,10 @@ function App() {
   const localRefreshId = useRef(0)
   const sessionRef = useRef(session)
   sessionRef.current = session
+  useEffect(() => () => {
+    if (progressTimer.current) clearTimeout(progressTimer.current)
+    if (preferenceTimer.current) clearTimeout(preferenceTimer.current)
+  }, [])
   const locationRef = useRef(location)
   locationRef.current = location
   const lastSyncAt = useRef(0)
@@ -280,6 +302,11 @@ function App() {
   useEffect(() => {
     const onGlobalKey = (e: KeyboardEvent) => {
       if (stealthActive) return
+      if (reader && (e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'f' && !editingAnnotation && !deletingAnnotation && !authOpen && !proRequiredFeature) {
+        e.preventDefault()
+        openReaderSearch()
+        return
+      }
       if (e.key === 'F2') {
         if (reader) {
           e.preventDefault()
@@ -293,7 +320,8 @@ function App() {
         if (proRequiredFeature) { setProRequiredFeature(null); return }
         if (tocOpen) { setTocOpen(false); return }
         if (settingsOpen) { setSettingsOpen(false); return }
-        if (noteOpen) { setNoteOpen(false); return }
+        if (searchOpen) { e.preventDefault(); setSearchOpen(false); setActiveSearchHit(null); searchToggle.current?.focus(); return }
+        if (noteOpen) { e.preventDefault(); setNoteOpen(false); notesToggle.current?.focus(); return }
         if (reviewOpen) { setReviewOpen(false); return }
         if (authOpen) { setAuthOpen(false); return }
         if (selectedBook) { closeBookDetails(); return }
@@ -307,7 +335,7 @@ function App() {
     }
     window.addEventListener('keydown', onGlobalKey)
     return () => window.removeEventListener('keydown', onGlobalKey)
-  }, [reader, tocOpen, settingsOpen, noteOpen, reviewOpen, authOpen, selectedBook, stealthActive, setPage, closeBookDetails, editingAnnotation, deletingAnnotation, annotationBusy, proRequiredFeature])
+  }, [reader, tocOpen, settingsOpen, noteOpen, searchOpen, reviewOpen, authOpen, selectedBook, stealthActive, setPage, closeBookDetails, editingAnnotation, deletingAnnotation, annotationBusy, proRequiredFeature, openReaderSearch])
 
   useEffect(() => {
     const updateDay = () => setStatsNow(ms())
@@ -728,13 +756,15 @@ function App() {
   const annotations = useMemo(() => records.filter(r => !r.deleted && (r.kind === 'highlights' || r.kind === 'bookmarks')).sort((a, b) => Number(b.payload.created_at || 0) - Number(a.payload.created_at || 0)), [records])
   const readerAnnotations = useMemo(() => {
     if (!reader) return []
-    return records.filter(record => record.kind === 'highlights' && !record.deleted && record.payload.book_id === reader.book.id).map(record => ({
+    const saved = records.filter(record => record.kind === 'highlights' && !record.deleted && record.payload.book_id === reader.book.id).map(record => ({
       id: record.id,
       locatorJson: toText(record.payload.locator_json),
       text: toText(record.payload.text),
       color: toText(record.payload.color) || 'YELLOW',
     }))
-  }, [reader, records])
+    return activeSearchHit ? [...saved, { id: 'nocap-search-active', locatorJson: activeSearchHit.locatorJson, text: activeSearchHit.text, color: 'BLUE' }] : saved
+  }, [reader, records, activeSearchHit])
+  const readerNotes = useMemo(() => reader ? annotations.filter(record => record.profile === profile && record.kind === 'highlights' && record.payload.book_id === reader.book.id) : [], [annotations, reader, profile])
   const currentBookmarked = !!(reader && location && records.some(record => record.kind === 'bookmarks' && !record.deleted && record.payload.book_id === reader.book.id && record.payload.locator_json === location.locatorJson))
   const reviewItems = useMemo(() => records.filter(record => record.kind === 'review_items' && !record.deleted), [records])
   const dueReviewCount = useMemo(() => {
@@ -1081,6 +1111,8 @@ async function sha256Hex(file: Blob): Promise<string> {
     const targetProfile = profile
     if (progressTimer.current) clearTimeout(progressTimer.current)
     setReaderError(''); setReaderLoading(true); setLocation(null); setSelection(null); setStealthProgressRequest(null); setControls(null); setToc([]); setNavigateTarget(null)
+    setNoteOpen(false); setNoteText(''); setNoteNavigation(null); noteAnchor.current = null; noteFlight.current = null; setNoteSaving(false)
+    setSearchOpen(false); setReaderSearchSource(null); setActiveSearchHit(null)
     try {
       const [localResult, offlineResult] = await Promise.allSettled([
         getFile(profile, book.id),
@@ -1216,6 +1248,8 @@ async function sha256Hex(file: Blob): Promise<string> {
     if (book && !loc) void completeReadingSession(book, 0)
     setReader(null); readerRef.current = null; locationRef.current = null; setSelection(null); setStealthGrant(null); setStealthProgressRequest(null); setControls(null)
     setToc([]); setTocOpen(false); setSettingsOpen(false); setNoteOpen(false); setNavigateTarget(null)
+    setNoteText(''); setNoteNavigation(null); noteAnchor.current = null; noteFlight.current = null; setNoteSaving(false)
+    setSearchOpen(false); setReaderSearchSource(null); setActiveSearchHit(null)
   }
   closeReaderRef.current = closeReader
 
@@ -1266,23 +1300,73 @@ async function sha256Hex(file: Blob): Promise<string> {
   }
 
   async function saveNote() {
-    if (!reader || !location || (!noteText.trim() && !selection?.text)) return
+    const anchor = selection ? { locatorJson: selection.locator, chapterTitle: '', progression: 0 } : noteAnchor.current || locationRef.current
+    if (!reader || !anchor || (!noteText.trim() && !selection?.text) || noteFlight.current) return
+    const flight = {}
+    noteFlight.current = flight
     const targetProfile = profile
-    const token = session?.token
-    const targetBookId = reader.book.id
-    const isCurrent = () => profileRef.current === targetProfile && sessionRef.current?.token === token && readerRef.current?.id === targetBookId
+    const activeSession = session
+    const targetBook = reader.book
+    const isCurrent = () => noteFlight.current === flight && profileRef.current === targetProfile && sessionRef.current?.token === activeSession?.token && readerRef.current?.id === targetBook.id
     setNoteSaving(true)
     try {
       const id = crypto.randomUUID()
-      const selected = selection?.text || (location.chapterTitle || translate("Ghi chú tại vị trí đọc", lang))
-      const payload = { id, book_id: reader.book.id, locator_json: selection?.locator || location.locatorJson, text: selected, color: noteColor, note: noteText.trim().slice(0, 10000), created_at: ms(), updated_at: ms() }
-      await mutate(profile, 'highlights', androidRecordId('highlights', id), payload, false, reader.book.source === 'local')
-      await refreshLocal(profile)
+      const selected = selection?.text || anchor.chapterTitle || translate("Ghi chú tại vị trí đọc", lang)
+      const payload = { id, book_id: targetBook.id, locator_json: anchor.locatorJson, text: selected, color: noteColor, note: noteText.trim().slice(0, 10000), created_at: ms(), updated_at: ms() }
+      const recordId = androidRecordId('highlights', id)
+      await mutate(targetProfile, 'highlights', recordId, payload, false, targetBook.source === 'local')
+      broadcastSyncRequired(targetProfile)
+      // A committed note must not be offered for retry when refreshing the list fails.
+      await refreshLocal(targetProfile).catch(() => {})
       if (!isCurrent()) return
-      setNoteOpen(false); setNoteText(''); setSelection(null); setNotice(translate("Đã lưu ghi chú.", lang))
-      if (session && online && reader.book.source !== 'local') void synchronize(session)
+      const key = keyFor(targetProfile, `highlights:${recordId}`)
+      setRecords(current => current.some(record => record.key === key) ? current : [...current, { key, profile: targetProfile, kind: 'highlights', id: recordId, version: 0, deleted: false, payload }])
+      setNoteText(''); setSelection(null); noteAnchor.current = null; setNotice(translate("Đã lưu ghi chú.", lang))
+      if (activeSession && online && targetBook.source !== 'local') void synchronize(activeSession)
     } catch (error) { if (isCurrent()) setNotice(readableError(error, lang)) }
-    finally { setNoteSaving(false) }
+    finally { if (noteFlight.current === flight) { noteFlight.current = null; setNoteSaving(false) } }
+  }
+
+  function selectReaderPassage(text: string, locator: string) {
+    if (noteFlight.current) return
+    setSelection({ text, locator }); setNoteOpen(true)
+    setSearchOpen(false); setActiveSearchHit(null)
+    noteAnchor.current = { locatorJson: locator, progression: locationRef.current?.progression || 0, chapterTitle: locationRef.current?.chapterTitle || '' }
+  }
+
+  function changeReaderNote(value: string) {
+    if (!noteText && value && !selection) noteAnchor.current = locationRef.current
+    setNoteText(value)
+  }
+
+  function navigateToReaderNote(record: SyncRecord) {
+    if (record.profile !== profile || record.payload.book_id !== readerRef.current?.id) return
+    const locatorJson = toText(record.payload.locator_json)
+    if (locatorJson) {
+      setStealthProgressRequest(null); setNavigateTarget(null)
+      setNoteNavigation({ locatorJson, requestId: ++noteNavigationId.current })
+    }
+  }
+
+  function navigateToSearchHit(hit: ReaderSearchHit) {
+    setActiveSearchHit(hit)
+    setStealthProgressRequest(null); setNavigateTarget(null)
+    setNoteNavigation({ locatorJson: hit.locatorJson, requestId: ++noteNavigationId.current })
+  }
+
+  async function changeReaderAnnotation(record: SyncRecord, changes?: { note: string; color: HighlightColor }) {
+    const targetProfile = profile
+    const targetBook = readerRef.current
+    const activeSession = session
+    if (!targetBook || record.profile !== targetProfile || record.payload.book_id !== targetBook.id) return
+    const localOnly = targetBook.source === 'local'
+    try {
+      if (changes) await updateAnnotation(targetProfile, record, changes, localOnly)
+      else await deleteAnnotation(targetProfile, record, localOnly)
+      broadcastSyncRequired(targetProfile)
+      await refreshLocal(targetProfile)
+      if (activeSession && online && !localOnly && profileRef.current === targetProfile && sessionRef.current?.token === activeSession.token) void synchronize(activeSession, true)
+    } catch (error) { throw new Error(readableError(error, lang)) }
   }
 
   async function exportPdf() {
@@ -1333,7 +1417,8 @@ async function sha256Hex(file: Blob): Promise<string> {
       if (!access || profileRef.current !== targetProfile || openRequestId.current !== requestId) return
       if (readerRef.current?.id !== target.id && !await openBookRef.current(target)) return
       if (sessionRef.current?.token !== access.session.token || readerRef.current?.id !== target.id || !allowsPro(access.entitlement, sessionRef.current)) return
-      setSelectedBook(null); setSettingsOpen(false); setTocOpen(false); setNoteOpen(false)
+      setSelectedBook(null); setSettingsOpen(false); setTocOpen(false); setNoteOpen(false); setNoteNavigation(null)
+      setSearchOpen(false); setActiveSearchHit(null)
       setStealthGrant({ token: access.session.token, bookId: target.id })
     } finally { stealthLaunchBusy.current = false }
   }
@@ -1923,7 +2008,48 @@ async function sha256Hex(file: Blob): Promise<string> {
     {(readerLoading || readerError) && <div className="overlay"><div className="loading-card"><button className="icon-button close-floating" onClick={() => setPage(backgroundPageRef.current)} aria-label={lang === 'vi' ? 'Đóng' : 'Close'}><X size={20} /></button>{readerLoading ? <><div className="loader" /><h2>{lang === 'vi' ? 'Đang mở sách…' : 'Opening book…'}</h2><p>{lang === 'vi' ? 'Đang chuẩn bị nội dung để đọc.' : 'Preparing the document for reading.'}</p></> : <><FileText size={32} /><h2>{lang === 'vi' ? 'Chưa mở được tài liệu' : 'Unable to open document'}</h2><p>{readerError}</p><button className="primary" onClick={() => setPage(backgroundPageRef.current)}>{lang === 'vi' ? 'Đóng' : 'Close'}</button></>}</div></div>}
 
     {reader && noticeBanner}
-    {reader && <div className={`reader-shell ${theme}`}><div className="reader-topbar"><button className="reader-back reader-home-btn" onClick={() => { closeReader(); setPage('home'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} aria-label={lang === 'vi' ? 'Trở về Trang chủ' : 'Home'} title={lang === 'vi' ? 'Trở về Trang chủ (Esc)' : 'Home (Esc)'}><Home size={18} /> <span>{lang === 'vi' ? 'Trang chủ' : 'Home'}</span></button><button className="reader-back" onClick={() => setPage('library')} aria-label={lang === 'vi' ? 'Quay lại tủ sách' : 'Back to library'}><ArrowLeft size={19} /> <span>{lang === 'vi' ? 'Tủ sách' : 'Library'}</span></button><div className="reader-title"><strong>{reader.book.title}</strong><small>{bookLabel(reader.book, lang)}</small></div><div className="reader-actions"><button className="stealth-topbar-pill" title={curT.stealth.btnTitle} aria-label={curT.stealth.btnLabel} onClick={() => void launchStealth()}><Briefcase size={15} /> <span>{lang === 'vi' ? 'Đọc ẩn · Pro (F2)' : 'Stealth · Pro (F2)'}</span></button><button className="icon-button" title={lang === 'vi' ? 'Mục lục sách' : 'Table of contents'} aria-label={lang === 'vi' ? 'Mục lục' : 'Table of contents'} onClick={() => { setNavigateTarget(null); setTocOpen(true) }}><List size={20} /></button><button className="icon-button" title={lang === 'vi' ? 'Tùy chỉnh đọc & font' : 'Reading settings'} aria-label={lang === 'vi' ? 'Tùy chỉnh' : 'Settings'} onClick={() => setSettingsOpen(true)}><Type size={20} /></button><button className={`icon-button ${currentBookmarked ? 'active' : ''}`} title={currentBookmarked ? (lang === 'vi' ? 'Bỏ dấu trang' : 'Remove bookmark') : (lang === 'vi' ? 'Thêm dấu trang' : 'Add bookmark')} aria-label={currentBookmarked ? (lang === 'vi' ? 'Bỏ dấu trang' : 'Remove bookmark') : (lang === 'vi' ? 'Đánh dấu vị trí' : 'Bookmark position')} aria-pressed={currentBookmarked} disabled={bookmarkSaving === keyFor(profile, reader.book.id)} aria-busy={bookmarkSaving === keyFor(profile, reader.book.id)} onClick={() => void toggleBookmark()}><Bookmark size={20} fill={currentBookmarked ? 'currentColor' : 'none'} /></button><button className="icon-button" title={lang === 'vi' ? 'Ghi chú' : 'Note'} aria-label={lang === 'vi' ? 'Thêm ghi chú' : 'Add note'} onClick={() => { setNoteText(''); setNoteOpen(true) }}><Highlighter size={20} /></button></div></div><div className="reader-body"><ReaderErrorBoundary key={`${profile}:${reader.book.id}`} lang={lang} onClose={() => setPage('library')}><Suspense fallback={<div className="reader-error">{lang === 'vi' ? 'Đang chuẩn bị trình đọc…' : 'Preparing reader…'}</div>}><ReaderPane lang={lang} book={reader.book} bytes={reader.bytes} initial={reader.initial} fontSize={fontSize} fontFamily={fontFamily} lineHeight={lineHeight} textAlignment={textAlignment} readerWidth={readerWidth} theme={theme} onLocation={onLocation} onSelection={(text, locator) => setSelection({ text, locator })} onControls={setControls} onToc={setToc} navigateTarget={navigateTarget} navigateProgression={stealthProgressRequest} annotations={readerAnnotations} /></Suspense></ReaderErrorBoundary></div><div className={`reader-footer ${controls ? 'has-controls' : 'progress-only'}`}>{controls && <button onClick={() => controls.previous()} aria-label={lang === 'vi' ? 'Trang trước' : 'Previous page'}><ChevronLeft size={21} /> {lang === 'vi' ? 'Trước' : 'Previous'}</button>}<span>{Math.round((location?.progression || 0) * 100)}% · {location?.chapterTitle || (lang === 'vi' ? 'Đang đọc' : 'Reading')}</span>{controls && <button onClick={() => controls.next()} aria-label={lang === 'vi' ? 'Trang sau' : 'Next page'}>{lang === 'vi' ? 'Sau' : 'Next'} <ChevronRight size={21} /></button>}</div></div>}
+    {reader && <div className={`reader-shell ${theme}`}>
+      <div className="reader-topbar">
+        <button className="reader-back reader-home-btn" onClick={() => { closeReader(); setPage('home'); window.scrollTo({ top: 0, behavior: 'smooth' }) }} aria-label={lang === 'vi' ? 'Trở về Trang chủ' : 'Home'} title={lang === 'vi' ? 'Trở về Trang chủ (Esc)' : 'Home (Esc)'}><Home size={18} /><span>{lang === 'vi' ? 'Trang chủ' : 'Home'}</span></button>
+        <button className="reader-back" onClick={() => setPage('library')} aria-label={lang === 'vi' ? 'Quay lại tủ sách' : 'Back to library'}><ArrowLeft size={19} /><span>{lang === 'vi' ? 'Tủ sách' : 'Library'}</span></button>
+        <div className="reader-title"><strong>{reader.book.title}</strong><small>{bookLabel(reader.book, lang)}</small></div>
+        <div className="reader-actions">
+          <button className="stealth-topbar-pill" title={curT.stealth.btnTitle} aria-label={curT.stealth.btnLabel} onClick={() => void launchStealth()}><Briefcase size={15} /><span>{lang === 'vi' ? 'Đọc ẩn · Pro (F2)' : 'Stealth · Pro (F2)'}</span></button>
+          <button className="icon-button" title={lang === 'vi' ? 'Mục lục sách' : 'Table of contents'} aria-label={lang === 'vi' ? 'Mục lục' : 'Table of contents'} onClick={() => { setNavigateTarget(null); setTocOpen(true) }}><List size={20} /></button>
+          <button ref={searchToggle} className="icon-button reader-search-toggle" title={lang === 'vi' ? 'Tìm trong sách (Ctrl+F / ⌘F)' : 'Search in book (Ctrl+F / ⌘F)'} aria-label={lang === 'vi' ? 'Tìm trong sách' : 'Search in book'} aria-expanded={searchOpen} aria-controls="reader-search-panel" onClick={() => { setSearchOpen(open => !open); setNoteOpen(false); setActiveSearchHit(null) }}><Search size={19} /></button>
+          <button className="icon-button" title={lang === 'vi' ? 'Tùy chỉnh đọc & font' : 'Reading settings'} aria-label={lang === 'vi' ? 'Tùy chỉnh' : 'Settings'} onClick={() => setSettingsOpen(true)}><Type size={20} /></button>
+          <button className={`icon-button ${currentBookmarked ? 'active' : ''}`} title={currentBookmarked ? (lang === 'vi' ? 'Bỏ dấu trang' : 'Remove bookmark') : (lang === 'vi' ? 'Thêm dấu trang' : 'Add bookmark')} aria-label={currentBookmarked ? (lang === 'vi' ? 'Bỏ dấu trang' : 'Remove bookmark') : (lang === 'vi' ? 'Đánh dấu vị trí' : 'Bookmark position')} aria-pressed={currentBookmarked} disabled={bookmarkSaving === keyFor(profile, reader.book.id)} aria-busy={bookmarkSaving === keyFor(profile, reader.book.id)} onClick={() => void toggleBookmark()}><Bookmark size={20} fill={currentBookmarked ? 'currentColor' : 'none'} /></button>
+          <button ref={notesToggle} className={`reader-notes-toggle ${noteOpen ? 'active' : ''}`} title={lang === 'vi' ? 'Vừa đọc vừa ghi chú' : 'Read and take notes'} aria-label={lang === 'vi' ? 'Bảng ghi chú' : 'Notes panel'} aria-expanded={noteOpen} aria-controls="reader-notes-panel" onClick={() => { setNoteOpen(open => !open); setSearchOpen(false); setActiveSearchHit(null) }}><PanelRightOpen size={18} /><span>{lang === 'vi' ? 'Ghi chú' : 'Notes'}</span></button>
+        </div>
+      </div>
+      <div className="reader-workspace">
+        <div className="reader-document-column">
+          <div className="reader-body">
+            <ReaderErrorBoundary key={`${profile}:${reader.book.id}`} lang={lang} onClose={() => setPage('library')}>
+              <Suspense fallback={<div className="reader-error">{lang === 'vi' ? 'Đang chuẩn bị trình đọc…' : 'Preparing reader…'}</div>}>
+                <ReaderPane lang={lang} book={reader.book} bytes={reader.bytes} initial={reader.initial} fontSize={fontSize} fontFamily={fontFamily} lineHeight={lineHeight} textAlignment={textAlignment} readerWidth={readerWidth} theme={theme} onLocation={onLocation} onSelection={selectReaderPassage} onControls={setControls} onToc={setToc} navigateTarget={navigateTarget} navigateProgression={stealthProgressRequest} navigateLocator={noteNavigation} annotations={readerAnnotations} onSearchReady={onReaderSearchReady} onSearchRequest={openReaderSearch} />
+              </Suspense>
+            </ReaderErrorBoundary>
+          </div>
+          <div className={`reader-footer ${controls ? 'has-controls' : 'progress-only'}`}>
+            {controls && <button onClick={() => controls.previous()} aria-label={lang === 'vi' ? 'Trang trước' : 'Previous page'}><ChevronLeft size={21} />{lang === 'vi' ? 'Trước' : 'Previous'}</button>}
+            <span>{Math.round((location?.progression || 0) * 100)}% · {location?.chapterTitle || (lang === 'vi' ? 'Đang đọc' : 'Reading')}</span>
+            {controls && <button onClick={() => controls.next()} aria-label={lang === 'vi' ? 'Trang sau' : 'Next page'}>{lang === 'vi' ? 'Sau' : 'Next'}<ChevronRight size={21} /></button>}
+          </div>
+        </div>
+        <ReaderNotesPanel key={`${profile}:${reader.book.id}`} open={noteOpen} lang={lang} bookTitle={reader.book.title}
+          records={readerNotes} note={noteText} color={noteColor} quote={selection?.text || ''} saving={noteSaving}
+          canSave={!!(selection || location) && !!(noteText.trim() || selection?.text)}
+          onNoteChange={changeReaderNote} onColorChange={setNoteColor}
+          onClearQuote={() => { if (!noteFlight.current) { setSelection(null); noteAnchor.current = locationRef.current } }}
+          onSave={() => void saveNote()} onNavigate={navigateToReaderNote}
+          onUpdate={(record, changes) => changeReaderAnnotation(record, changes)} onDelete={record => changeReaderAnnotation(record)}
+          onClose={() => { setNoteOpen(false); notesToggle.current?.focus() }} />
+        <ReaderSearchPanel key={`search:${profile}:${reader.book.id}`} open={searchOpen} lang={lang} bookTitle={reader.book.title}
+          source={readerSearchSource} format={detectReaderFormat(reader.book, reader.bytes)} activeId={activeSearchHit?.id}
+          onNavigate={navigateToSearchHit} onClearActive={() => setActiveSearchHit(null)}
+          onClose={() => { setSearchOpen(false); setActiveSearchHit(null); searchToggle.current?.focus() }} />
+      </div></div>}
 
     {stealthActive && reader && (
       <ReaderErrorBoundary key={`${profile}:${reader.book.id}:stealth`} lang={lang} onClose={() => setPage('library')}><Suspense fallback={null}><StealthReader
@@ -1944,11 +2070,10 @@ async function sha256Hex(file: Blob): Promise<string> {
       /></Suspense></ReaderErrorBoundary>
     )}
 
-    {tocOpen && reader && <div className="modal-shade" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setTocOpen(false) }}><aside className="toc-drawer" role="dialog" aria-modal="true" aria-label={translate("Mục lục sách", lang)}><div className="toc-header"><div><p className="eyebrow">{translate("MỤC LỤC SÁCH", lang)}</p><h2>{reader.book.title}</h2></div><button className="icon-button" onClick={() => setTocOpen(false)} aria-label={translate("Đóng mục lục", lang)}><X size={19} /></button></div><div className="toc-list">{toc.length ? <TocTree items={toc} onSelect={target => { setNavigateTarget(target); setTocOpen(false) }} /> : <p className="muted" style={{ padding: '20px', textAlign: 'center', fontSize: '13px' }}>{translate("Tài liệu không có cấu trúc mục lục sẵn.", lang)}</p>}</div></aside></div>}
+    {tocOpen && reader && <div className="modal-shade" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setTocOpen(false) }}><aside className="toc-drawer" role="dialog" aria-modal="true" aria-label={translate("Mục lục sách", lang)}><div className="toc-header"><div><p className="eyebrow">{translate("MỤC LỤC SÁCH", lang)}</p><h2>{reader.book.title}</h2></div><button className="icon-button" onClick={() => setTocOpen(false)} aria-label={translate("Đóng mục lục", lang)}><X size={19} /></button></div><div className="toc-list">{toc.length ? <TocTree items={toc} onSelect={target => { setNoteNavigation(null); setNavigateTarget(target); setTocOpen(false) }} /> : <p className="muted" style={{ padding: '20px', textAlign: 'center', fontSize: '13px' }}>{translate("Tài liệu không có cấu trúc mục lục sẵn.", lang)}</p>}</div></aside></div>}
 
     {settingsOpen && reader && <div className="modal-shade" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setSettingsOpen(false) }}><div className="dialog settings-popup" role="dialog" aria-modal="true" aria-label={translate("Tùy chỉnh đọc", lang)}><div className="dialog-header"><h2>{translate("Tùy chỉnh đọc", lang)}</h2><button className="icon-button" onClick={() => setSettingsOpen(false)} aria-label={translate("Đóng", lang)}><X size={18} /></button></div><label className="range-label">{translate("Cỡ chữ", lang)} <strong>{fontSize}%</strong><input type="range" min="80" max="170" step="10" value={fontSize} onChange={event => updateComfort({ fontSize: Number(event.target.value) })} /></label><div className="setting-group"><span className="setting-label">{translate("Kiểu chữ", lang)}</span><div className="toggle-row"><button className={`choice-chip ${fontFamily === 'serif' ? 'active' : ''}`} onClick={() => updateComfort({ fontFamily: 'serif' })}>{translate("Literata · Sách", lang)}</button><button className={`choice-chip ${fontFamily === 'sans' ? 'active' : ''}`} onClick={() => updateComfort({ fontFamily: 'sans' })}>{curT.accountPage.sansChoice}</button><button className={`choice-chip ${fontFamily === 'mono' ? 'active' : ''}`} onClick={() => updateComfort({ fontFamily: 'mono' })}>{translate("Đơn cách", lang)}</button></div></div><div className="setting-group"><span className="setting-label">{translate("Căn lề", lang)}</span><div className="toggle-row"><button className={`choice-chip ${textAlignment === 'left' ? 'active' : ''}`} onClick={() => updateComfort({ textAlignment: 'left' })}><AlignLeft size={15} />  {translate("Trái", lang)}</button><button className={`choice-chip ${textAlignment === 'justify' ? 'active' : ''}`} onClick={() => updateComfort({ textAlignment: 'justify' })}><AlignJustify size={15} />  {translate("Căn đều 2 bên", lang)}</button></div></div><div className="setting-group"><span className="setting-label">{translate("Khoảng cách dòng", lang)}</span><div className="toggle-row"><button className={`choice-chip ${lineHeight === 1.4 ? 'active' : ''}`} onClick={() => updateComfort({ lineHeight: 1.4 })}>{translate("Gọn (1.4)", lang)}</button><button className={`choice-chip ${lineHeight === 1.65 ? 'active' : ''}`} onClick={() => updateComfort({ lineHeight: 1.65 })}>{translate("Vừa (1.65)", lang)}</button><button className={`choice-chip ${lineHeight === 1.9 ? 'active' : ''}`} onClick={() => updateComfort({ lineHeight: 1.9 })}>{translate("Thoáng (1.9)", lang)}</button></div></div><div className="setting-group"><span className="setting-label">{translate("Độ rộng trang", lang)}</span><div className="toggle-row"><button className={`choice-chip ${readerWidth === 'narrow' ? 'active' : ''}`} onClick={() => updateComfort({ readerWidth: 'narrow' })}>{translate("Gọn", lang)}</button><button className={`choice-chip ${readerWidth === 'standard' ? 'active' : ''}`} onClick={() => updateComfort({ readerWidth: 'standard' })}>{translate("Tiêu chuẩn", lang)}</button><button className={`choice-chip ${readerWidth === 'wide' ? 'active' : ''}`} onClick={() => updateComfort({ readerWidth: 'wide' })}>{translate("Rộng", lang)}</button></div></div><div className="setting-group"><span className="setting-label">{translate("Màu nền", lang)}</span><div className="theme-row">{(['paper', 'sepia', 'night'] as const).map(value => <button key={value} className={`theme-chip ${value} ${theme === value ? 'chosen' : ''}`} onClick={() => updateComfort({ theme: value })}>{value === 'paper' ? translate("Giấy sáng", lang) : value === 'sepia' ? translate("Vàng dịu", lang) : translate("Ban đêm", lang)}</button>)}</div></div><div className="setting-group stealth-settings-section"><span className="setting-label">{lang === 'vi' ? 'Chế độ ngụy trang công sở (Boss Key)' : 'Workplace Disguise (Boss Key)'}</span><p className="muted" style={{ fontSize: '11px', margin: '4px 0 10px', lineHeight: 1.5 }}>{curT.stealth.keyboardGuide} {lang === 'vi' ? 'F2: bật/tắt Đọc ẩn · Pro. F10: toàn màn hình. Alt + 1/2/3: Excel/VS Code/Word. F12 hoặc Alt + P: ẩn nội dung sách.' : 'F2: enter/leave Stealth · Pro. F10: fullscreen. Alt + 1/2/3: Excel/VS Code/Word. F12 or Alt + P: hide book content.'}</p><button type="button" className="stealth-launch-btn" onClick={() => void launchStealth()}><Briefcase size={16} /> {lang === 'vi' ? 'Bật Đọc ẩn · Pro (F2)' : 'Activate Stealth · Pro (F2)'}</button></div></div></div>}
 
-    {noteOpen && reader && <div className="modal-shade" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setNoteOpen(false) }}><div className="dialog" role="dialog" aria-modal="true" aria-labelledby="note-title"><button className="icon-button dialog-close" onClick={() => setNoteOpen(false)} aria-label={translate("Đóng", lang)}><X size={19} /></button><p className="eyebrow">READING MEMORY</p><h2 id="note-title">{translate("Lưu điều đáng nhớ", lang)}</h2>{selection?.text && <blockquote className="selection-preview">“{selection.text.slice(0, 300)}{selection.text.length > 300 ? '…' : ''}”</blockquote>}<div className="color-selector"><span>{translate("Màu highlight:", lang)}</span>{(['YELLOW', 'GREEN', 'BLUE', 'PINK', 'PURPLE'] as const).map(c => <button key={c} type="button" className={`color-dot ${c.toLowerCase()} ${noteColor === c ? 'active' : ''}`} onClick={() => setNoteColor(c)} aria-label={`${translate('Màu', lang)} ${c}`} />)}</div><label htmlFor="note-input">{translate("Ghi chú của bạn", lang)}</label><textarea id="note-input" value={noteText} onChange={event => setNoteText(event.target.value)} maxLength={10000} rows={5} placeholder={translate("Điều gì khiến bạn muốn giữ đoạn này?", lang)} autoFocus /><div className="dialog-actions"><button className="secondary" onClick={() => setNoteOpen(false)}>{translate("Hủy", lang)}</button><button className="primary" onClick={() => void saveNote()} disabled={(!noteText.trim() && !selection?.text) || noteSaving}><Check size={17} /> {noteSaving ? translate("Đang lưu…", lang) : noteText.trim() ? translate("Lưu ghi chú", lang) : translate("Lưu đoạn trích", lang)}</button></div></div></div>}
 
     {reviewOpen && reviewQueue.every(card => card.profile === profile) && <div className="modal-shade" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setReviewOpen(false) }}><div className="flashcard-modal" role="dialog" aria-modal="true" aria-label={translate("Ôn tập ghi chú Flashcards", lang)}>
       <div className="flashcard-header">

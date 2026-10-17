@@ -1,14 +1,15 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import type { LocalFile, Session, SyncRecord } from './types'
+import type { LocalFile, ReaderAnnotation, Session, SyncRecord } from './types'
+import type { ReaderSearchResult, ReaderSearchSource } from './readerSearch'
 import { readSession, saveSession, SESSION_STORAGE_KEY } from './store'
 import App from './App'
 import { ApiError } from './api'
 import { saveStealthCheckpoint } from './stealth/checkpoint'
 
 const fixtures = vi.hoisted(() => ({
-  login: vi.fn(), googleLogin: vi.fn(), getFiles: vi.fn(), getCatalog: vi.fn(), removeLocalDocument: vi.fn(), mutate: vi.fn(), loadBytes: vi.fn(), downloadHttps: vi.fn(), adminIdentity: vi.fn(), adminRequest: vi.fn(), localRecords: vi.fn(), entitlement: vi.fn(), preparePdf: vi.fn(), saveDownload: vi.fn(), conflicts: vi.fn(), resolveConflict: vi.fn(), updateProfile: vi.fn(), deleteAccount: vi.fn(), readerThrows: false, adminThrows: false,
+  login: vi.fn(), googleLogin: vi.fn(), getFiles: vi.fn(), getCatalog: vi.fn(), removeLocalDocument: vi.fn(), mutate: vi.fn(), loadBytes: vi.fn(), downloadHttps: vi.fn(), adminIdentity: vi.fn(), adminRequest: vi.fn(), localRecords: vi.fn(), entitlement: vi.fn(), preparePdf: vi.fn(), saveDownload: vi.fn(), conflicts: vi.fn(), resolveConflict: vi.fn(), updateProfile: vi.fn(), deleteAccount: vi.fn(), searchBook: vi.fn(), readerThrows: false, adminThrows: false,
 }))
 vi.mock('./httpsImport', async importOriginal => ({
   ...await importOriginal<typeof import('./httpsImport')>(), downloadHttpsPublication: fixtures.downloadHttps,
@@ -53,10 +54,18 @@ vi.mock('./bookDownload', async importOriginal => ({
 }))
 vi.mock('./Reader', async () => {
   const { useEffect } = await import('react')
-  return { ReaderPane: ({ onLocation }: { onLocation: (location: object) => void }) => {
+  return { ReaderPane: ({ onLocation, onSelection, navigateLocator, annotations, onSearchReady, onSearchRequest }: {
+    onLocation: (location: object) => void
+    onSelection: (text: string, locator: string) => void
+    navigateLocator?: { locatorJson: string; requestId: number } | null
+    annotations?: ReaderAnnotation[]
+    onSearchReady?: (source: ReaderSearchSource | null) => void
+    onSearchRequest?: () => void
+  }) => {
     useEffect(() => { onLocation({ locatorJson: '{"type":"TEXT","progression":0.6}', progression: 0.6, chapterTitle: 'QA' }) }, [onLocation])
+    useEffect(() => { onSearchReady?.(fixtures.searchBook); return () => onSearchReady?.(null) }, [onSearchReady])
     if (fixtures.readerThrows) throw new Error('QA reader bundle/render failure')
-    return <><p>QA reader content</p><button onClick={() => onLocation({ locatorJson: '{"type":"TEXT","progression":0.1}', progression: 0.1, chapterTitle: 'Old normal view' })}>QA background reader location</button></>
+    return <><p>QA reader content</p><button onClick={() => onLocation({ locatorJson: '{"type":"TEXT","progression":0.1}', progression: 0.1, chapterTitle: 'Old normal view' })}>QA background reader location</button><button onClick={() => onSelection('A selected passage worth remembering', '{"type":"TEXT","progression":0.35,"text":"A selected passage worth remembering"}')}>QA select passage</button><button onClick={onSearchRequest}>QA embedded reader search request</button><output data-testid="qa-reader-navigation">{JSON.stringify(navigateLocator || null)}</output><output data-testid="qa-reader-annotations">{JSON.stringify(annotations || [])}</output></>
   } }
 })
 vi.mock('./stealth/StealthReader', () => ({ StealthReader: ({ onProgressChange, onClose }: {
@@ -106,6 +115,7 @@ beforeEach(() => {
   fixtures.saveDownload.mockReset()
   fixtures.conflicts.mockReset().mockResolvedValue([])
   fixtures.resolveConflict.mockReset().mockResolvedValue(undefined)
+  fixtures.searchBook.mockReset().mockResolvedValue({ hits: [], truncated: false, scanned: 1, total: 1, textAvailable: true })
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks(); delete (window as unknown as { google?: unknown }).google })
 
@@ -160,15 +170,15 @@ describe('library write failures and concurrent actions', () => {
 
   it('shows note storage errors above the reader while preserving the open draft', async () => {
     await reader()
-    fireEvent.click(screen.getByRole('button', { name: 'Thêm ghi chú' }))
-    const dialog = screen.getByRole('dialog', { name: 'Lưu điều đáng nhớ' })
-    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'Keep my draft' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Bảng ghi chú' }))
+    const panel = screen.getByRole('complementary', { name: 'Ghi chú khi đọc' })
+    fireEvent.change(within(panel).getByRole('textbox'), { target: { value: 'Keep my draft' } })
     fixtures.mutate.mockImplementation((_profile, kind) => kind === 'highlights' ? Promise.reject(new Error('Note storage unavailable')) : Promise.resolve())
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Lưu ghi chú' }))
+    fireEvent.click(within(panel).getByRole('button', { name: 'Lưu ghi chú' }))
     const error = await screen.findByText('Note storage unavailable')
     expect(error.closest('.reader-notice')).toBeTruthy()
     expect(error.closest('.reader-shell')).toBeNull()
-    expect((within(dialog).getByRole('textbox') as HTMLTextAreaElement).value).toBe('Keep my draft')
+    expect((within(panel).getByRole('textbox') as HTMLTextAreaElement).value).toBe('Keep my draft')
   })
 
   it('reports a failed library save and prevents repeated pending favorite writes', async () => {
@@ -242,6 +252,403 @@ describe('library write failures and concurrent actions', () => {
   })
 })
 
+describe('side-by-side reading notes', () => {
+  const initialLocator = '{"type":"TEXT","progression":0.6}'
+
+  function note(id: string, bookId = 'QA document', profile = 'DEVICE_LOCAL'): SyncRecord {
+    return { key: `${profile}:highlights:${id}`, profile, kind: 'highlights', id, version: 1, deleted: false,
+      payload: { id, book_id: bookId, text: `Passage ${id}`, note: `Thought ${id}`, locator_json: initialLocator, chapter_title: 'QA', color: 'YELLOW', created_at: Date.now() } }
+  }
+
+  async function reader() {
+    fixtures.getFiles.mockResolvedValue([file('QA document'), file('Another document')])
+    window.history.replaceState(null, '', '/read/QA%20document')
+    render(<App />)
+    await screen.findByText('QA reader content')
+    fireEvent.click(screen.getByRole('button', { name: 'Bảng ghi chú' }))
+    return screen.getByRole('complementary', { name: 'Ghi chú khi đọc' })
+  }
+
+  it('keeps the panel open after saving and shows the same note in Reading Memory', async () => {
+    const stored: SyncRecord[] = []
+    fixtures.localRecords.mockImplementation(async () => [...stored])
+    fixtures.mutate.mockImplementation(async (profile, kind, id, payload, deleted) => {
+      if (kind === 'highlights') stored.push({ key: `${profile}:${kind}:${id}`, profile, kind, id, payload, deleted, version: 1 })
+    })
+    const panel = await reader()
+    const draft = within(panel).getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(draft, { target: { value: 'An idea shared with Reading Memory' } })
+    fireEvent.click(within(panel).getByRole('button', { name: 'Lưu ghi chú' }))
+    await within(panel).findByText('An idea shared with Reading Memory')
+    expect(panel.hidden).toBe(false)
+    expect(screen.getByRole('button', { name: 'Bảng ghi chú' }).getAttribute('aria-expanded')).toBe('true')
+    expect(draft.value).toBe('')
+    const write = fixtures.mutate.mock.calls.find(([, kind]) => kind === 'highlights')!
+    expect(write[0]).toBe('DEVICE_LOCAL')
+    expect(write[5]).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Quay lại tủ sách' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Ghi nhớ' })[0])
+    expect(await screen.findByText('An idea shared with Reading Memory')).toBeTruthy()
+  })
+
+  it('keeps a committed note visible and prevents retry when refreshing its list fails', async () => {
+    const panel = await reader()
+    const draft = within(panel).getByRole('textbox') as HTMLTextAreaElement
+    fixtures.getFiles.mockRejectedValue(new Error('Note list refresh unavailable'))
+    fireEvent.change(draft, { target: { value: 'This note was already committed' } })
+    fireEvent.click(within(panel).getByRole('button', { name: 'Lưu ghi chú' }))
+    expect(await within(panel).findByText('This note was already committed')).toBeTruthy()
+    expect(await screen.findByText('Đã lưu ghi chú.')).toBeTruthy()
+    expect(screen.queryByText('Note list refresh unavailable')).toBeNull()
+    expect(draft.value).toBe('')
+    expect(within(panel).getByRole('button', { name: 'Lưu ghi chú' }).hasAttribute('disabled')).toBe(true)
+    // Even an explicit form submission must not offer the committed draft for retry.
+    fireEvent.submit(draft.closest('form')!)
+    expect(fixtures.mutate.mock.calls.filter(([, kind]) => kind === 'highlights')).toHaveLength(1)
+    expect(within(panel).getAllByText('This note was already committed')).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Quay lại tủ sách' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Ghi nhớ' })[0])
+    expect(await screen.findByText('This note was already committed')).toBeTruthy()
+  })
+
+  it('keeps an unsaved draft and selected color when the panel is hidden and reopened', async () => {
+    const panel = await reader()
+    fireEvent.change(within(panel).getByRole('textbox'), { target: { value: 'Draft while I keep reading' } })
+    fireEvent.click(within(panel).getByRole('button', { name: 'Xanh dương' }))
+    fireEvent.click(within(panel).getByRole('button', { name: 'Đóng bảng ghi chú' }))
+    expect(screen.queryByRole('complementary', { name: 'Ghi chú khi đọc' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Bảng ghi chú' }).getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(screen.getByRole('button', { name: 'Bảng ghi chú' }))
+    const reopened = screen.getByRole('complementary', { name: 'Ghi chú khi đọc' })
+    expect((within(reopened).getByRole('textbox') as HTMLTextAreaElement).value).toBe('Draft while I keep reading')
+    expect(within(reopened).getByRole('button', { name: 'Xanh dương' }).getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('anchors a typed thought to the location where typing started while the reader moves on', async () => {
+    const panel = await reader()
+    fireEvent.change(within(panel).getByRole('textbox'), { target: { value: 'Thought about the original paragraph' } })
+    fireEvent.click(screen.getByRole('button', { name: 'QA background reader location' }))
+    fireEvent.click(within(panel).getByRole('button', { name: 'Lưu ghi chú' }))
+    await waitFor(() => expect(fixtures.mutate.mock.calls.find(([, kind]) => kind === 'highlights')).toBeTruthy())
+    const payload = fixtures.mutate.mock.calls.find(([, kind]) => kind === 'highlights')![3]
+    expect(payload.locator_json).toBe(initialLocator)
+    expect(payload.note).toBe('Thought about the original paragraph')
+  })
+
+  it('creates one highlight while a note save is pending and preserves the draft until saved', async () => {
+    const panel = await reader()
+    const pending = deferred<void>()
+    fixtures.mutate.mockImplementation((_profile, kind) => kind === 'highlights' ? pending.promise : Promise.resolve())
+    const draft = within(panel).getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(draft, { target: { value: 'Only save this thought once' } })
+    const form = draft.closest('form')!
+    fireEvent.submit(form); fireEvent.submit(form)
+    try {
+      expect(fixtures.mutate.mock.calls.filter(([, kind]) => kind === 'highlights')).toHaveLength(1)
+      expect(draft.value).toBe('Only save this thought once')
+      expect(draft.disabled).toBe(true)
+      expect(within(panel).getByRole('button', { name: 'Đang lưu…' }).hasAttribute('disabled')).toBe(true)
+    } finally { await act(async () => { pending.resolve(); await pending.promise }) }
+    await waitFor(() => expect(draft.value).toBe(''))
+    expect(draft.disabled).toBe(false)
+    expect(panel.hidden).toBe(false)
+  })
+
+  it('opens notes for a selected passage and saves the quote with its exact source locator', async () => {
+    await reader()
+    fireEvent.click(screen.getByRole('button', { name: 'Bảng ghi chú' }))
+    fireEvent.click(screen.getByRole('button', { name: 'QA select passage' }))
+    const panel = screen.getByRole('complementary', { name: 'Ghi chú khi đọc' })
+    expect(within(panel).getByText('A selected passage worth remembering')).toBeTruthy()
+    fireEvent.click(within(panel).getByRole('button', { name: 'Lưu ghi chú' }))
+    await waitFor(() => expect(fixtures.mutate.mock.calls.find(([, kind]) => kind === 'highlights')).toBeTruthy())
+    const payload = fixtures.mutate.mock.calls.find(([, kind]) => kind === 'highlights')![3]
+    expect(payload.text).toBe('A selected passage worth remembering')
+    expect(JSON.parse(payload.locator_json)).toEqual({ type: 'TEXT', progression: 0.35, text: 'A selected passage worth remembering' })
+    expect(payload.note).toBe('')
+  })
+
+  it('shows only current-account live highlights from the current book', async () => {
+    saveSession(session)
+    fixtures.localRecords.mockResolvedValue([
+      note('this book', 'QA document', 'ACCOUNT:qa-user'),
+      note('another book', 'Another document', 'ACCOUNT:qa-user'),
+      note('another account', 'QA document', 'ACCOUNT:other-user'),
+      { ...note('deleted', 'QA document', 'ACCOUNT:qa-user'), deleted: true },
+      { ...note('bookmark', 'QA document', 'ACCOUNT:qa-user'), kind: 'bookmarks' },
+    ])
+    const panel = await reader()
+    expect(within(panel).getByText('Thought this book')).toBeTruthy()
+    expect(within(panel).queryByText('Thought another book')).toBeNull()
+    expect(within(panel).queryByText('Thought another account')).toBeNull()
+    expect(within(panel).queryByText('Thought deleted')).toBeNull()
+    expect(within(panel).queryByText('Thought bookmark')).toBeNull()
+  })
+
+  it('can revisit the same source repeatedly without fetching the publication again', async () => {
+    fixtures.localRecords.mockResolvedValue([note('jump')])
+    const panel = await reader()
+    const loaded = fixtures.loadBytes.mock.calls.length
+    const source = within(panel).getByRole('button', { name: 'Về đoạn gốc' })
+    fireEvent.click(source)
+    const first = JSON.parse(screen.getByTestId('qa-reader-navigation').textContent!)
+    expect(first.locatorJson).toBe(initialLocator)
+    fireEvent.click(source)
+    const second = JSON.parse(screen.getByTestId('qa-reader-navigation').textContent!)
+    expect(second.locatorJson).toBe(initialLocator)
+    expect(second.requestId).toBeGreaterThan(first.requestId)
+    expect(fixtures.loadBytes).toHaveBeenCalledTimes(loaded)
+    expect(panel.hidden).toBe(false)
+  })
+
+  it('does not clear a new book draft when a pending save from the previous book completes', async () => {
+    const oldPanel = await reader()
+    const pending = deferred<void>()
+    fixtures.mutate.mockImplementation((_profile, kind) => kind === 'highlights' ? pending.promise : Promise.resolve())
+    fireEvent.change(within(oldPanel).getByRole('textbox'), { target: { value: 'Pending thought for the old book' } })
+    fireEvent.click(within(oldPanel).getByRole('button', { name: 'Lưu ghi chú' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Quay lại tủ sách' }))
+    await act(async () => {
+      window.history.pushState(null, '', '/read/Another%20document')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    await screen.findByText('QA reader content')
+    fireEvent.click(screen.getByRole('button', { name: 'Bảng ghi chú' }))
+    const newPanel = screen.getByRole('complementary', { name: 'Ghi chú khi đọc' })
+    const newDraft = within(newPanel).getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(newDraft, { target: { value: 'New book draft must survive' } })
+    await act(async () => { pending.resolve(); await pending.promise })
+    expect(newDraft.value).toBe('New book draft must survive')
+    expect(screen.queryByText('Đã lưu ghi chú.')).toBeNull()
+    expect(fixtures.mutate.mock.calls.filter(([, kind]) => kind === 'highlights')).toHaveLength(1)
+  })
+
+  it('does not clear a replacement account draft when the old account finishes saving', async () => {
+    saveSession(session)
+    const oldPanel = await reader()
+    const pending = deferred<void>()
+    fixtures.mutate.mockImplementation((_profile, kind) => kind === 'highlights' ? pending.promise : Promise.resolve())
+    fireEvent.change(within(oldPanel).getByRole('textbox'), { target: { value: 'Private thought belonging to the old account' } })
+    fireEvent.click(within(oldPanel).getByRole('button', { name: 'Lưu ghi chú' }))
+    const replacement: Session = { ...session, token: 'replacement-notes-token', user: { ...session.user, id: 'replacement-reader', email: 'replacement@example.test' } }
+    saveSession(replacement)
+    fireEvent(window, new StorageEvent('storage', { key: SESSION_STORAGE_KEY, storageArea: localStorage }))
+    await act(async () => {
+      window.history.pushState(null, '', '/read/QA%20document')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    await screen.findByText('QA reader content')
+    fireEvent.click(screen.getByRole('button', { name: 'Bảng ghi chú' }))
+    const newPanel = screen.getByRole('complementary', { name: 'Ghi chú khi đọc' })
+    const newDraft = within(newPanel).getByRole('textbox') as HTMLTextAreaElement
+    expect(newDraft.value).toBe('')
+    fireEvent.change(newDraft, { target: { value: 'Replacement account thought' } })
+    await act(async () => { pending.resolve(); await pending.promise })
+    expect(newDraft.value).toBe('Replacement account thought')
+    expect(newPanel.hidden).toBe(false)
+    expect(screen.queryByText('Đã lưu ghi chú.')).toBeNull()
+    expect(fixtures.mutate.mock.calls.find(([, kind]) => kind === 'highlights')?.[0]).toBe('ACCOUNT:qa-user')
+  })
+})
+
+describe('searching inside the open book', () => {
+  const locator = '{"type":"TEXT","progression":0.24,"text":"quiet river","start":2,"end":13}'
+  const excerpt = 'A quiet river runs beside this library'
+  const result: ReaderSearchResult = {
+    hits: [{ id: 'qa-search-hit', locatorJson: locator, text: 'quiet river', excerpt, matchStart: 2, matchEnd: 13, label: 'QA chapter' }],
+    truncated: false, scanned: 1, total: 1, textAvailable: true,
+  }
+
+  async function reader() {
+    fixtures.getFiles.mockResolvedValue([file('QA document'), file('Another document')])
+    window.history.replaceState(null, '', '/read/QA%20document')
+    render(<App />)
+    await screen.findByText('QA reader content')
+    return screen.getByRole('button', { name: 'Tìm trong sách' })
+  }
+
+  function searchPanel() {
+    return screen.getByRole('complementary', { name: 'Tìm trong sách' })
+  }
+
+  async function search(query = 'quiet river') {
+    fireEvent.change(within(searchPanel()).getByRole('searchbox', { name: 'Từ khóa trong sách' }), { target: { value: query } })
+    await waitFor(() => expect(fixtures.searchBook).toHaveBeenCalledWith(query, expect.any(AbortSignal), expect.any(Function)))
+  }
+
+  async function hitButton() {
+    let button: HTMLElement | undefined
+    await waitFor(() => {
+      button = within(searchPanel()).getAllByRole('button').find(item => item.textContent?.includes(excerpt))
+      expect(button).toBeTruthy()
+    })
+    return button!
+  }
+
+  function annotations(): ReaderAnnotation[] {
+    return JSON.parse(screen.getByTestId('qa-reader-annotations').textContent!)
+  }
+
+  it('opens with Ctrl/Cmd+F, focuses its input, and returns focus to the toolbar on Escape', async () => {
+    const toggle = await reader()
+    toggle.focus()
+    const shortcut = new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true, cancelable: true })
+    fireEvent(window, shortcut)
+    expect(shortcut.defaultPrevented).toBe(true)
+    const input = within(searchPanel()).getByRole('searchbox', { name: 'Từ khóa trong sách' })
+    await waitFor(() => expect(document.activeElement).toBe(input))
+    fireEvent.keyDown(input, { key: 'Escape' })
+    expect(screen.queryByRole('complementary', { name: 'Tìm trong sách' })).toBeNull()
+    expect(document.activeElement).toBe(toggle)
+    expect(screen.getByText('QA reader content')).toBeTruthy()
+    fireEvent.keyDown(window, { key: 'f', metaKey: true })
+    expect(searchPanel()).toBeTruthy()
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('searches existing bytes without recording a new location or persisting a highlight', async () => {
+    fixtures.searchBook.mockResolvedValue(result)
+    const toggle = await reader()
+    // Flush this reader's initial location explicitly rather than waiting for any
+    // debounce, which could otherwise belong to an earlier test under load.
+    await act(async () => { fireEvent(window, new Event('pagehide')) })
+    expect(fixtures.mutate).toHaveBeenCalledWith('DEVICE_LOCAL', 'reading_progress', expect.any(String), expect.objectContaining({ progression: 0.6 }), false, true)
+    fixtures.mutate.mockClear()
+    const loaded = fixtures.loadBytes.mock.calls.length
+    fireEvent.click(toggle)
+    await search()
+    await hitButton()
+    expect(fixtures.loadBytes).toHaveBeenCalledTimes(loaded)
+    expect(fixtures.mutate).not.toHaveBeenCalled()
+    expect(screen.getByTestId('qa-reader-navigation').textContent).toBe('null')
+    expect(annotations()).toEqual([])
+  })
+
+  it('opens and focuses search when an embedded reader forwards its search shortcut', async () => {
+    const toggle = await reader()
+    fireEvent.click(screen.getByRole('button', { name: 'QA embedded reader search request' }))
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    const input = within(searchPanel()).getByRole('searchbox', { name: 'Từ khóa trong sách' })
+    await waitFor(() => expect(document.activeElement).toBe(input))
+  })
+
+  it('does not run a deferred reading-progress write after the application unmounts', async () => {
+    fixtures.getFiles.mockResolvedValue([file('QA document')])
+    window.history.replaceState(null, '', '/read/QA%20document')
+    vi.useFakeTimers()
+    try {
+      const view = render(<App />)
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      expect(screen.getByText('QA reader content')).toBeTruthy()
+      expect(fixtures.mutate).not.toHaveBeenCalled()
+      view.unmount()
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+      expect(fixtures.mutate).not.toHaveBeenCalled()
+    } finally { vi.useRealTimers() }
+  })
+
+  it('navigates repeated results through unique requests and uses a temporary reader decoration', async () => {
+    const saved: SyncRecord = { key: 'DEVICE_LOCAL:highlights:saved', profile: 'DEVICE_LOCAL', kind: 'highlights', id: 'saved', version: 1, deleted: false,
+      payload: { book_id: 'QA document', text: 'My existing quote', locator_json: '{"type":"TEXT","progression":0.7}', color: 'YELLOW' } }
+    fixtures.localRecords.mockResolvedValue([saved])
+    fixtures.searchBook.mockResolvedValue(result)
+    const toggle = await reader()
+    fireEvent.click(toggle)
+    await search()
+    const hit = await hitButton()
+    const loaded = fixtures.loadBytes.mock.calls.length
+    fireEvent.click(hit)
+    const first = JSON.parse(screen.getByTestId('qa-reader-navigation').textContent!)
+    expect(first.locatorJson).toBe(locator)
+    expect(annotations()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'saved', color: 'YELLOW', text: 'My existing quote' }),
+      expect.objectContaining({ id: 'nocap-search-active', color: 'BLUE', locatorJson: locator, text: 'quiet river' }),
+    ]))
+    fireEvent.click(hit)
+    const next = JSON.parse(screen.getByTestId('qa-reader-navigation').textContent!)
+    expect(next.locatorJson).toBe(locator)
+    expect(next.requestId).toBeGreaterThan(first.requestId)
+    expect(fixtures.loadBytes).toHaveBeenCalledTimes(loaded)
+    expect(fixtures.mutate.mock.calls.filter(call => call[1] === 'highlights')).toHaveLength(0)
+    fireEvent.click(toggle)
+    expect(annotations()).toEqual([expect.objectContaining({ id: 'saved', color: 'YELLOW' })])
+  })
+
+  it('switches between search and notes without discarding an unsaved thought or its color', async () => {
+    fixtures.searchBook.mockResolvedValue(result)
+    const toggle = await reader()
+    fireEvent.click(screen.getByRole('button', { name: 'Bảng ghi chú' }))
+    const notes = screen.getByRole('complementary', { name: 'Ghi chú khi đọc' })
+    fireEvent.change(within(notes).getByRole('textbox'), { target: { value: 'Keep this unfinished thought' } })
+    fireEvent.click(within(notes).getByRole('button', { name: 'Xanh dương' }))
+    fireEvent.click(toggle)
+    expect(screen.queryByRole('complementary', { name: 'Ghi chú khi đọc' })).toBeNull()
+    await search()
+    fireEvent.click(await hitButton())
+    expect(annotations().some(item => item.id === 'nocap-search-active')).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Bảng ghi chú' }))
+    expect(screen.queryByRole('complementary', { name: 'Tìm trong sách' })).toBeNull()
+    const reopened = screen.getByRole('complementary', { name: 'Ghi chú khi đọc' })
+    expect((within(reopened).getByRole('textbox') as HTMLTextAreaElement).value).toBe('Keep this unfinished thought')
+    expect(within(reopened).getByRole('button', { name: 'Xanh dương' }).getAttribute('aria-pressed')).toBe('true')
+    expect(annotations().some(item => item.id === 'nocap-search-active')).toBe(false)
+  })
+
+  it('clears a selected match as soon as the query changes', async () => {
+    fixtures.searchBook.mockResolvedValue(result)
+    fireEvent.click(await reader())
+    await search()
+    fireEvent.click(await hitButton())
+    expect(annotations().some(item => item.id === 'nocap-search-active')).toBe(true)
+    fireEvent.change(within(searchPanel()).getByRole('searchbox', { name: 'Từ khóa trong sách' }), { target: { value: 'a different query' } })
+    expect(annotations().some(item => item.id === 'nocap-search-active')).toBe(false)
+  })
+
+  it('aborts a previous book search and ignores its late results in the next book', async () => {
+    const pending = deferred<ReaderSearchResult>()
+    fixtures.searchBook.mockReturnValueOnce(pending.promise)
+    fireEvent.click(await reader())
+    await search()
+    const oldSignal = fixtures.searchBook.mock.calls[0][1] as AbortSignal
+    fireEvent.click(screen.getByRole('button', { name: 'Quay lại tủ sách' }))
+    await act(async () => {
+      window.history.pushState(null, '', '/read/Another%20document')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    await screen.findByText('QA reader content')
+    fireEvent.click(screen.getByRole('button', { name: 'Tìm trong sách' }))
+    expect((within(searchPanel()).getByRole('searchbox', { name: 'Từ khóa trong sách' }) as HTMLInputElement).value).toBe('')
+    expect(oldSignal.aborted).toBe(true)
+    await act(async () => { pending.resolve(result); await pending.promise })
+    expect(searchPanel().textContent).not.toContain(excerpt)
+    expect(screen.getByTestId('qa-reader-navigation').textContent).toBe('null')
+    expect(annotations()).toEqual([])
+  })
+
+  it('aborts a private search and clears its query after the account is replaced', async () => {
+    saveSession(session)
+    const pending = deferred<ReaderSearchResult>()
+    fixtures.searchBook.mockReturnValueOnce(pending.promise)
+    fireEvent.click(await reader())
+    await search('private account query')
+    const oldSignal = fixtures.searchBook.mock.calls[0][1] as AbortSignal
+    saveSession({ ...session, token: 'replacement-search-token', user: { ...session.user, id: 'replacement-search-user' } })
+    fireEvent(window, new StorageEvent('storage', { key: SESSION_STORAGE_KEY, storageArea: localStorage }))
+    expect(screen.queryByRole('complementary', { name: 'Tìm trong sách' })).toBeNull()
+    await act(async () => {
+      window.history.pushState(null, '', '/read/QA%20document')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    await screen.findByText('QA reader content')
+    fireEvent.click(screen.getByRole('button', { name: 'Tìm trong sách' }))
+    expect((within(searchPanel()).getByRole('searchbox', { name: 'Từ khóa trong sách' }) as HTMLInputElement).value).toBe('')
+    expect(oldSignal.aborted).toBe(true)
+    await act(async () => { pending.resolve(result); await pending.promise })
+    expect(searchPanel().textContent).not.toContain(excerpt)
+    expect(screen.getByTestId('qa-reader-navigation').textContent).toBe('null')
+  })
+})
+
 describe('Reading Memory PDF export', () => {
   async function memory(pro: boolean) {
     saveSession(session)
@@ -305,8 +712,9 @@ describe('account and reader lifecycle', () => {
     window.history.replaceState(null, '', '/read/QA%20document')
     render(<App />)
     await screen.findByText('QA reader content')
-    fireEvent.keyDown(window, { key: 'F2' })
-    fireEvent.click(await screen.findByRole('button', { name: 'QA stealth advance' }))
+    await waitFor(() => expect(fixtures.entitlement).toHaveBeenCalled())
+    await act(async () => { fireEvent.keyDown(window, { key: 'F2' }) })
+    fireEvent.click(await screen.findByRole('button', { name: 'QA stealth advance' }, { timeout: 3000 }))
     fireEvent.click(screen.getByRole('button', { name: 'QA background reader location' }))
     fireEvent(window, new Event('pagehide'))
     await waitFor(() => expect(fixtures.mutate.mock.calls.some(([, kind, , payload]) => kind === 'reading_progress' && payload.progression === 0.73 && JSON.parse(payload.locator_json).rowIndex === 73)).toBe(true))
@@ -495,12 +903,12 @@ describe('account and reader lifecycle', () => {
     window.history.replaceState(null, '', '/read/QA%20document')
     render(<App />)
     await screen.findByText('QA reader content')
-    fireEvent.click(screen.getByRole('button', { name: 'Thêm ghi chú' }))
-    const dialog = screen.getByRole('dialog', { name: 'Lưu điều đáng nhớ' })
-    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'Private note belonging to the old account' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Bảng ghi chú' }))
+    const panel = screen.getByRole('complementary', { name: 'Ghi chú khi đọc' })
+    fireEvent.change(within(panel).getByRole('textbox'), { target: { value: 'Private note belonging to the old account' } })
     const pending = deferred<void>()
     fixtures.mutate.mockImplementation((_profile, kind) => kind === 'highlights' ? pending.promise : Promise.resolve())
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Lưu ghi chú' }))
+    fireEvent.click(within(panel).getByRole('button', { name: 'Lưu ghi chú' }))
     await waitFor(() => expect(fixtures.mutate.mock.calls.some(call => call[1] === 'highlights')).toBe(true))
     saveSession(null)
     fireEvent(window, new StorageEvent('storage', { key: SESSION_STORAGE_KEY, storageArea: localStorage }))

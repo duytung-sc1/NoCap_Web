@@ -14,6 +14,8 @@ import type Contents from 'epubjs/types/contents'
 import { pdfOutline } from './pdfOutline'
 import { translate } from './uiText'
 import type { Lang } from './i18n'
+import type { ReaderSearchSource } from './readerSearch'
+import { createArticleSearchSource, createEpubSearchSource, createPdfSearchSource } from './readerSearchSources'
 
 GlobalWorkerOptions.workerSrc = workerUrl
 
@@ -34,7 +36,25 @@ type Props = {
   onToc?: (toc: TocItem[]) => void
   navigateTarget?: string | null
   navigateProgression?: { progression: number; requestId: number; href?: string } | null
+  navigateLocator?: { locatorJson: string; requestId: number } | null
   annotations?: ReaderAnnotation[]
+  onSearchReady?: (source: ReaderSearchSource | null) => void
+  onSearchRequest?: () => void
+}
+
+/** Callback changes must not reopen a document or replace its search engine. */
+function useSearchPublication(onSearchReady: Props['onSearchReady']) {
+  const callback = useRef(onSearchReady)
+  const source = useRef<ReaderSearchSource | null>(null)
+  useEffect(() => {
+    callback.current = onSearchReady
+    onSearchReady?.(source.current)
+    return () => onSearchReady?.(null)
+  }, [onSearchReady])
+  return useCallback((next: ReaderSearchSource | null) => {
+    source.current = next
+    callback.current?.(next)
+  }, [])
 }
 
 // New bytes must reset every format's document state, even when file size is unchanged.
@@ -61,6 +81,22 @@ export function ReaderPane(props: Props) {
 
 function parseInitial(value?: string): Record<string, unknown> | null {
   try { return value ? JSON.parse(value) as Record<string, unknown> : null } catch { return null }
+}
+
+function locatorRange(root: Element, locator: Record<string, unknown>, legacyStart = 0): Range | null {
+  const selected = typeof locator.selectedText === 'string' ? locator.selectedText : ''
+  const start = typeof locator.textStartOffset === 'number' ? locator.textStartOffset : typeof locator.startOffset === 'number' ? locator.startOffset : legacyStart
+  const end = typeof locator.textEndOffset === 'number' ? locator.textEndOffset : typeof locator.endOffset === 'number' ? locator.endOffset : start + selected.length
+  const offsets = selected ? pdfTextOffsets(root.textContent || '', selected, start, end) : null
+  return offsets ? rangeFromOffsets(root, offsets.start, offsets.end) : null
+}
+
+/** Scroll only the reader, leaving the notes panel and application viewport in place. */
+function revealReaderRange(host: HTMLElement, range: Range | null): boolean {
+  const rect = range?.getClientRects?.()[0] || range?.getBoundingClientRect?.()
+  if (!rect || !Number.isFinite(rect.top) || (!rect.height && !rect.width)) return false
+  host.scrollTop = Math.max(0, host.scrollTop + rect.top - host.getBoundingClientRect().top - Math.min(72, host.clientHeight / 4))
+  return true
 }
 
 function readingMeasure(width?: ReaderWidth): string {
@@ -111,7 +147,8 @@ async function displayEpubLocation(view: Rendition, target: string | undefined, 
   }
 }
 
-function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme, onLocation, onSelection, onControls, onToc, navigateTarget, navigateProgression, annotations = [] }: Props) {
+function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme, onLocation, onSelection, onControls, onToc, navigateTarget, navigateProgression, navigateLocator, annotations = [], onSearchReady, onSearchRequest }: Props) {
+  const publishSearch = useSearchPublication(onSearchReady)
   const language = sourceBook.language
   const publicationLanguage = useRef<string | undefined>(undefined)
   const langRef = useRef(lang)
@@ -121,6 +158,8 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
   const bookRef = useRef<import('epubjs/types/book').default | null>(null)
   const locationRef = useRef(onLocation)
   const selectionRef = useRef(onSelection)
+  const searchRequestRef = useRef(onSearchRequest)
+  useEffect(() => { searchRequestRef.current = onSearchRequest }, [onSearchRequest])
   const controlsRef = useRef(onControls)
   const onTocRef = useRef(onToc)
   const renderedAnnotations = useRef<string[]>([])
@@ -128,6 +167,7 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
   const requestedProgression = useRef<number | null>(null)
   const contentReadiness = useRef(new WeakMap<Document, Promise<void>>())
   const renditionReady = useRef(false)
+  const appliedLocatorRequest = useRef<string | null>(null)
   const comfortRef = useRef({ fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme, language })
   const [renditionVersion, setRenditionVersion] = useState(0)
   const [error, setError] = useState('')
@@ -147,6 +187,23 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
     void displayEpubLocation(current, target, () => active, contentReadiness.current).catch(() => {})
     return () => { active = false }
   }, [navigateTarget, renditionVersion])
+
+  useEffect(() => {
+    const saved = parseInitial(navigateLocator?.locatorJson)
+    const view = rendition.current
+    const book = bookRef.current
+    if (!saved || !navigateLocator || !view || !book || !renditionReady.current) return
+    const key = `${navigateLocator.requestId}:${navigateLocator.locatorJson}`
+    if (appliedLocatorRequest.current === key) return
+    const locations = saved.locations as { cfi?: string } | undefined
+    const cfi = typeof locations?.cfi === 'string' ? locations.cfi : typeof saved.cfi === 'string' ? saved.cfi : undefined
+    const href = typeof saved.href === 'string' ? findSpineHref(book.spine, saved.href) : undefined
+    if (!cfi && !href) return
+    appliedLocatorRequest.current = key
+    let active = true
+    void displayEpubLocation(view, cfi || href, () => active, contentReadiness.current).catch(() => {})
+    return () => { active = false }
+  }, [navigateLocator, renditionVersion])
 
   useEffect(() => {
     const request = navigateProgression
@@ -197,6 +254,7 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
     let alive = true
     let book: import('epubjs/types/book').default | null = null
     let view: Rendition | null = null
+    let resizeObserver: ResizeObserver | null = null
     async function open() {
       try {
         const { default: ePub } = await import('epubjs')
@@ -222,6 +280,12 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
         }).catch(() => {})
         view = book.renderTo(host.current, { width: '100%', height: '100%', flow: 'scrolled-doc', manager: 'continuous', allowScriptedContent: false })
         rendition.current = view
+        // Keyboard events inside an EPUB iframe do not reach the app window.
+        view.on('keydown', (event: KeyboardEvent) => {
+          if (!alive || !searchRequestRef.current || !(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLowerCase() !== 'f') return
+          event.preventDefault()
+          searchRequestRef.current()
+        })
         await view.started
         if (!alive) return
         synchronizeEpubScroll((view as unknown as { manager: EpubScrollManager }).manager)
@@ -363,14 +427,28 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
           await displayEpubLocation(view, undefined, () => alive, contentReadiness.current)
         }
         if (alive) {
+          publishSearch(createEpubSearchSource(book, () => alive))
           renditionReady.current = true
           setRenditionVersion(value => value + 1)
+          // Opening the notes panel changes the host width without resizing the
+          // window. epub.js restores its current CFI when explicitly resized.
+          let width = host.current?.clientWidth || 0
+          let height = host.current?.clientHeight || 0
+          resizeObserver = new ResizeObserver(() => {
+            const nextWidth = host.current?.clientWidth || 0
+            const nextHeight = host.current?.clientHeight || 0
+            if (!alive || !nextWidth || !nextHeight || (width === nextWidth && height === nextHeight)) return
+            width = nextWidth
+            height = nextHeight
+            view?.resize(width, height)
+          })
+          if (host.current) resizeObserver.observe(host.current)
         }
       } catch { if (alive) setError(translate("Không mở được EPUB này. Tệp có thể bị hỏng hoặc không đúng định dạng.", langRef.current)) }
     }
     void open()
-    return () => { alive = false; renditionReady.current = false; rendition.current = null; locationsReady.current = false; view?.destroy(); book?.destroy() }
-  }, [bytes, initial])
+    return () => { alive = false; publishSearch(null); resizeObserver?.disconnect(); renditionReady.current = false; rendition.current = null; locationsReady.current = false; view?.destroy(); book?.destroy() }
+  }, [bytes, initial, publishSearch])
 
   useEffect(() => {
     const view = rendition.current
@@ -417,10 +495,15 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
   return error ? <div className="reader-error">{error}</div> : <div ref={host} className="epub-host" style={{ overflowAnchor: 'none' }} aria-label={translate("Nội dung EPUB", lang)} />
 }
 
-function PdfPane({ lang = 'vi', bytes, initial, onLocation, onSelection, onControls, onToc, navigateTarget, navigateProgression, annotations = [] }: Props) {
+function PdfPane({ lang = 'vi', bytes, initial, onLocation, onSelection, onControls, onToc, navigateTarget, navigateProgression, navigateLocator, annotations = [], onSearchReady }: Props) {
+  const publishSearch = useSearchPublication(onSearchReady)
   const langRef = useRef(lang)
   useEffect(() => { langRef.current = lang }, [lang])
   const canvas = useRef<HTMLCanvasElement>(null)
+  const host = useRef<HTMLDivElement>(null)
+  const appliedLocatorRequest = useRef<string | null>(null)
+  const resizeAnchor = useRef<{ page: number; ratio: number } | null>(null)
+  const pageMetrics = useRef({ page: 1, height: 1100, width: 800 })
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null)
   const textLayerDiv = useRef<HTMLDivElement>(null)
   const [textLayerVersion, setTextLayerVersion] = useState(0)
@@ -443,7 +526,12 @@ function PdfPane({ lang = 'vi', bytes, initial, onLocation, onSelection, onContr
     const resize = () => {
       const style = getComputedStyle(parent)
       const width = parent.clientWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0)
-      setRenderWidth(Math.min(960, Math.max(1, width)))
+      const nextWidth = Math.min(960, Math.max(1, width))
+      const metrics = pageMetrics.current
+      if (host.current && nextWidth !== metrics.width && renderedTextPage.current === metrics.page) {
+        resizeAnchor.current = { page: metrics.page, ratio: host.current.scrollTop / Math.max(1, metrics.height) }
+      }
+      setRenderWidth(nextWidth)
     }
     resize()
     const observer = new ResizeObserver(resize)
@@ -480,12 +568,23 @@ function PdfPane({ lang = 'vi', bytes, initial, onLocation, onSelection, onContr
   }, [document, navigateProgression])
 
   useEffect(() => {
+    const saved = parseInitial(navigateLocator?.locatorJson)
+    if (!document || !saved || saved.type !== 'PDF') return
+    const requested = Number(saved.pageNumber) || Number(saved.pageIndex) + 1
+    if (!Number.isFinite(requested)) return
+    let active = true
+    queueMicrotask(() => { if (active) setPage(Math.min(document.numPages, Math.max(1, Math.trunc(requested)))) })
+    return () => { active = false }
+  }, [document, navigateLocator?.locatorJson, navigateLocator?.requestId])
+
+  useEffect(() => {
     let active = true
     const task = getDocument({ data: bytes.slice(0) })
     void task.promise.then(pdf => {
       if (!active) return
       setPage(current => Math.min(pdf.numPages, Math.max(1, Math.trunc(current))))
       setDocument(pdf)
+      publishSearch(createPdfSearchSource(pdf, () => active))
       void pdf.getOutline().then(outline => {
         if (!active || !outline || !outline.length || !onTocRef.current) return
         void pdfOutline(pdf, outline, index => `${translate('Mục', langRef.current)} ${index}`).then(items => {
@@ -493,8 +592,8 @@ function PdfPane({ lang = 'vi', bytes, initial, onLocation, onSelection, onContr
         }).catch(() => {})
       }).catch(() => {})
     }).catch(() => { if (active) setError(translate("Không mở được PDF này. Tệp có thể bị hỏng hoặc được bảo vệ.", langRef.current)) })
-    return () => { active = false; void task.destroy() }
-  }, [bytes])
+    return () => { active = false; publishSearch(null); void task.destroy() }
+  }, [bytes, publishSearch])
 
   useEffect(() => {
     if (!document || !canvas.current || !Number.isInteger(page) || page < 1 || page > document.numPages) return
@@ -503,7 +602,6 @@ function PdfPane({ lang = 'vi', bytes, initial, onLocation, onSelection, onContr
     let textLayer: TextLayer | null = null
     renderedTextPage.current = 0
     textLayerDiv.current?.replaceChildren()
-    setTextLayerVersion(0)
     setPdfHighlights({ page: 0, rects: [] })
     void document.getPage(page).then(async pdfPage => {
       if (!active || !canvas.current) return
@@ -539,6 +637,10 @@ function PdfPane({ lang = 'vi', bytes, initial, onLocation, onSelection, onContr
         })
         await textLayer.render()
         if (active) {
+          const anchor = resizeAnchor.current
+          if (anchor?.page === page && host.current) host.current.scrollTop = anchor.ratio * viewport.height
+          resizeAnchor.current = null
+          pageMetrics.current = { page, height: viewport.height, width: viewport.width }
           renderedTextPage.current = page
           setTextLayerVersion(value => value + 1)
         }
@@ -548,6 +650,24 @@ function PdfPane({ lang = 'vi', bytes, initial, onLocation, onSelection, onContr
     onLocation({ locatorJson: JSON.stringify({ type: 'PDF', version: 1, pageIndex: page - 1, pageNumber: page, progression, selectedText: '', startOffset: 0, endOffset: 0 }), progression, chapterTitle: `${translate('Trang', langRef.current)} ${page}` })
     return () => { active = false; renderedTextPage.current = 0; render?.cancel(); textLayer?.cancel() }
   }, [document, page, onLocation, renderWidth])
+
+  useEffect(() => {
+    const saved = parseInitial(navigateLocator?.locatorJson)
+    const root = textLayerDiv.current
+    const element = host.current
+    if (!saved || saved.type !== 'PDF' || !navigateLocator || !root || !element || !textLayerVersion || renderedTextPage.current !== page) return
+    const requested = Number(saved.pageNumber) || Number(saved.pageIndex) + 1
+    const targetPage = Math.min(document?.numPages || 1, Math.max(1, Math.trunc(requested)))
+    const key = `${navigateLocator.requestId}:${navigateLocator.locatorJson}`
+    if (targetPage !== page || !Number.isFinite(requested) || appliedLocatorRequest.current === key) return
+    const range = locatorRange(root, saved)
+    if (!revealReaderRange(element, range)) {
+      const rects = Array.isArray(saved.rects) ? saved.rects as PdfRect[] : []
+      const rect = rects.find(item => Number.isFinite(item.top) && item.top >= 0 && item.top <= 1)
+      element.scrollTop = rect ? Math.max(0, rect.top * dimensions.height - Math.min(72, element.clientHeight / 4)) : 0
+    }
+    appliedLocatorRequest.current = key
+  }, [document, page, dimensions.height, textLayerVersion, navigateLocator])
 
   useEffect(() => { onControls({ previous: () => setPage(value => Math.max(1, value - 1)), next: () => setPage(value => Math.min(document?.numPages || value, value + 1)) }) }, [document, onControls])
 
@@ -587,7 +707,7 @@ function PdfPane({ lang = 'vi', bytes, initial, onLocation, onSelection, onContr
 
   useEffect(() => {
     const root = textLayerDiv.current
-    if (!root || !textLayerVersion) return
+    if (!root || !textLayerVersion || renderedTextPage.current !== page) return
     let active = true
     const pageRect = root.getBoundingClientRect()
     const rects = pageHighlights.flatMap(annotation => {
@@ -610,7 +730,7 @@ function PdfPane({ lang = 'vi', bytes, initial, onLocation, onSelection, onContr
   return error ? (
     <div className="reader-error">{error}</div>
   ) : (
-    <div className="pdf-host">
+    <div className="pdf-host" ref={host}>
       <div
         className="pdf-page-container"
         style={{
@@ -646,7 +766,8 @@ function PdfPane({ lang = 'vi', bytes, initial, onLocation, onSelection, onContr
   )
 }
 
-function CbzPane({ lang = 'vi', bytes, initial, onLocation, onControls, onToc, navigateTarget, navigateProgression }: Props) {
+function CbzPane({ lang = 'vi', bytes, initial, onLocation, onControls, onToc, navigateTarget, navigateProgression, navigateLocator, onSearchReady }: Props) {
+  useSearchPublication(onSearchReady)
   const langRef = useRef(lang)
   useEffect(() => { langRef.current = lang }, [lang])
   const [pages, setPages] = useState<Array<{ url: string; name: string }>>([])
@@ -655,6 +776,7 @@ function CbzPane({ lang = 'vi', bytes, initial, onLocation, onControls, onToc, n
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const hostRef = useRef<HTMLDivElement>(null)
+  const appliedLocatorRequest = useRef<string | null>(null)
   const onTocRef = useRef(onToc)
   useEffect(() => { onTocRef.current = onToc }, [onToc])
 
@@ -728,6 +850,7 @@ function CbzPane({ lang = 'vi', bytes, initial, onLocation, onControls, onToc, n
     const next = Math.max(1, Math.min(pages.length, target))
     setPage(next)
     if (mode === 'webtoon') scrollToPage(next)
+    else if (hostRef.current) hostRef.current.scrollTop = 0
   }, [mode, pages.length, scrollToPage])
 
   // Align when switching modes; scrolling itself never snaps back to a page.
@@ -752,6 +875,20 @@ function CbzPane({ lang = 'vi', bytes, initial, onLocation, onControls, onToc, n
     const p = Math.max(1, Math.ceil(clampProgression(navigateProgression.progression) * pages.length))
     queueMicrotask(() => goToPage(p))
   }, [navigateProgression, pages.length, goToPage])
+
+  useEffect(() => {
+    const saved = parseInitial(navigateLocator?.locatorJson)
+    if (!saved || !navigateLocator || !pages.length || !['ARCHIVE', 'CBZ'].includes(String(saved.type))) return
+    const key = `${navigateLocator.requestId}:${navigateLocator.locatorJson}`
+    if (appliedLocatorRequest.current === key) return
+    let active = true
+    queueMicrotask(() => {
+      if (!active) return
+      appliedLocatorRequest.current = key
+      goToPage(archivePageIndex(saved, pages.map(entry => entry.name)) + 1)
+    })
+    return () => { active = false }
+  }, [navigateLocator, pages, goToPage])
 
   useEffect(() => {
     if (!pages.length) return
@@ -840,8 +977,10 @@ function CbzPane({ lang = 'vi', bytes, initial, onLocation, onControls, onToc, n
   )
 }
 
-function ImagePane({ lang = 'vi', book, bytes, onLocation, onControls, theme }: Props) {
+function ImagePane({ lang = 'vi', book, bytes, onLocation, onControls, theme, navigateLocator, onSearchReady }: Props) {
+  useSearchPublication(onSearchReady)
   const [error, setError] = useState('')
+  const host = useRef<HTMLDivElement>(null)
   const url = useMemo(() => {
     const type = String(book.format || '').toLowerCase().includes('png') ? 'image/png'
       : String(book.format || '').toLowerCase().includes('webp') ? 'image/webp'
@@ -853,17 +992,23 @@ function ImagePane({ lang = 'vi', book, bytes, onLocation, onControls, theme }: 
     onLocation({ locatorJson: JSON.stringify({ type: 'IMAGE', version: 1, progression: 1 }), progression: 1, chapterTitle: book.title })
     onControls(null)
   }, [book.title, onControls, onLocation])
-  return error ? <div className="reader-error">{error}</div> : <div className={`image-host ${theme}`}>
+  useEffect(() => {
+    if (parseInitial(navigateLocator?.locatorJson)?.type === 'IMAGE' && host.current) host.current.scrollTop = 0
+  }, [navigateLocator?.locatorJson, navigateLocator?.requestId])
+  return error ? <div className="reader-error">{error}</div> : <div ref={host} className={`image-host ${theme}`}>
     {url && <img src={url} alt={book.title} onError={() => setError(translate("Không hiển thị được ảnh này. Tệp có thể bị hỏng hoặc không đúng định dạng.", lang))} />}
   </div>
 }
 
-function TextPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme, onLocation, onSelection, onControls, onToc, navigateTarget, navigateProgression, annotations = [], format }: Props & { format: 'text' | 'html' | 'docx' }) {
+function TextPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme, onLocation, onSelection, onControls, onToc, navigateTarget, navigateProgression, navigateLocator, annotations = [], onSearchReady, format }: Props & { format: 'text' | 'html' | 'docx' }) {
+  const publishSearch = useSearchPublication(onSearchReady)
   const langRef = useRef(lang)
   useEffect(() => { langRef.current = lang }, [lang])
   const host = useRef<HTMLDivElement>(null)
   const [content, setContent] = useState('')
+  const [decoded, setDecoded] = useState(false)
   const [error, setError] = useState('')
+  const appliedLocatorRequest = useRef<string | null>(null)
   const onTocRef = useRef(onToc)
   useEffect(() => { onTocRef.current = onToc }, [onToc])
 
@@ -898,6 +1043,7 @@ function TextPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
             }
           })
           setContent(doc.body.innerHTML)
+          setDecoded(true)
           if (headings.length && onTocRef.current) {
             onTocRef.current(headings.map((h, idx) => ({
               id: h.id,
@@ -911,6 +1057,13 @@ function TextPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
     void decode()
     return () => { active = false }
   }, [bytes, format])
+  useEffect(() => {
+    const article = host.current?.querySelector('article')
+    if (!decoded || error || !article) return
+    let active = true
+    publishSearch(createArticleSearchSource(article, () => active))
+    return () => { active = false; publishSearch(null) }
+  }, [decoded, content, error, publishSearch])
   useEffect(() => {
     const saved = parseInitial(initial)
     if (!content || !host.current) return
@@ -957,6 +1110,48 @@ function TextPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
     })
     return () => cancelAnimationFrame(frame)
   }, [content, navigateProgression, onLocation])
+  useEffect(() => {
+    const saved = parseInitial(navigateLocator?.locatorJson)
+    const element = host.current
+    const article = element?.querySelector('article')
+    if (!content || !saved || !navigateLocator || saved.type !== 'TEXT' || !element || !article) return
+    const key = `${navigateLocator.requestId}:${navigateLocator.locatorJson}`
+    if (appliedLocatorRequest.current === key) return
+    const frame = requestAnimationFrame(() => {
+      appliedLocatorRequest.current = key
+      const block = Number.isInteger(saved.blockIndex) && Number(saved.blockIndex) >= 0
+        ? article.querySelector<HTMLElement>(`[data-nocap-block="${saved.blockIndex}"]`)
+        : null
+      let legacyStart = 0
+      if (block) {
+        const prefix = document.createRange()
+        prefix.selectNodeContents(article)
+        prefix.setEnd(block, 0)
+        legacyStart = prefix.toString().length + Math.max(0, Number(saved.characterOffset) || 0)
+      }
+      const range = locatorRange(article, saved, legacyStart)
+      if (!revealReaderRange(element, range)) {
+        const hasQuote = typeof saved.selectedText === 'string' && !!saved.selectedText.trim()
+        // Position bookmarks have no quotation and intentionally use the saved
+        // scroll. Annotation locators prefer their stable block/text offsets.
+        if (!hasQuote && typeof saved.scrollOffsetPx === 'number' && Number(saved.characterOffset || 0) === 0) {
+          element.scrollTop = Math.max(0, saved.scrollOffsetPx)
+        } else if (block) {
+          const offset = Math.max(0, Number(saved.characterOffset) || 0)
+          if (!revealReaderRange(element, rangeFromOffsets(block, offset))) {
+            element.scrollTop = Math.max(0, element.scrollTop + block.getBoundingClientRect().top - element.getBoundingClientRect().top - Math.min(72, element.clientHeight / 4))
+          }
+        } else {
+          const maxScroll = Math.max(0, element.scrollHeight - element.clientHeight)
+          element.scrollTop = typeof saved.scrollOffsetPx === 'number' ? Math.max(0, saved.scrollOffsetPx) : maxScroll * clampProgression(Number(saved.progression))
+        }
+      }
+      const maxScroll = Math.max(0, element.scrollHeight - element.clientHeight)
+      const progression = maxScroll > 0 ? clampProgression(element.scrollTop / maxScroll) : 0
+      onLocation({ locatorJson: JSON.stringify({ ...saved, scrollOffsetPx: Math.floor(element.scrollTop), progression }), progression, chapterTitle: '' })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [content, navigateLocator, onLocation])
   useEffect(() => {
     const article = host.current?.querySelector('article')
     if (!article) return
