@@ -45,6 +45,15 @@ data. The separate backend dashboard remains available for app administration.
 See [Web administration integration](docs/web-admin-integration-2026-10-12.md)
 for the authentication contract, available functions and validation.
 
+In **Administration → Users & Pro → Transaction history**, administrators can
+view a selected account's SePay payment orders, amounts, plan durations, effective
+statuses, payment/expiry times and transaction references. History is read-only,
+paginated and filterable by status; it uses a server-authorized, uncached admin
+API. Expired pending orders are displayed as expired without changing billing
+records. Admin trial grants are shown separately and are never counted as paid
+transactions. This view covers SePay orders, not Google Play purchase history or
+unmatched bank transfers; **Audit log** remains the record of admin actions.
+
 ## Navigation and documents
 
 - `/`, `/explore`, `/library`, `/memory`, `/stats`, `/account`.

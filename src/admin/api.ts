@@ -29,6 +29,12 @@ export type Overview = {
 export type StorageGroup = { objects: number; bytes: number }
 export type StorageScan = { groups: Record<'public' | 'private' | 'other', StorageGroup>; cursor: string | null; complete: boolean; measuredAt: string }
 export type PageResult<T> = { items: T[]; hasMore: boolean }
+export type AdminTransactionStatus = 'PENDING' | 'PROCESSING' | 'PAID' | 'EXPIRED' | 'CANCELLED'
+export type AdminTransaction = {
+  id: string; paymentCode: string; amount: number; currency: 'VND'; planDays: number
+  status: AdminTransactionStatus; createdAt: number; expiresAt: number
+  paidAt: number | null; transactionId: string | null; entitlementExpiresAt: number | null
+}
 
 // Use the logged-in reader's session, never dashboard cookies or a client-side role.
 export function adminRequest<T>(token: string, path: string, signal?: AbortSignal, data?: object): Promise<T> {

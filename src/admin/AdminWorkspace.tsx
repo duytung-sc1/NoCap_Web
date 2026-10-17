@@ -5,11 +5,12 @@ import type { Lang } from '../i18n'
 import { adminRequest, type AdminCategory, type AdminIdentity, type AdminUser, type Announcement, type AuditEntry, type CatalogRow, type Conflict, type Overview, type PageResult, type StorageScan } from './api'
 import './AdminWorkspace.css'
 import { adminError } from './errors'
+import { AdminTransactions } from './AdminTransactions'
 
 type View = 'overview' | 'catalog' | 'categories' | 'users' | 'announcements' | 'storage' | 'audit'
 type Dataset = { overview?: Overview; catalog?: PageResult<CatalogRow>; categories?: PageResult<AdminCategory>; users?: PageResult<AdminUser>; announcements?: PageResult<Announcement>; audit?: PageResult<AuditEntry> }
 type Modal = { kind: 'book'; row?: CatalogRow } | { kind: 'category'; item?: AdminCategory }
-  | { kind: 'announcement'; item?: Announcement } | { kind: 'conflicts'; user: AdminUser } | { kind: 'avatar' }
+  | { kind: 'announcement'; item?: Announcement } | { kind: 'conflicts'; user: AdminUser } | { kind: 'transactions'; user: AdminUser } | { kind: 'avatar' }
   | { kind: 'confirm'; title: string; description: string; endpoint: string; data: object; days?: boolean }
 type Props = { token: string; admin: AdminIdentity; lang: Lang; onSignIn: () => void; onCatalogChanged: () => void; onProfileChanged: () => void; onAccessLost: () => void }
 
@@ -17,7 +18,7 @@ function Table({ heads, rows, label, className }: { heads: string[]; rows: React
   return <div className="admin-table-wrap" role="region" aria-label={label} tabIndex={0}><table className={className}><thead><tr>{heads.map(head => <th key={head} scope="col">{head}</th>)}</tr></thead><tbody>{rows.map((cells, index) => <tr key={index}>{cells.map((cell, i) => <td key={i}>{cell}</td>)}</tr>)}</tbody></table></div>
 }
 
-function ModalShell({ title, children, busy, close }: { title: string; children: ReactNode; busy: boolean; close: () => void }) {
+function ModalShell({ title, children, busy, close, wide = false }: { title: string; children: ReactNode; busy: boolean; close: () => void; wide?: boolean }) {
   const panel = useRef<HTMLDivElement>(null)
   const closeRef = useRef(close)
   const busyRef = useRef(busy)
@@ -26,19 +27,24 @@ function ModalShell({ title, children, busy, close }: { title: string; children:
     const previous = document.activeElement as HTMLElement | null
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    panel.current?.querySelector<HTMLElement>('input, button')?.focus()
+    const focusable = 'button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex="0"]'
+    const initial = panel.current?.querySelector<HTMLElement>(focusable) || panel.current
+    initial?.focus()
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); if (!busyRef.current) closeRef.current() }
       if (event.key !== 'Tab') return
-      const nodes = Array.from(panel.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex="0"]') || [])
+      const nodes = Array.from(panel.current?.querySelectorAll<HTMLElement>(focusable) || [])
+        .sort((a, b) => a === b ? 0 : a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1)
       const first = nodes[0], last = nodes.at(-1)
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
+      if (!nodes.length) { event.preventDefault(); panel.current?.focus() }
+      else if (!panel.current?.contains(document.activeElement)) { event.preventDefault(); (event.shiftKey ? last : first)?.focus() }
+      else if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
     }
     document.addEventListener('keydown', onKey, true)
     return () => { document.removeEventListener('keydown', onKey, true); document.body.style.overflow = previousOverflow; previous?.focus() }
   }, [])
-  return <div className="modal-shade admin-modal-shade" onMouseDown={event => { if (event.target === event.currentTarget && !busy) close() }}><div ref={panel} className="dialog admin-dialog" role="dialog" aria-modal="true" aria-labelledby="admin-dialog-title"><h2 id="admin-dialog-title">{title}</h2>{children}</div></div>
+  return <div className="modal-shade admin-modal-shade" onMouseDown={event => { if (event.target === event.currentTarget && !busy) close() }}><div ref={panel} className={`dialog admin-dialog${wide ? ' admin-dialog-wide' : ''}`} role="dialog" aria-modal="true" aria-labelledby="admin-dialog-title" tabIndex={-1}><h2 id="admin-dialog-title">{title}</h2>{children}</div></div>
 }
 
 const emptyStorage: StorageScan['groups'] = { public: { objects: 0, bytes: 0 }, private: { objects: 0, bytes: 0 }, other: { objects: 0, bytes: 0 } }
@@ -182,7 +188,7 @@ export default function AdminWorkspace({ token, admin, lang, onSignIn, onCatalog
     } catch (error) { if (!signal.aborted) setFormError(adminError(error, lang)) }
     finally { URL.revokeObjectURL(url); if (!signal.aborted) { busyRef.current = false; setBusy(false) } }
   }
-  const modalTitle = modal?.kind === 'confirm' ? modal.title : modal?.kind === 'book' ? text('Thông tin sách', 'Book details') : modal?.kind === 'category' ? text('Thông tin thể loại', 'Category details') : modal?.kind === 'announcement' ? text('Thông báo', 'Announcement') : modal?.kind === 'avatar' ? text('Ảnh đại diện', 'Avatar') : text('Xung đột đồng bộ', 'Sync conflicts')
+  const modalTitle = modal?.kind === 'confirm' ? modal.title : modal?.kind === 'book' ? text('Thông tin sách', 'Book details') : modal?.kind === 'category' ? text('Thông tin thể loại', 'Category details') : modal?.kind === 'announcement' ? text('Thông báo', 'Announcement') : modal?.kind === 'avatar' ? text('Ảnh đại diện', 'Avatar') : modal?.kind === 'transactions' ? text('Lịch sử giao dịch', 'Transaction history') : text('Xung đột đồng bộ', 'Sync conflicts')
   const field = (name: string, label: string, initial = '', required = true, maxLength = 300, type = 'text', readOnly = false) => <label>{label}<input name={name} type={type} defaultValue={initial} required={required} maxLength={maxLength} readOnly={readOnly} pattern={name === 'id' ? '[a-zA-Z0-9_-]+' : undefined} /></label>
   const resultPage = view === 'catalog' ? data?.catalog : view === 'users' ? data?.users : view === 'audit' ? data?.audit : null
 
@@ -207,6 +213,7 @@ export default function AdminWorkspace({ token, admin, lang, onSignIn, onCatalog
         {button(text('Cấp Pro thử nghiệm', 'Grant test Pro'), () => confirm(text('Cấp Pro thử nghiệm', 'Grant test Pro'), text(`${user.email} · Quyền thử nghiệm tách biệt với gói đã thanh toán.`, `${user.email} · Trial access is separate from paid subscriptions.`), 'users/pro/grant', { id: user.id }, true))}
         {user.adminGrantStatus === 'ACTIVE' && button(text('Thu hồi Pro thử nghiệm', 'Revoke test Pro'), () => confirm(text('Thu hồi Pro thử nghiệm?', 'Revoke test Pro?'), text(`${user.email} · Giữ nguyên quyền đã thanh toán.`, `${user.email} · Paid access is preserved.`), 'users/pro/revoke', { id: user.id }))}
         {button(text('Xem xung đột', 'View conflicts'), () => open({ kind: 'conflicts', user }))}
+        {button(text('Lịch sử giao dịch', 'Transaction history'), () => open({ kind: 'transactions', user }))}
       </div>])} />}
       {data?.announcements && <Table label={title} heads={[text('Tiêu đề', 'Title'), text('Nội dung', 'Message'), text('Lịch / Trạng thái', 'Schedule / Status'), text('Thao tác', 'Actions')]} rows={data.announcements.items.map(item => [<><strong>{item.title}</strong><small>{item.id} · {item.type}</small></>, item.message, <>{item.active ? text('Đã bật', 'Enabled') : text('Đã tắt', 'Disabled')}<small>{date(item.startsAt)} → {date(item.endsAt)}</small></>, <div key="actions" className="admin-actions">{button(text('Sửa', 'Edit'), () => open({ kind: 'announcement', item }))}{button(text('Xóa', 'Delete'), () => confirm(text('Xóa thông báo?', 'Delete announcement?'), item.title, 'announcements/delete', { id: item.id }))}</div>])} />}
       {view === 'storage' && !loading && !loaded?.error && <><p className="muted">{text('Quét tối đa 500 đối tượng mỗi lượt. Chỉ hiển thị số lượng và dung lượng tổng; không mở tệp riêng của người dùng.', 'Scan up to 500 objects per batch. Only totals are shown; private user files are not opened.')}</p><div key="actions" className="admin-actions">{button(storage ? text('Quét lại từ đầu', 'Restart scan') : text('Bắt đầu quét', 'Start scan'), () => void scanStorage(true))}{storage && !storage.complete && button(text('Quét lượt tiếp', 'Scan next batch'), () => void scanStorage(false))}</div>{storage && <><Table label={title} heads={[text('Phạm vi', 'Scope'), text('Đối tượng', 'Objects'), text('Dung lượng', 'Size')]} rows={Object.entries(storage.groups).map(([group, total]) => [group === 'public' ? text('Công khai', 'Public') : group === 'private' ? text('Riêng tư', 'Private') : text('Khác', 'Other'), total.objects, `${(total.bytes / 1024 / 1024).toLocaleString(lang, { maximumFractionDigits: 2 })} MB`])} /><p role="status">{storage.complete ? text('Quét hoàn tất', 'Scan complete') : text('Kết quả tạm tính; còn đối tượng chưa quét.', 'Partial results; more objects remain.')} · {date(storage.measuredAt)}</p></>}</>}
@@ -214,8 +221,8 @@ export default function AdminWorkspace({ token, admin, lang, onSignIn, onCatalog
       {resultPage && <div className="admin-pagination">{button(text('Trước', 'Previous'), () => setPage(n => n - 1), page === 0)}<span>{text('Trang ', 'Page ')}{page + 1}</span>{button(text('Sau', 'Next'), () => setPage(n => n + 1), !resultPage.hasMore)}</div>}
       {data && view !== 'overview' && view !== 'storage' && (resultPage?.items.length === 0 || (view === 'categories' && !data.categories?.items.length) || (view === 'announcements' && !data.announcements?.items.length)) && <p className="muted">{text('Chưa có dữ liệu.', 'No data found.')}</p>}
     </div></div>
-    {modal && <ModalShell title={modalTitle} busy={busy} close={() => setModal(null)}>
-      {modal.kind === 'conflicts' ? <><p>{modal.user.email}</p><p className="muted">{text('Chỉ hiển thị mã và phiên bản; không hiển thị nội dung ghi chú hoặc tài liệu.', 'Only IDs and versions are shown; document and note contents remain private.')}</p>{conflicts?.key === conflictKey ? conflicts.error ? <p role="alert">{conflicts.error}</p> : <><Table label={modalTitle} heads={[text('Loại', 'Type'), text('Bản ghi', 'Record'), text('Phiên bản', 'Versions'), text('Lý do', 'Reason')]} rows={conflicts.data?.items.map(item => [item.kind, item.recordId, `${item.baseVersion} → ${item.currentVersion ?? '—'}`, item.reason]) || []} />{!conflicts.data?.items.length && <p>{text('Không có xung đột đã lưu.', 'No saved conflicts.')}</p>}<div className="admin-pagination">{button(text('Trước', 'Previous'), () => setConflictPage(n => n - 1), conflictPage === 0)}<span>{conflictPage + 1}</span>{button(text('Sau', 'Next'), () => setConflictPage(n => n + 1), !conflicts.data?.hasMore)}</div></> : <p role="status">{text('Đang tải…', 'Loading…')}</p>}<div className="admin-form-actions">{button(text('Đóng', 'Close'), () => setModal(null))}</div></> : <form onSubmit={event => void submit(event)}>
+    {modal && <ModalShell title={modalTitle} busy={busy} wide={modal.kind === 'transactions'} close={() => setModal(null)}>
+      {modal.kind === 'transactions' ? <AdminTransactions key={`${token}:${modal.user.id}`} token={token} user={modal.user} lang={lang} onError={handleFailure} onClose={() => setModal(null)} onSignIn={signInAgain} /> : modal.kind === 'conflicts' ? <><p>{modal.user.email}</p><p className="muted">{text('Chỉ hiển thị mã và phiên bản; không hiển thị nội dung ghi chú hoặc tài liệu.', 'Only IDs and versions are shown; document and note contents remain private.')}</p>{conflicts?.key === conflictKey ? conflicts.error ? <p role="alert">{conflicts.error}</p> : <><Table label={modalTitle} heads={[text('Loại', 'Type'), text('Bản ghi', 'Record'), text('Phiên bản', 'Versions'), text('Lý do', 'Reason')]} rows={conflicts.data?.items.map(item => [item.kind, item.recordId, `${item.baseVersion} → ${item.currentVersion ?? '—'}`, item.reason]) || []} />{!conflicts.data?.items.length && <p>{text('Không có xung đột đã lưu.', 'No saved conflicts.')}</p>}<div className="admin-pagination">{button(text('Trước', 'Previous'), () => setConflictPage(n => n - 1), conflictPage === 0)}<span>{conflictPage + 1}</span>{button(text('Sau', 'Next'), () => setConflictPage(n => n + 1), !conflicts.data?.hasMore)}</div></> : <p role="status">{text('Đang tải…', 'Loading…')}</p>}<div className="admin-form-actions">{button(text('Đóng', 'Close'), () => setModal(null))}</div></> : <form onSubmit={event => void submit(event)}>
         <fieldset disabled={busy}><div className="admin-form-fields">
         {modal.kind === 'book' && <>{field('id', text('Mã sách', 'Book ID'), modal.row?.book.id, true, 100, 'text', !!modal.row)}{field('title', text('Tên sách', 'Title'), modal.row?.book.title)}{field('author', text('Tác giả', 'Author'), modal.row?.book.author)}<label>{text('Thể loại', 'Category')}<select name="categoryId" required value={bookCategory} onChange={event => setBookCategory(event.target.value)}><option value="">{text('Chọn thể loại', 'Select category')}</option>{categoryOptions.map(category => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label>{field('language', text('Ngôn ngữ', 'Language'), modal.row?.book.language || '', false, 30)}{field('fileUrl', text('Liên kết tệp HTTPS', 'HTTPS file URL'), modal.row?.book.fileUrl, true, 2048, 'url')}{field('coverUrl', text('Liên kết bìa HTTPS', 'HTTPS cover URL'), modal.row?.book.coverUrl || '', false, 2048, 'url')}<label className="admin-form-wide">{text('Mô tả', 'Description')}<textarea name="description" defaultValue={modal.row?.book.description || ''} maxLength={10000} rows={4} /></label><label className="admin-checkbox"><input type="checkbox" name="isFeatured" defaultChecked={modal.row?.book.isFeatured} />{text('Sách nổi bật', 'Featured book')}</label><label className="admin-checkbox"><input type="checkbox" name="isNew" defaultChecked={modal.row?.book.isNew} />{text('Sách mới', 'New book')}</label></>}
         {modal.kind === 'category' && <>{field('id', text('Mã thể loại', 'Category ID'), modal.item?.id, true, 100, 'text', !!modal.item)}{field('name', text('Tên thể loại', 'Category name'), modal.item?.name, true, 200)}</>}

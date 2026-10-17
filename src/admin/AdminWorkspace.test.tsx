@@ -20,6 +20,7 @@ beforeEach(() => {
     if (path.startsWith('catalog')) return { items: [book], hasMore: false }
     if (path === 'categories') return { items: [{ id: 'fiction', name: 'Fiction', bookCount: 1 }] }
     if (path.startsWith('users/conflicts')) return { items: [{ kind: 'highlights', recordId: 'safe-id', baseVersion: 1, currentVersion: 2, reason: 'STALE_VERSION' }], hasMore: false }
+    if (path.startsWith('users/transactions')) return { items: [{ id: 'paid-order', paymentCode: 'NC-PAID-ORDER', amount: 208800, currency: 'VND', planDays: 365, status: 'PAID', createdAt: 1790000000000, expiresAt: 1790003600000, paidAt: 1790000300000, transactionId: 'sepay-transaction-123', entitlementExpiresAt: 1821536300000 }], hasMore: false }
     if (path.startsWith('users')) return { items: [{ id: 'reader', email: 'reader@example.test', status: 'ACTIVE', devices: 1, syncRecords: 1, syncConflicts: 1 }, { id: 'admin', email: 'admin@example.test', status: 'ACTIVE', isAdmin: 1, devices: 0, syncRecords: 0, syncConflicts: 0 }], hasMore: false }
     if (path === 'announcements') return { items: [] }
     if (path.startsWith('audit')) return { items: [], hasMore: false }
@@ -115,5 +116,53 @@ describe('administrator workspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Lịch sử thao tác' }))
     await waitFor(() => expect(callbacks.onAccessLost).toHaveBeenCalledOnce())
     expect(screen.queryByText('reader@example.test')).toBeNull()
+  })
+
+  it('opens read-only transaction history for the selected account and restores focus on Escape', async () => {
+    setup(); fireEvent.click(screen.getByRole('button', { name: 'Người dùng & Pro' }))
+    await screen.findAllByRole('button', { name: 'Lịch sử giao dịch' })
+    const row = screen.getAllByText('reader@example.test')[0].closest('tr')!
+    const trigger = within(row).getByRole('button', { name: 'Lịch sử giao dịch' })
+    trigger.focus(); fireEvent.click(trigger)
+    const dialog = screen.getByRole('dialog', { name: 'Lịch sử giao dịch' })
+    expect(await within(dialog).findByText('NC-PAID-ORDER')).toBeTruthy()
+    expect(within(dialog).getByText('sepay-transaction-123')).toBeTruthy()
+    expect(request).toHaveBeenCalledWith('qa-admin-token', 'users/transactions?id=reader&page=0&status=ALL', expect.any(AbortSignal))
+    expect(dialog.querySelector('form')).toBeNull()
+    expect(request.mock.calls.filter(call => call[3])).toHaveLength(0)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it('closes transaction history immediately when administrator access is revoked', async () => {
+    setup(); fireEvent.click(screen.getByRole('button', { name: 'Người dùng & Pro' }))
+    const triggers = await screen.findAllByRole('button', { name: 'Lịch sử giao dịch' })
+    request.mockRejectedValueOnce(new ApiError(403, 'Revoked', 'ADMIN_REQUIRED'))
+    fireEvent.click(triggers[0])
+    await waitFor(() => expect(callbacks.onAccessLost).toHaveBeenCalledOnce())
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.queryByText('NC-PAID-ORDER')).toBeNull()
+  })
+
+  it('focuses an enabled transaction control while loading and traps keyboard focus inside the dialog', async () => {
+    const pending = deferred<object>()
+    const mounted = setup(); fireEvent.click(screen.getByRole('button', { name: 'Người dùng & Pro' }))
+    const triggers = await screen.findAllByRole('button', { name: 'Lịch sử giao dịch' })
+    request.mockReturnValueOnce(pending.promise)
+    triggers[0].focus(); fireEvent.click(triggers[0])
+    const dialog = screen.getByRole('dialog', { name: 'Lịch sử giao dịch' })
+    const filter = within(dialog).getByRole('combobox', { name: 'Trạng thái thanh toán' })
+    const close = within(dialog).getByRole('button', { name: 'Đóng' })
+    expect(document.activeElement).toBe(filter)
+    expect((within(dialog).getByRole('button', { name: 'Tải lại' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.keyDown(filter, { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(close)
+    fireEvent.keyDown(close, { key: 'Tab' })
+    expect(document.activeElement).toBe(filter)
+    triggers[0].focus()
+    fireEvent.keyDown(document, { key: 'Tab' })
+    expect(document.activeElement).toBe(filter)
+    mounted.unmount()
   })
 })

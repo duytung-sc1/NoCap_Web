@@ -1,0 +1,38 @@
+.admin-transactions { min-width: 0; color: #152b3d; font-size: 13px; line-height: 1.6; }
+.admin-transactions-account { display: grid; gap: 2px; overflow-wrap: anywhere; }
+.admin-transactions-account strong { font-size: 15px; }
+.admin-transactions-account > span, .admin-transactions-description { color: #526a7b; }
+.admin-transactions-description { margin: 12px 0 18px; }
+.admin-transactions-grant { border-left: 3px solid #0a9580; background: #eef8f5; padding: 10px 12px; color: #155e53; }
+.admin-transactions-toolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin: 20px 0; }
+.admin-transactions-toolbar label { display: grid; gap: 6px; min-width: 0; font-weight: 600; }
+.admin-transactions-toolbar select { width: min(250px, 100%); }
+.admin-transactions-toolbar > button { display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0; }
+.admin-transactions-table-wrap { overflow-x: auto; max-width: 100%; border: 1px solid #dce3e4; border-radius: 10px; }
+.admin-transactions-table { width: 100%; min-width: 850px; table-layout: fixed; border-collapse: collapse; font-size: 12px; }
+.admin-transactions-table th, .admin-transactions-table td { padding: 14px 12px; text-align: left; vertical-align: top; overflow-wrap: anywhere; border-bottom: 1px solid #dce3e4; }
+.admin-transactions-table th { background: #f5f8f7; color: #3c5665; font-weight: 600; }
+.admin-transactions-table th:nth-child(1) { width: 21%; }
+.admin-transactions-table th:nth-child(2) { width: 19%; }
+.admin-transactions-table th:nth-child(3) { width: 14%; }
+.admin-transactions-table th:nth-child(4) { width: 28%; }
+.admin-transactions-table th:nth-child(5) { width: 18%; }
+.admin-transactions-table tr:last-child td { border-bottom: 0; }
+.admin-transactions-detail { display: grid; gap: 2px; color: #526a7b; margin-top: 7px; }
+.admin-transactions-id { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.admin-transactions-status { display: inline-block; border-radius: 6px; padding: 3px 7px; background: #eef2f5; color: #3c5665; font-size: 11px; font-weight: 600; }
+.admin-transactions-status.is-paid { color: #155e53; background: #e2f3ee; }
+.admin-transactions-status.is-pending, .admin-transactions-status.is-processing { color: #76550b; background: #fbf1d5; }
+.admin-transactions-status.is-cancelled { color: #8d3035; background: #fbecee; }
+.admin-transactions-timestamps { margin: 0; }
+.admin-transactions-timestamps dt { color: #526a7b; }
+.admin-transactions-timestamps dd { margin: 1px 0 9px; font-variant-numeric: tabular-nums; }
+.admin-transactions-timestamps dd:last-child { margin-bottom: 0; }
+.admin-transactions-pagination { display: flex; justify-content: flex-end; align-items: center; gap: 12px; margin-top: 18px; }
+.admin-transactions-error { padding: 12px; border: 1px solid #e6b8bc; border-radius: 8px; color: #8d3035; background: #fff7f7; }
+.admin-transactions-error p { margin: 0 0 10px; }
+.admin-transactions-error-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.admin-transactions-empty { padding: 24px 12px; background: #f5f8f7; border-radius: 8px; color: #526a7b; text-align: center; }
+.admin-transactions > .admin-form-actions { position: sticky; bottom: 0; z-index: 1; flex-wrap: wrap; padding: 12px 0 4px; border-top: 1px solid #e1e7e9; background: #fff; }
+.admin-transactions > .admin-form-actions .admin-transactions-pagination { margin: 0 auto 0 0; }
+@media (max-width: 480px) { .admin-transactions-toolbar { align-items: stretch; flex-direction: column; } .admin-transactions-toolbar select { width: 100%; } .admin-transactions-toolbar > button { align-self: flex-start; } .admin-transactions-pagination { justify-content: space-between; gap: 8px; } }
