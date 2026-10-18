@@ -33,4 +33,3 @@ export function analyticsCsv(data: AnalyticsReport) {
   for (const event of data.events) if (featureTypes.has(event.type)) rows.push(['feature', '', event.type, '', '', '', '', numeric(event.count), 'events'])
   return '\uFEFF' + rows.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n'
 }
-
