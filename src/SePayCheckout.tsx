@@ -4,6 +4,7 @@ import { createSePayOrder, getEntitlement, getSePayOrder, getSePayPlans, type En
 import type { Session } from './types'
 import type { Lang } from './i18n'
 import { readableError } from './sync'
+import { trackWebFeature } from './webAnalytics'
 
 export function SePayCheckout({ session, entitlement, lang, onSignIn, onPaid }: {
   session: Session | null; entitlement: Entitlement | null; lang: Lang
@@ -64,7 +65,7 @@ export function SePayCheckout({ session, entitlement, lang, onSignIn, onPaid }: 
     const token = session.token
     try {
       const value = await createSePayOrder(token, selectedPlan)
-      if (sessionRef.current?.token === token) replaceOrder(value)
+      if (sessionRef.current?.token === token) { replaceOrder(value); trackWebFeature('checkout_start', 'account') }
     } catch (error) {
       if (sessionRef.current?.token === token) setMessage(readableError(error, lang))
     } finally { creatingRef.current = false; setCreating(false) }

@@ -178,6 +178,39 @@ settings and restores full opacity without changing the saved reading position.
 - Book details do not show fabricated ratings. A real ratings system is not
   currently implemented.
 
+## Web analytics
+
+The administrator workspace includes **Web Analytics** with Vietnam-calendar
+Today/7/30/90-day reports, distinct estimated browsers and per-tab sessions,
+page views, total/average active time, feature counts and aggregate CSV export.
+These are browser estimates, not unique people, account DAU or live online presence.
+The older overview count is explicitly labelled **Enabled accounts**.
+
+`src/webAnalytics.ts` sends only allowlisted page categories and event names,
+random visitor/session IDs, event IDs and active milliseconds. It never receives
+document identifiers, titles, URL parameters, search queries, account IDs or tokens.
+The API hashes identifiers with its own key, rejects unknown fields, deduplicates
+events, caps elapsed time and retains approximately 90 days of event history.
+No third-party analytics SDK is used. Server collection must be enabled separately;
+reports show disabled/empty states honestly and do not backfill historical traffic.
+
+Active time uses visible, focused intervals and stops after 60 seconds without
+interaction. Sessions rotate after 30 minutes idle. Counts are approximate,
+especially with multiple tabs, network delays, browser blocking or cleared storage.
+Telemetry is best effort and offline activity is not uploaded later.
+
+Guests and signed-in users can opt out under **Account > Web privacy**.
+The collector also honors DNT/GPC, omits credentials and referrers, and never
+records administrator page views. Android is unchanged.
+
+Collection defaults to the supported production domains only. Set
+`VITE_WEB_ANALYTICS_ENABLED=false` to disable the client. For isolated local QA,
+set it to `true`, point `VITE_API_BASE_URL` at a local Worker and explicitly allow
+the local page origin in the local Worker's `WEB_ANALYTICS_ORIGINS`.
+Never point local telemetry at production for testing.
+The backend requires migration `0014_web_analytics.sql` and the secret
+`WEB_ANALYTICS_KEY` (at least 32 characters), documented in the backend README.
+
 ## Boundaries
 
 - This client is not a replacement for Android’s PDF/Anki export or quick-review

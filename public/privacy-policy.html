@@ -123,7 +123,7 @@
         <p class="eyebrow">NoCap · tung.nocap</p>
         <h1>Privacy Policy</h1>
         <p class="lede">How NoCap handles information when you read locally or use an account, synchronization, private cloud storage, backup, and payment services.</p>
-        <div class="meta"><span class="pill">Effective September 24, 2026</span><span class="pill">Last updated October 2, 2026</span></div>
+        <div class="meta"><span class="pill">Effective September 24, 2026</span><span class="pill">Last updated October 18, 2026</span></div>
       </div>
       <div class="hero-mark" aria-hidden="true"><img src="/nocap.svg" alt=""></div>
     </div>
@@ -134,6 +134,7 @@
       <strong>On this page</strong>
       <a href="#overview">Overview</a>
       <a href="#local-data">Local data</a>
+      <a href="#web-analytics">Web usage statistics</a>
       <a href="#account-data">Account data</a>
       <a href="#payments">Payments</a>
       <a href="#use">How data is used</a>
@@ -148,8 +149,13 @@
     <article class="content">
       <section class="summary" id="overview">
         <strong>Plain-language summary</strong>
-        <p>NoCap can be used as a local reader without an account. NoCap sends account or reading data to its servers only when you sign in and use eligible account, synchronization, private-document, backup, or payment features. NoCap does not sell personal information and the current app contains no advertising or third-party analytics SDK.</p>
+        <p>NoCap can be used as a local reader without an account. Account and synchronized reading data are sent when you sign in and use eligible account, synchronization, private-document, backup, or payment features. When enabled, NoCap Web also collects limited usage statistics described below, including guest visits. NoCap does not sell personal information and contains no advertising or third-party analytics SDK.</p>
       </section>
+
+      <h2 id="web-analytics">Web usage statistics (Web only)</h2>
+      <p>When collection is enabled, NoCap Web sends page categories, feature-action counts and active interaction time with random browser and tab-session identifiers. The server stores keyed hashes of these identifiers. These statistics are not linked to your account and do not include your email, book IDs or titles, full URLs, search terms, document text or note content. The analytics tables do not store raw IP addresses or user-agent strings. A short-lived keyed hash of the network address may be used to limit abusive submissions.</p>
+      <p>Active time pauses when the page is hidden, unfocused or has no interaction for 60 seconds. Sessions restart after 30 minutes without interaction. Counts estimate browsers and sessions, not individual people. Offline use is not queued for later analytics upload. This collection does not apply to the Android app.</p>
+      <p>You can disable future collection in <strong>Account → Web privacy</strong>, including as a guest. NoCap also respects Do Not Track and Global Privacy Control signals. Disabling collection removes this browser’s telemetry identifiers and pending events. Previously received statistics remain subject to the retention period below.</p>
 
       <h2>1. Scope of this policy</h2>
       <p>This policy applies to the NoCap Android application, NoCap Web, and the connected NoCap API and cloud services. NoCap lets you import and read documents, save reading progress and annotations, organize knowledge, and optionally continue across devices.</p>
@@ -207,6 +213,7 @@
         <li><strong>Sessions and temporary security records</strong> expire and are periodically removed. Sessions normally expire within 30 days.</li>
         <li><strong>Payment metadata</strong> linked to an account is removed where appropriate when the account is deleted. Minimal transaction-event metadata may remain for reconciliation, duplicate prevention, fraud investigation, or legal obligations.</li>
         <li><strong>Third-party copies</strong> are retained under each provider’s policy.</li>
+        <li><strong>Web usage statistics:</strong> individual analytics events and inactive browser/session markers are removed after approximately 90 days. A frequently returning browser’s first-seen marker remains while that browser continues to use the service. Browser identifiers expire after 90 days without a new page load. The collection-start date remains as reporting metadata. These records are not associated with your account, so account deletion does not identify or remove them.</li>
       </ul>
 
       <h2 id="choices">8. Your choices and deletion rights</h2>
@@ -228,12 +235,17 @@
         <span class="language-label">Bản tiếng Việt</span>
         <h1>Chính sách quyền riêng tư</h1>
         <p class="lede">Cách NoCap xử lý thông tin khi bạn đọc cục bộ hoặc sử dụng tài khoản, đồng bộ, lưu trữ cloud riêng, sao lưu và thanh toán.</p>
-        <div class="meta"><span class="pill">Hiệu lực từ 24/09/2026</span><span class="pill">Cập nhật 02/10/2026</span></div>
+        <div class="meta"><span class="pill">Hiệu lực từ 24/09/2026</span><span class="pill">Cập nhật 18/10/2026</span></div>
 
         <section class="summary">
           <strong>Tóm tắt dễ hiểu</strong>
-          <p>Bạn có thể dùng NoCap để đọc cục bộ mà không cần tài khoản. NoCap chỉ gửi dữ liệu tài khoản hoặc dữ liệu đọc đến máy chủ khi bạn đăng nhập và sử dụng các tính năng đủ điều kiện như đồng bộ, tài liệu riêng, sao lưu hoặc thanh toán. NoCap không bán dữ liệu cá nhân; ứng dụng hiện không có quảng cáo hoặc SDK phân tích bên thứ ba.</p>
+          <p>Bạn có thể dùng NoCap để đọc cục bộ mà không cần tài khoản. Dữ liệu tài khoản và dữ liệu đọc đồng bộ được gửi khi bạn đăng nhập và sử dụng các tính năng đủ điều kiện như đồng bộ, tài liệu riêng, sao lưu hoặc thanh toán. Khi được bật, NoCap Web còn thu thập thống kê sử dụng giới hạn như mô tả bên dưới, bao gồm lượt truy cập ở chế độ khách. NoCap không bán dữ liệu cá nhân và không có quảng cáo hoặc SDK phân tích bên thứ ba.</p>
         </section>
+
+        <h2>Thống kê sử dụng trên Web (chỉ áp dụng cho Web)</h2>
+        <p>Khi được bật, NoCap Web gửi loại trang, số lượt dùng tính năng và thời gian tương tác cùng mã ngẫu nhiên của trình duyệt và phiên từng tab. Máy chủ lưu giá trị băm có khóa của các mã này. Thống kê không liên kết với tài khoản và không chứa email, mã hoặc tên sách, URL đầy đủ, từ khóa, văn bản tài liệu hay nội dung ghi chú. Các bảng thống kê không lưu IP hoặc chuỗi nhận dạng trình duyệt dạng rõ. Mã băm có khóa, tồn tại ngắn hạn của địa chỉ mạng có thể được dùng để giới hạn gửi dữ liệu lạm dụng.</p>
+        <p>Thời gian tương tác tạm dừng khi trang bị ẩn, mất tiêu điểm hoặc không có tương tác trong 60 giây. Phiên mới bắt đầu sau 30 phút không tương tác. Các con số ước tính trình duyệt và phiên, không phải số người thực tế. Hoạt động ngoại tuyến không được xếp hàng để tải lên thống kê sau đó. Cơ chế này không áp dụng cho ứng dụng Android.</p>
+        <p>Bạn có thể tắt thu thập tiếp theo tại <strong>Tài khoản → Quyền riêng tư trên Web</strong>, kể cả khi dùng chế độ khách. NoCap cũng tôn trọng tín hiệu Do Not Track và Global Privacy Control. Khi tắt, mã thống kê trên trình duyệt và các sự kiện đang chờ được xóa. Thống kê máy chủ đã nhận được lưu theo thời hạn bên dưới.</p>
 
         <h2>1. Phạm vi áp dụng</h2>
         <p>Chính sách này áp dụng cho ứng dụng NoCap trên Android, NoCap Web và API/dịch vụ cloud liên quan. NoCap hỗ trợ nhập và đọc tài liệu, lưu tiến độ và ghi chú, tổ chức kiến thức và tùy chọn tiếp tục trên nhiều thiết bị.</p>
@@ -285,6 +297,7 @@
           <li><strong>Phiên và bản ghi bảo mật tạm:</strong> tự hết hạn và được dọn định kỳ. Phiên thường hết hạn trong vòng 30 ngày.</li>
           <li><strong>Metadata thanh toán:</strong> dữ liệu gắn với tài khoản được xóa khi phù hợp; metadata giao dịch tối thiểu có thể được giữ để đối soát, chống trùng, điều tra gian lận hoặc tuân thủ pháp luật.</li>
           <li><strong>Bản sao bên thứ ba:</strong> được lưu theo chính sách của từng nhà cung cấp.</li>
+          <li><strong>Thống kê Web:</strong> sự kiện và mã trình duyệt/phiên không hoạt động được dọn sau khoảng 90 ngày. Dấu mốc lần đầu của trình duyệt quay lại thường xuyên được giữ khi trình duyệt đó còn sử dụng dịch vụ. Mã trình duyệt hết hạn sau 90 ngày không tải trang mới. Ngày bắt đầu thu thập được giữ làm metadata báo cáo. Các bản ghi không gắn với tài khoản nên thao tác xóa tài khoản không định vị hoặc xóa chúng.</li>
         </ul>
 
         <h2>8. Lựa chọn và quyền xóa dữ liệu</h2>

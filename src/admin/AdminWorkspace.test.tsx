@@ -17,6 +17,7 @@ beforeEach(() => {
   request.mockReset().mockImplementation(async (_token, path, _signal, data) => {
     if (data) return { success: true }
     if (path === 'overview') return { books: 1, categories: 1, users: 1, activeUsers: 1, proSnapshots: 0, syncRecords: 0, syncConflicts: 0 }
+    if (path.startsWith('analytics?')) return { enabled: true, trackingStartedAt: null, timezone: 'Asia/Ho_Chi_Minh', days: 7, from: '2026-10-12', to: '2026-10-18', generatedAt: 1792299600000, summary: { visitors: 0, sessions: 0, pageViews: 0, activeMs: 0, newVisitors: 0, returningVisitors: 0 }, daily: [], topPages: [], events: [] }
     if (path.startsWith('catalog')) return { items: [book], hasMore: false }
     if (path === 'categories') return { items: [{ id: 'fiction', name: 'Fiction', bookCount: 1 }] }
     if (path.startsWith('users/conflicts')) return { items: [{ kind: 'highlights', recordId: 'safe-id', baseVersion: 1, currentVersion: 2, reason: 'STALE_VERSION' }], hasMore: false }
@@ -30,6 +31,27 @@ beforeEach(() => {
 afterEach(() => cleanup())
 
 describe('administrator workspace', () => {
+  it('distinguishes enabled accounts from measured Web traffic and opens the analytics section once', async () => {
+    setup()
+    expect(await screen.findByText('Tài khoản được bật')).toBeTruthy()
+    expect(screen.queryByText('Tài khoản hoạt động')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Thống kê Web' }))
+    expect(await screen.findByText(/Chưa ghi nhận truy cập trong khoảng thời gian đã chọn/)).toBeTruthy()
+    expect(request.mock.calls.filter(call => call[1] === 'analytics?days=7')).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: 'Tải lại' })).toHaveLength(1)
+    expect(screen.queryByText('Tài khoản được bật')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Thống kê Web' }).getAttribute('aria-current')).toBe('page')
+  })
+
+  it('reports administrator access revocation from analytics and discards the report', async () => {
+    setup()
+    await screen.findByText('Tài khoản được bật')
+    request.mockRejectedValueOnce(new ApiError(403, 'Revoked', 'ADMIN_REQUIRED'))
+    fireEvent.click(screen.getByRole('button', { name: 'Thống kê Web' }))
+    await waitFor(() => expect(callbacks.onAccessLost).toHaveBeenCalledOnce())
+    expect(screen.queryByText('Khách truy cập ước tính')).toBeNull()
+  })
+
   it('sends catalog revisions and audit reason without changing book identity', async () => {
     setup(); fireEvent.click(screen.getByRole('button', { name: 'Sách' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Sửa' }))

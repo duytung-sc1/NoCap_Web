@@ -5,6 +5,7 @@ import { t, type Lang } from './i18n'
 import { SePayCheckout } from './SePayCheckout'
 import type { FontFamily, Session, TextAlignment } from './types'
 import './AccountSettings.css'
+import { WebAnalyticsPreference } from './WebAnalyticsPreference'
 
 export type AccountSettingsSection = 'profile' | 'pro' | 'reading'
 type ComfortSettings = { fontSize: number; fontFamily: FontFamily; textAlignment: TextAlignment; theme: 'paper' | 'sepia' | 'night' }
@@ -113,7 +114,7 @@ export function AccountSettings({ session, entitlement, lang, now, section, onSe
               <button className="primary" onClick={onSignIn}>{labels.loginRegister}</button>
             </>}
           </section>
-
+          <WebAnalyticsPreference lang={lang} />
         </div>
 
         <div id="account-panel-pro" className={`account-settings-panel account-settings-pro ${section === 'pro' ? 'active' : ''}`}>

@@ -35,6 +35,8 @@ import { ReaderNotesPanel } from './ReaderNotesPanel'
 import { ReaderSearchPanel } from './ReaderSearchPanel'
 import type { ReaderSearchHit, ReaderSearchSource } from './readerSearch'
 import { detectReaderFormat } from './readerFormat'
+import { useWebAnalytics } from './useWebAnalytics'
+import { trackWebFeature } from './webAnalytics'
 type ShelfFilter = 'all' | 'reading' | 'favorites' | 'completed' | 'local'
 type AuthMode = 'login' | 'register' | 'forgot'
 type Theme = 'paper' | 'sepia' | 'night'
@@ -111,6 +113,7 @@ function App() {
     document.title = lang === 'vi' ? 'NoCap — Không gian đọc của bạn' : 'NoCap — Your reading space'
   }, [lang])
   const { route, navigate } = useAppRoute()
+  useWebAnalytics(route)
   const page = route.kind === 'page' ? route.page : route.kind === 'notFound' ? 'notFound' : 'catalog'
   const backgroundPageRef = useRef<Page>('catalog')
   const openingBookRef = useRef<string | null>(null)
@@ -1082,6 +1085,7 @@ async function sha256Hex(file: Blob): Promise<string> {
       if (profileRef.current !== profile) return false
       setQuery(''); setCategory('all'); setShelfFilter('all'); setOrganizationFilter('all')
       setPage('library')
+      trackWebFeature('import', 'library')
       if (isCloud && session) {
         setNotice(lang === 'vi' ? 'Đã thêm tài liệu. Tệp sẽ được tự động tải lên Cloud khi có kết nối.' : 'Document added. It will automatically upload to Cloud when connected.')
         broadcastSyncRequired(profile)
@@ -1142,6 +1146,7 @@ async function sha256Hex(file: Blob): Promise<string> {
       locationRef.current = { locatorJson: initialLoc, progression: initialProgress, chapterTitle: '' }
       setLocation(locationRef.current)
       setReader({ book, bytes, initial: initialLoc })
+      trackWebFeature('book_open', 'reader')
       return true
     } catch (error) {
       if (profileRef.current === targetProfile && openRequestId.current === requestId) setReaderError(readableError(error, lang))
@@ -1168,6 +1173,7 @@ async function sha256Hex(file: Blob): Promise<string> {
       if (profileRef.current !== targetProfile) return
       saveBookDownload(file)
       setNotice(curT.download.started(file.filename))
+      trackWebFeature('download')
     } catch (error) { if (profileRef.current === targetProfile) setNotice(readableError(error, lang)) }
     finally { downloadActive.current = false; setDownloadBusy(null) }
   }
@@ -1322,6 +1328,7 @@ async function sha256Hex(file: Blob): Promise<string> {
       const key = keyFor(targetProfile, `highlights:${recordId}`)
       setRecords(current => current.some(record => record.key === key) ? current : [...current, { key, profile: targetProfile, kind: 'highlights', id: recordId, version: 0, deleted: false, payload }])
       setNoteText(''); setSelection(null); noteAnchor.current = null; setNotice(translate("Đã lưu ghi chú.", lang))
+      trackWebFeature('note_save', 'reader')
       if (activeSession && online && targetBook.source !== 'local') void synchronize(activeSession)
     } catch (error) { if (isCurrent()) setNotice(readableError(error, lang)) }
     finally { if (noteFlight.current === flight) { noteFlight.current = null; setNoteSaving(false) } }
@@ -1505,6 +1512,7 @@ async function sha256Hex(file: Blob): Promise<string> {
       setCardFlipped(false)
       setReviewStats({ mastered: 0, reviewAgain: 0 })
       setReviewOpen(true)
+      trackWebFeature('review_start', 'memory')
     } catch (error) {
       setNotice(readableError(error, lang))
     }
@@ -1529,6 +1537,7 @@ async function sha256Hex(file: Blob): Promise<string> {
       } else {
         setReviewStats(prev => ({ ...prev, mastered: prev.mastered + 1 }))
         setReviewIndex(prev => prev + 1)
+        if (reviewIndex + 1 >= reviewQueue.length) trackWebFeature('review_complete', 'memory')
       }
     } catch (error) {
       if (profileRef.current === targetProfile) setNotice(readableError(error, lang))
