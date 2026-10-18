@@ -35,6 +35,19 @@ export type AdminTransaction = {
   status: AdminTransactionStatus; createdAt: number; expiresAt: number
   paidAt: number | null; transactionId: string | null; entitlementExpiresAt: number | null
 }
+export type AdminAnalyticsDays = 1 | 7 | 30 | 90
+export type AdminAnalyticsCounts = {
+  visitors: number; sessions: number; pageViews: number; activeMs: number
+  newVisitors: number; returningVisitors: number
+}
+export type AdminAnalytics = {
+  enabled: boolean; trackingStartedAt: number | null; timezone: 'Asia/Ho_Chi_Minh'
+  days: AdminAnalyticsDays; from: string; to: string; generatedAt: number
+  summary: AdminAnalyticsCounts
+  daily: (AdminAnalyticsCounts & { date: string })[]
+  topPages: { page: string; pageViews: number; visitors: number; activeMs: number }[]
+  events: { type: string; count: number }[]
+}
 
 // Use the logged-in reader's session, never dashboard cookies or a client-side role.
 export function adminRequest<T>(token: string, path: string, signal?: AbortSignal, data?: object): Promise<T> {

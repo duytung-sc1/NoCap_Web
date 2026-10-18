@@ -4,6 +4,7 @@ import type { Lang } from './i18n'
 import type { ReaderFormat } from './readerFormat'
 import { SEARCH_RESULT_LIMIT, type ReaderSearchHit, type ReaderSearchProgress, type ReaderSearchResult, type ReaderSearchSource } from './readerSearch'
 import './ReaderSearchPanel.css'
+import { trackWebFeature } from './webAnalytics'
 
 export type ReaderSearchPanelProps = {
   open: boolean
@@ -65,6 +66,7 @@ export function ReaderSearchPanel({ open, lang, bookTitle, source, format, activ
         cache.current = next
         setCompleted(next)
         setFailed(null)
+        if (value.textAvailable) trackWebFeature('reader_search', 'reader')
       }, () => {
         if (current()) setFailed({ query: needle, source, retry })
       })
