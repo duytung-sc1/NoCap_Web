@@ -1,10 +1,12 @@
 import { getRecord } from './store'
 import { androidRecordId, localRecords, mutate } from './sync'
 import { initialReviewItem, nextReview, type ReviewItemPayload } from './review'
+import { parseDrawing, type Drawing } from './drawing'
 import type { SyncRecord } from './types'
 
 export const highlightColors = ['YELLOW', 'GREEN', 'BLUE', 'PINK', 'PURPLE'] as const
 export type HighlightColor = typeof highlightColors[number]
+export type AnnotationChanges = { note: string; color: HighlightColor; drawing?: Drawing | null }
 export const annotationId = (record: SyncRecord) => typeof record.payload.id === 'string' ? record.payload.id : record.id
 
 async function currentAnnotation(profile: string, record: SyncRecord) {
@@ -13,10 +15,23 @@ async function currentAnnotation(profile: string, record: SyncRecord) {
   return current
 }
 
-export async function updateAnnotation(profile: string, record: SyncRecord, changes: { note: string; color: HighlightColor }, localOnly = false) {
+export async function updateAnnotation(profile: string, record: SyncRecord, changes: AnnotationChanges, localOnly = false) {
   const current = await currentAnnotation(profile, record)
   if (current.kind !== 'highlights' || !highlightColors.includes(changes.color)) throw new Error('Ghi chú không hợp lệ.')
-  await mutate(profile, current.kind, current.id, { ...current.payload, note: changes.note.trim().slice(0, 10000), color: changes.color, updated_at: Date.now() }, false, localOnly)
+  if (typeof changes.note !== 'string') throw new Error('Nội dung ghi chú không hợp lệ.')
+  const payload: Record<string, unknown> = { ...current.payload, note: changes.note.trim().slice(0, 10000), color: changes.color, updated_at: Date.now() }
+  if (changes.drawing === null) delete payload.drawing
+  else if (changes.drawing !== undefined) {
+    const drawing = parseDrawing(changes.drawing)
+    if (!drawing) throw new Error('Bản vẽ không hợp lệ. Vui lòng vẽ lại.')
+    payload.drawing = structuredClone(drawing)
+  }
+  // Include the quotation, anchor and legacy metadata in the server's payload
+  // limit. Never save a local record whose queued operation cannot be synced.
+  let serialized: string
+  try { serialized = JSON.stringify(payload) } catch { throw new Error('Nội dung ghi chú không hợp lệ.') }
+  if (serialized.length > 32768) throw new Error('Ghi chú và bản vẽ quá lớn để đồng bộ. Hãy rút ngắn ghi chú hoặc giảm nét vẽ.')
+  await mutate(profile, current.kind, current.id, payload, false, localOnly)
 }
 
 export async function deleteAnnotation(profile: string, record: SyncRecord, localOnly = false) {

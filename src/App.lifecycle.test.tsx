@@ -7,6 +7,8 @@ import { readSession, saveSession, SESSION_STORAGE_KEY } from './store'
 import App from './App'
 import { ApiError } from './api'
 import { saveStealthCheckpoint } from './stealth/checkpoint'
+import { DRAWING_COLORS, emptyDrawing } from './drawing'
+import { emptyReaderNoteDraft, readReaderNoteDraft, writeReaderNoteDraft } from './readerNoteDrafts'
 
 const fixtures = vi.hoisted(() => ({
   login: vi.fn(), googleLogin: vi.fn(), getFiles: vi.fn(), getCatalog: vi.fn(), removeLocalDocument: vi.fn(), mutate: vi.fn(), loadBytes: vi.fn(), downloadHttps: vi.fn(), adminIdentity: vi.fn(), adminRequest: vi.fn(), localRecords: vi.fn(), entitlement: vi.fn(), preparePdf: vi.fn(), saveDownload: vi.fn(), conflicts: vi.fn(), resolveConflict: vi.fn(), updateProfile: vi.fn(), deleteAccount: vi.fn(), searchBook: vi.fn(), readerThrows: false, adminThrows: false,
@@ -253,6 +255,106 @@ describe('library write failures and concurrent actions', () => {
 })
 
 describe('side-by-side reading notes', () => {
+  it('restores an unfinished drawing after reopening the web and saves drawing-only notes at their original source', async () => {
+    fixtures.getFiles.mockResolvedValue([file('QA document')])
+    const saved: SyncRecord[] = []
+    fixtures.localRecords.mockImplementation(async () => [...saved])
+    fixtures.mutate.mockImplementation(async (profile, kind, id, payload) => {
+      if (kind === 'highlights') saved.push({ key: `${profile}:highlights:${id}`, profile, kind, id, payload, version: 0, deleted: false })
+    })
+    const drawing = emptyDrawing()
+    drawing.strokes.push({ color: DRAWING_COLORS[1], width: 3, points: [[10, 20], [100, 200]] })
+    const anchor = { locatorJson: '{"type":"TEXT","progression":0.25}', progression: .25, chapterTitle: 'Original thought' }
+    writeReaderNoteDraft('DEVICE_LOCAL', 'QA document', { ...emptyReaderNoteDraft(), drawing, anchor })
+    window.history.replaceState(null, '', '/read/QA%20document')
+    const first = render(<App />)
+    await screen.findByText('QA reader content')
+    expect(screen.getByRole('complementary', { name: 'Ghi chú khi đọc' })).toBeTruthy()
+    first.unmount()
+    render(<App />)
+    await screen.findByText('QA reader content')
+    const panel = screen.getByRole('complementary', { name: 'Ghi chú khi đọc' })
+    fireEvent.click(screen.getByRole('button', { name: 'QA background reader location' }))
+    fireEvent.click(within(panel).getByRole('button', { name: 'Lưu ghi chú' }))
+    await waitFor(() => expect(fixtures.mutate.mock.calls.find(([, kind]) => kind === 'highlights')).toBeTruthy())
+    const call = fixtures.mutate.mock.calls.find(([, kind]) => kind === 'highlights')!
+    expect(call[0]).toBe('DEVICE_LOCAL')
+    expect(call[3]).toMatchObject({ drawing, note: '', locator_json: anchor.locatorJson })
+    expect(call[5]).toBe(true)
+    await screen.findByText('Đã lưu ghi chú.')
+    expect(readReaderNoteDraft('DEVICE_LOCAL', 'QA document')).toBeNull()
+    expect(panel.querySelector('.drawing-preview')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Quay lại tủ sách' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Ghi nhớ' })[0])
+    await waitFor(() => expect(document.querySelector('.memory-item .drawing-preview')).toBeTruthy())
+  })
+
+  it('rejects a combined drawing and text payload above the server limit while retaining its draft for repair', async () => {
+    fixtures.getFiles.mockResolvedValue([file('QA document')])
+    const drawing = emptyDrawing()
+    drawing.strokes.push({ color: DRAWING_COLORS[0], width: 3, points: Array.from({ length: 700 }, (_, n) => [n, n % 700] as [number, number]) })
+    const draft = { ...emptyReaderNoteDraft(), drawing, note: 'N'.repeat(10000), selection: { text: 'Q'.repeat(20000), locator: '{"page":2}' } }
+    writeReaderNoteDraft('DEVICE_LOCAL', 'QA document', draft)
+    window.history.replaceState(null, '', '/read/QA%20document')
+    render(<App />)
+    await screen.findByText('QA reader content')
+    const panel = screen.getByRole('complementary', { name: 'Ghi chú khi đọc' })
+    fireEvent.click(within(panel).getByRole('button', { name: 'Lưu ghi chú' }))
+    expect(await screen.findByText('Ghi chú và bản vẽ quá lớn để đồng bộ. Hãy rút ngắn ghi chú hoặc giảm nét vẽ.')).toBeTruthy()
+    expect(fixtures.mutate.mock.calls.filter(([, kind]) => kind === 'highlights')).toHaveLength(0)
+    expect(readReaderNoteDraft('DEVICE_LOCAL', 'QA document')).toEqual(draft)
+  })
+
+  it('blocks a duplicate save after closing and reopening the same book while the first save is pending', async () => {
+    const oldPanel = await reader()
+    const pending = deferred<void>()
+    fixtures.mutate.mockImplementation((_profile, kind) => kind === 'highlights' ? pending.promise : Promise.resolve())
+    fireEvent.change(within(oldPanel).getByRole('textbox'), { target: { value: 'Save this draft once' } })
+    fireEvent.click(within(oldPanel).getByRole('button', { name: 'Lưu ghi chú' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Quay lại tủ sách' }))
+    await act(async () => {
+      window.history.pushState(null, '', '/read/QA%20document')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    await screen.findByText('QA reader content')
+    const reopened = screen.getByRole('complementary', { name: 'Ghi chú khi đọc' })
+    const draft = within(reopened).getByRole('textbox') as HTMLTextAreaElement
+    expect(draft.disabled).toBe(true)
+    fireEvent.submit(draft.closest('form')!)
+    expect(fixtures.mutate.mock.calls.filter(([, kind]) => kind === 'highlights')).toHaveLength(1)
+    await act(async () => { pending.resolve(); await pending.promise })
+    await waitFor(() => expect(draft.value).toBe(''))
+    expect(draft.disabled).toBe(false)
+    expect(readReaderNoteDraft('DEVICE_LOCAL', 'QA document')).toBeNull()
+  })
+
+  it('keeps a newer draft from another tab when reopening the same book during an older save', async () => {
+    const oldPanel = await reader()
+    const pending = deferred<void>()
+    fixtures.mutate.mockImplementation((_profile, kind) => kind === 'highlights' ? pending.promise : Promise.resolve())
+    fireEvent.change(within(oldPanel).getByRole('textbox'), { target: { value: 'Older snapshot being saved' } })
+    fireEvent.click(within(oldPanel).getByRole('button', { name: 'Lưu ghi chú' }))
+    const newer = { ...emptyReaderNoteDraft(), note: 'A newer idea written in another tab' }
+    writeReaderNoteDraft('DEVICE_LOCAL', 'QA document', newer)
+    fireEvent.click(screen.getByRole('button', { name: 'Quay lại tủ sách' }))
+    await act(async () => {
+      window.history.pushState(null, '', '/read/QA%20document')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    await screen.findByText('QA reader content')
+    const reopened = screen.getByRole('complementary', { name: 'Ghi chú khi đọc' })
+    const draft = within(reopened).getByRole('textbox') as HTMLTextAreaElement
+    expect(draft.value).toBe(newer.note)
+    expect(draft.disabled).toBe(true)
+    await act(async () => { pending.resolve(); await pending.promise })
+    await waitFor(() => expect(draft.disabled).toBe(false))
+    expect(draft.value).toBe(newer.note)
+    expect(readReaderNoteDraft('DEVICE_LOCAL', 'QA document')).toEqual(newer)
+    fireEvent.change(draft, { target: { value: newer.note + ' — continued' } })
+    expect(readReaderNoteDraft('DEVICE_LOCAL', 'QA document')?.note).toBe(newer.note + ' — continued')
+    expect(fixtures.mutate.mock.calls.filter(([, kind]) => kind === 'highlights')).toHaveLength(1)
+  })
+
   const initialLocator = '{"type":"TEXT","progression":0.6}'
 
   function note(id: string, bookId = 'QA document', profile = 'DEVICE_LOCAL'): SyncRecord {
