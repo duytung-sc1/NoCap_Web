@@ -23,7 +23,10 @@ import { AccountSettings, type AccountSettingsSection } from './AccountSettings'
 import { useAdminAccess } from './admin/useAdminAccess'
 import { AnnotationEditor, AnnotationDeleteDialog } from './AnnotationDialogs'
 import { ProRequiredDialog } from './ProRequiredDialog'
-import { addAnnotationReview, annotationId, deleteAnnotation, rateAnnotationReview, updateAnnotation, type HighlightColor } from './annotations'
+import { addAnnotationReview, annotationId, deleteAnnotation, rateAnnotationReview, updateAnnotation, type AnnotationChanges } from './annotations'
+import { hasDrawing, parseDrawing, type Drawing } from './drawing'
+import { DrawingPreview } from './DrawingEditor'
+import { clearReaderNoteDraft, emptyReaderNoteDraft, readReaderNoteDraft, writeReaderNoteDraft, type ReaderNoteDraft } from './readerNoteDrafts'
 import { allowsPro, proAccessExpiresAt, verifyProAccess, type ProFeature } from './entitlements'
 
 const AdminWorkspace = lazy(() => importWithChunkRecovery(() => import('./admin/AdminWorkspace')))
@@ -158,9 +161,12 @@ function App() {
   const [selection, setSelection] = useState<{ text: string; locator: string } | null>(null)
   const [noteOpen, setNoteOpen] = useState(false)
   const [noteText, setNoteText] = useState('')
+  const [noteDrawing, setNoteDrawing] = useState<Drawing | null>(null)
+  const noteDraft = useRef<ReaderNoteDraft>(emptyReaderNoteDraft())
   const [noteColor, setNoteColor] = useState<'YELLOW' | 'GREEN' | 'BLUE' | 'PINK' | 'PURPLE'>('YELLOW')
   const [noteSaving, setNoteSaving] = useState(false)
   const noteFlight = useRef<object | null>(null)
+  const noteFlights = useRef(new Map<string, object>())
   const noteAnchor = useRef<ReaderLocation | null>(null)
   const notesToggle = useRef<HTMLButtonElement>(null)
   const [noteNavigation, setNoteNavigation] = useState<{ locatorJson: string; requestId: number } | null>(null)
@@ -1115,7 +1121,7 @@ async function sha256Hex(file: Blob): Promise<string> {
     const targetProfile = profile
     if (progressTimer.current) clearTimeout(progressTimer.current)
     setReaderError(''); setReaderLoading(true); setLocation(null); setSelection(null); setStealthProgressRequest(null); setControls(null); setToc([]); setNavigateTarget(null)
-    setNoteOpen(false); setNoteText(''); setNoteNavigation(null); noteAnchor.current = null; noteFlight.current = null; setNoteSaving(false)
+    setNoteOpen(false); resetReaderNoteDraft(); setNoteNavigation(null); noteFlight.current = null; setNoteSaving(false)
     setSearchOpen(false); setReaderSearchSource(null); setActiveSearchHit(null)
     try {
       const [localResult, offlineResult] = await Promise.allSettled([
@@ -1146,6 +1152,13 @@ async function sha256Hex(file: Blob): Promise<string> {
       locationRef.current = { locatorJson: initialLoc, progression: initialProgress, chapterTitle: '' }
       setLocation(locationRef.current)
       setReader({ book, bytes, initial: initialLoc })
+      const draft = readReaderNoteDraft(targetProfile, book.id)
+      if (draft) {
+        resetReaderNoteDraft(draft)
+        setNoteOpen(true)
+      }
+      const savingDraft = noteFlights.current.get(keyFor(targetProfile, book.id))
+      if (savingDraft) { noteFlight.current = savingDraft; setNoteSaving(true) }
       trackWebFeature('book_open', 'reader')
       return true
     } catch (error) {
@@ -1254,7 +1267,7 @@ async function sha256Hex(file: Blob): Promise<string> {
     if (book && !loc) void completeReadingSession(book, 0)
     setReader(null); readerRef.current = null; locationRef.current = null; setSelection(null); setStealthGrant(null); setStealthProgressRequest(null); setControls(null)
     setToc([]); setTocOpen(false); setSettingsOpen(false); setNoteOpen(false); setNavigateTarget(null)
-    setNoteText(''); setNoteNavigation(null); noteAnchor.current = null; noteFlight.current = null; setNoteSaving(false)
+    resetReaderNoteDraft(); setNoteNavigation(null); noteFlight.current = null; setNoteSaving(false)
     setSearchOpen(false); setReaderSearchSource(null); setActiveSearchHit(null)
   }
   closeReaderRef.current = closeReader
@@ -1307,43 +1320,76 @@ async function sha256Hex(file: Blob): Promise<string> {
 
   async function saveNote() {
     const anchor = selection ? { locatorJson: selection.locator, chapterTitle: '', progression: 0 } : noteAnchor.current || locationRef.current
-    if (!reader || !anchor || (!noteText.trim() && !selection?.text) || noteFlight.current) return
+    if (!reader || !anchor || (!noteText.trim() && !selection?.text && !hasDrawing(noteDrawing)) || noteFlight.current || noteFlights.current.has(keyFor(profile, reader.book.id))) return
     const flight = {}
     noteFlight.current = flight
     const targetProfile = profile
     const activeSession = session
     const targetBook = reader.book
+    const flightKey = keyFor(targetProfile, targetBook.id)
+    noteFlights.current.set(flightKey, flight)
+    const draftSnapshot = noteDraft.current
     const isCurrent = () => noteFlight.current === flight && profileRef.current === targetProfile && sessionRef.current?.token === activeSession?.token && readerRef.current?.id === targetBook.id
     setNoteSaving(true)
     try {
       const id = crypto.randomUUID()
       const selected = selection?.text || anchor.chapterTitle || translate("Ghi chú tại vị trí đọc", lang)
-      const payload = { id, book_id: targetBook.id, locator_json: anchor.locatorJson, text: selected, color: noteColor, note: noteText.trim().slice(0, 10000), created_at: ms(), updated_at: ms() }
+      const drawing = noteDrawing === null ? null : parseDrawing(noteDrawing)
+      if (noteDrawing !== null && !drawing) throw new Error(translate('Bản vẽ không hợp lệ. Vui lòng vẽ lại.', lang))
+      const payload = { id, book_id: targetBook.id, locator_json: anchor.locatorJson, text: selected, color: noteColor, note: noteText.trim().slice(0, 10000), ...(drawing && hasDrawing(drawing) ? { drawing } : {}), created_at: ms(), updated_at: ms() }
+      if (JSON.stringify(payload).length > 32768) throw new Error(translate('Ghi chú và bản vẽ quá lớn để đồng bộ. Hãy rút ngắn ghi chú hoặc giảm nét vẽ.', lang))
       const recordId = androidRecordId('highlights', id)
       await mutate(targetProfile, 'highlights', recordId, payload, false, targetBook.source === 'local')
+      clearReaderNoteDraft(targetProfile, targetBook.id, draftSnapshot)
       broadcastSyncRequired(targetProfile)
       // A committed note must not be offered for retry when refreshing the list fails.
       await refreshLocal(targetProfile).catch(() => {})
       if (!isCurrent()) return
       const key = keyFor(targetProfile, `highlights:${recordId}`)
       setRecords(current => current.some(record => record.key === key) ? current : [...current, { key, profile: targetProfile, kind: 'highlights', id: recordId, version: 0, deleted: false, payload }])
-      setNoteText(''); setSelection(null); noteAnchor.current = null; setNotice(translate("Đã lưu ghi chú.", lang))
+      // Reopening can restore a newer draft written by another tab while this
+      // save was pending. Only clear the exact content that was committed.
+      if (JSON.stringify(noteDraft.current) === JSON.stringify(draftSnapshot)) resetReaderNoteDraft()
+      setNotice(translate("Đã lưu ghi chú.", lang))
       trackWebFeature('note_save', 'reader')
       if (activeSession && online && targetBook.source !== 'local') void synchronize(activeSession)
     } catch (error) { if (isCurrent()) setNotice(readableError(error, lang)) }
-    finally { if (noteFlight.current === flight) { noteFlight.current = null; setNoteSaving(false) } }
+    finally {
+      if (noteFlights.current.get(flightKey) === flight) noteFlights.current.delete(flightKey)
+      if (noteFlight.current === flight) { noteFlight.current = null; setNoteSaving(false) }
+    }
   }
 
   function selectReaderPassage(text: string, locator: string) {
     if (noteFlight.current) return
-    setSelection({ text, locator }); setNoteOpen(true)
+    changeReaderNoteDraft({ selection: { text, locator }, anchor: { locatorJson: locator, progression: locationRef.current?.progression || 0, chapterTitle: locationRef.current?.chapterTitle || '' } }); setNoteOpen(true)
     setSearchOpen(false); setActiveSearchHit(null)
-    noteAnchor.current = { locatorJson: locator, progression: locationRef.current?.progression || 0, chapterTitle: locationRef.current?.chapterTitle || '' }
+  }
+
+  function resetReaderNoteDraft(draft = emptyReaderNoteDraft()) {
+    noteDraft.current = draft
+    noteAnchor.current = draft.anchor
+    setNoteText(draft.note); setNoteDrawing(draft.drawing); setNoteColor(draft.color); setSelection(draft.selection)
+  }
+
+  function changeReaderNoteDraft(changes: Partial<ReaderNoteDraft>) {
+    if (noteFlight.current) return
+    const draft = { ...noteDraft.current, ...changes }
+    resetReaderNoteDraft(draft)
+    const book = readerRef.current
+    if (book && !writeReaderNoteDraft(profileRef.current, book.id, draft)) setNotice(lang === 'vi'
+      ? 'Chưa giữ được bản nháp trên trình duyệt. Hãy bấm Lưu ghi chú trước khi đóng trang.'
+      : 'The browser could not retain this draft. Save the note before closing the page.')
   }
 
   function changeReaderNote(value: string) {
-    if (!noteText && value && !selection) noteAnchor.current = locationRef.current
-    setNoteText(value)
+    const anchor = !noteDraft.current.note && !hasDrawing(noteDraft.current.drawing) && value && !noteDraft.current.selection ? locationRef.current : noteDraft.current.anchor
+    changeReaderNoteDraft({ note: value, anchor })
+  }
+
+  function changeReaderDrawing(value: Drawing | null) {
+    const anchor = !noteDraft.current.note && !hasDrawing(noteDraft.current.drawing) && hasDrawing(value) && !noteDraft.current.selection ? locationRef.current : noteDraft.current.anchor
+    changeReaderNoteDraft({ drawing: value, anchor })
   }
 
   function navigateToReaderNote(record: SyncRecord) {
@@ -1361,7 +1407,7 @@ async function sha256Hex(file: Blob): Promise<string> {
     setNoteNavigation({ locatorJson: hit.locatorJson, requestId: ++noteNavigationId.current })
   }
 
-  async function changeReaderAnnotation(record: SyncRecord, changes?: { note: string; color: HighlightColor }) {
+  async function changeReaderAnnotation(record: SyncRecord, changes?: AnnotationChanges) {
     const targetProfile = profile
     const targetBook = readerRef.current
     const activeSession = session
@@ -1431,7 +1477,7 @@ async function sha256Hex(file: Blob): Promise<string> {
   }
   launchStealthRef.current = launchStealth
 
-  async function handleAnnotationSave(changes: { note: string; color: HighlightColor }) {
+  async function handleAnnotationSave(changes: AnnotationChanges) {
     const record = editingAnnotation
     if (!record || annotationBusy) return
     setAnnotationBusy(true); setAnnotationError('')
@@ -1906,7 +1952,7 @@ async function sha256Hex(file: Blob): Promise<string> {
               <div className="count-chip" style={{ background: 'rgba(255,255,255,0.08)', color: '#c8d8f8', border: '1px solid rgba(100,140,255,0.2)' }}>{curT.banners.memory.statsSnippet(annotations.length, dueReviewCount)}</div>
               {annotations.length > 0 && <><button className="light-button" onClick={() => void startFlashcardReview()}><Sparkles size={15} /> {curT.banners.memory.reviewBtn}</button><button className="light-button" onClick={() => void startFlashcardReview(true)}><Sparkles size={15} />{lang === 'vi' ? 'Tạo thẻ tự động · Pro' : 'Auto-generate cards · Pro'}</button><button className="light-button" disabled={pdfExportBusy} aria-busy={pdfExportBusy} onClick={() => void exportPdf()}><FileDown size={15} /> {pdfExportBusy ? (lang === 'vi' ? 'Đang tạo PDF…' : 'Creating PDF…') : curT.banners.memory.exportBtn}</button></>}
             </div>
-          </div><label className="search-field memory-search"><Search size={18} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder={curT.memoryPage.searchPlaceholder} aria-label={translate("Tìm ghi chú", lang)} /></label>{annotations.filter(record => `${record.payload.text || ''} ${record.payload.note || ''} ${record.payload.chapter_title || ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())).length ? <div className="memory-list">{annotations.filter(record => `${record.payload.text || ''} ${record.payload.note || ''} ${record.payload.chapter_title || ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())).map(record => { const book = books.find(item => item.id === record.payload.book_id); return <div className="memory-item" key={record.key}><div className="memory-icon">{record.kind === 'highlights' ? <Highlighter size={18} /> : <Bookmark size={18} />}</div><div><div className="memory-book">{book?.title || curT.memoryPage.privateDoc}</div><blockquote>{toText(record.payload.text) || toText(record.payload.chapter_title) || curT.memoryPage.bookmarkFallback}</blockquote>{!!record.payload.note && <p>{toText(record.payload.note)}</p>}</div><div className="memory-item-actions">
+          </div><label className="search-field memory-search"><Search size={18} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder={curT.memoryPage.searchPlaceholder} aria-label={translate("Tìm ghi chú", lang)} /></label>{annotations.filter(record => `${record.payload.text || ''} ${record.payload.note || ''} ${record.payload.chapter_title || ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())).length ? <div className="memory-list">{annotations.filter(record => `${record.payload.text || ''} ${record.payload.note || ''} ${record.payload.chapter_title || ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())).map(record => { const book = books.find(item => item.id === record.payload.book_id); return <div className="memory-item" key={record.key}><div className="memory-icon">{record.kind === 'highlights' ? <Highlighter size={18} /> : <Bookmark size={18} />}</div><div><div className="memory-book">{book?.title || curT.memoryPage.privateDoc}</div><blockquote>{toText(record.payload.text) || toText(record.payload.chapter_title) || curT.memoryPage.bookmarkFallback}</blockquote>{!!record.payload.note && <p>{toText(record.payload.note)}</p>}{hasDrawing(record.payload.drawing) && <DrawingPreview drawing={record.payload.drawing} label={lang === 'vi' ? 'Ghi chú vẽ tay' : 'Handwritten note'} />}</div><div className="memory-item-actions">
           {book && <button className="text-button" onClick={() => void openBook(book, toText(record.payload.locator_json))}>{curT.memoryPage.openBook} <ArrowRight size={15} /></button>}
           {record.kind === 'highlights' && <>
             {!reviewItems.some(item => item.payload.annotation_id === annotationId(record)) && <button className="text-button" onClick={() => void handleAddReview(record)}><Plus size={15} />{lang === 'vi' ? 'Thêm vào ôn tập' : 'Add to review'}</button>}
@@ -2048,9 +2094,10 @@ async function sha256Hex(file: Blob): Promise<string> {
         </div>
         <ReaderNotesPanel key={`${profile}:${reader.book.id}`} open={noteOpen} lang={lang} bookTitle={reader.book.title}
           records={readerNotes} note={noteText} color={noteColor} quote={selection?.text || ''} saving={noteSaving}
-          canSave={!!(selection || location) && !!(noteText.trim() || selection?.text)}
-          onNoteChange={changeReaderNote} onColorChange={setNoteColor}
-          onClearQuote={() => { if (!noteFlight.current) { setSelection(null); noteAnchor.current = locationRef.current } }}
+          drawing={noteDrawing} onDrawingChange={changeReaderDrawing}
+          canSave={!!(selection || noteAnchor.current || location) && !!(noteText.trim() || selection?.text || hasDrawing(noteDrawing))}
+          onNoteChange={changeReaderNote} onColorChange={color => changeReaderNoteDraft({ color })}
+          onClearQuote={() => changeReaderNoteDraft({ selection: null, anchor: locationRef.current })}
           onSave={() => void saveNote()} onNavigate={navigateToReaderNote}
           onUpdate={(record, changes) => changeReaderAnnotation(record, changes)} onDelete={record => changeReaderAnnotation(record)}
           onClose={() => { setNoteOpen(false); notesToggle.current?.focus() }} />
@@ -2109,7 +2156,8 @@ async function sha256Hex(file: Blob): Promise<string> {
             <div className="flashcard-back" aria-hidden={!cardFlipped}>
               <div className="flashcard-book">{translate('GHI CHÚ & SUY NGẪM', lang)}</div>
               <div className="flashcard-note-title">{translate("Nội dung ghi chú của bạn:", lang)}</div>
-              <div className="flashcard-note">{note || translate("Không có ghi chú riêng; hãy ghi nhớ lại đoạn trích trên.", lang)}</div>
+              <div className="flashcard-note">{note || (!hasDrawing(card.payload.drawing) && translate("Không có ghi chú riêng; hãy ghi nhớ lại đoạn trích trên.", lang))}</div>
+              {hasDrawing(card.payload.drawing) && <DrawingPreview drawing={card.payload.drawing} label={lang === 'vi' ? 'Ghi chú vẽ tay' : 'Handwritten note'} />}
               <div className="flashcard-hint">{translate('Đánh giá khả năng ghi nhớ bên dưới:', lang)}</div>
             </div>
           </div>

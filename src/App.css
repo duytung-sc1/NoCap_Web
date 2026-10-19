@@ -1996,3 +1996,6 @@ body, .main-area {
 .import-document-dialog .primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
 .import-progress { display: grid; gap: 8px; padding: 16px; border: 1px solid #c7ddd7; border-radius: 10px; background: #edf8f5; margin: 16px 0; }
 .import-progress progress { width: 100%; accent-color: #147d70; }
+/* Keep handwriting readable in both the memory list and review card. */
+.memory-item .drawing-preview{max-width:520px;margin-top:12px}
+.flashcard-back .drawing-preview{width:min(100%,360px);max-height:210px;margin:10px auto;overflow:auto}

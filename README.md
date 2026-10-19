@@ -1,7 +1,7 @@
 # NoCap Web
 
 NoCap’s browser client, developed alongside the Android app. Production:
-https://ntlab.id.vn (Cloudflare Pages). The frontend uses the existing NoCap
+https://nocap.rest (Cloudflare Pages). The frontend uses the existing NoCap
 Cloudflare Worker for accounts, storage and sync. Public HTTPS imports use a
 same-origin Pages Function; deploying the web does not deploy the backend or Android application.
 
@@ -87,11 +87,33 @@ Switching panels preserves the selected billing period and an active checkout.
 Phone-width Web retains the original banner and card layout. The Android app
 is not changed by this redesign.
 
+## Handwritten reading notes (Web)
+
+Open a document, choose **Notes → Draw**, and sketch beside the text using a
+mouse, stylus or touch. The optional expanded workspace keeps the same drawing;
+Escape closes that workspace without leaving the reader. Tools include four
+ink colors, three pen widths, a whole-stroke eraser, undo/redo and grid paper.
+Switching between Type and Draw preserves both the caption and the drawing.
+
+New-note drafts are saved in this browser per account/document and restored
+when the book is reopened. **Save note** commits the vector drawing with its
+source locator into the existing annotation store and sync queue. Local-only
+documents remain local. Saved drawings can be viewed/edited in the reader and
+Reading Memory, shown on the back of review cards, and included in Pro PDF
+exports. This adds a Web side notebook; it does not draw ink over document pages
+or add handwriting UI to Android.
+
+Drawings use a bounded, validated data-only format (1,000 × 700 coordinates,
+96 strokes / 1,800 simplified points / 20,000 JSON characters). The complete
+annotation must fit the existing 32,768-character sync payload. Reaching a limit
+shows a message and preserves the previous drawing instead of truncating it.
+
 ## Reading Memory and plans
 
 | Feature | Free | Pro |
 | --- | --- | --- |
 | Reading, bookmarks, highlights, note editing/deletion | Yes | Yes |
+| Handwritten notes beside the reader (Web) | Yes | Yes |
 | Manually add an individual note to the review schedule | Yes | Yes |
 | Basic scheduled review | Yes | Yes |
 | Stealth Reading (Excel, VS Code, office-document disguises) on Web | No | Yes |

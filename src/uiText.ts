@@ -1,6 +1,9 @@
 import { getStoredLang, type Lang } from './i18n'
 
 const english: Record<string, string> = {
+  "Bản vẽ không hợp lệ. Vui lòng vẽ lại.": "The drawing is invalid. Please draw it again.",
+  "Ghi chú và bản vẽ quá lớn để đồng bộ. Hãy rút ngắn ghi chú hoặc giảm nét vẽ.": "The note and drawing are too large to sync. Shorten the note or reduce the strokes.",
+  "Nội dung ghi chú không hợp lệ.": "The note content is invalid.",
   "Mục đồng bộ đã thay đổi. Vui lòng thử lại.": "This sync entry changed. Please try again.",
   "Bản trên máy vừa thay đổi. Vui lòng xem lại xung đột.": "The local copy just changed. Please review the conflict again.",
   "Không tìm thấy thẻ ôn tập của ghi chú này.": "This note no longer has a scheduled review card.",

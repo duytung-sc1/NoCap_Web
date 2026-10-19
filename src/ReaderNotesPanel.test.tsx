@@ -3,9 +3,17 @@ import { useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { ReaderNotesPanel, type ReaderNotesPanelProps } from './ReaderNotesPanel'
+import type { Drawing } from './drawing'
 import type { SyncRecord } from './types'
 
 afterEach(cleanup)
+
+const drawing: Drawing = { version: 1, width: 1000, height: 700, strokes: [{ color: '#167e70', width: 3, points: [[15, 20], [45, 60]] }] }
+
+vi.mock('./DrawingEditor', () => ({
+  DrawingEditor: ({ value, onChange, disabled }: { value: Drawing | null; onChange: (value: Drawing | null) => void; disabled?: boolean }) => <div role="group" aria-label="Test drawing editor" data-strokes={value?.strokes.length || 0}><button type="button" disabled={disabled} onClick={() => onChange(drawing)}>Add test stroke</button><button type="button" disabled={disabled} onClick={() => onChange(null)}>Clear test drawing</button></div>,
+  DrawingPreview: ({ drawing: value, label }: { drawing: Drawing | null | undefined; label: string }) => value?.strokes?.length ? <div role="img" aria-label={label} /> : null,
+}))
 
 const record: SyncRecord = {
   key: 'reader:h1', id: 'h1', kind: 'highlights', profile: 'reader', version: 1, deleted: false,
@@ -60,6 +68,65 @@ describe('reading beside a notes panel', () => {
     expect((within(composer).getByRole('group', { name: 'Highlight color' }) as HTMLFieldSetElement).disabled).toBe(true)
     fireEvent.submit(composer)
     expect(handlers.onSave).not.toHaveBeenCalled()
+  })
+
+  it('keeps the controlled drawing and caption when switching between typing and drawing', () => {
+    const save = vi.fn()
+    function ControlledPanel() {
+      const [note, setNote] = useState('A caption that stays')
+      const [value, setValue] = useState<Drawing | null>(null)
+      return <ReaderNotesPanel {...props({ records: [], canSave: true })} note={note} onNoteChange={setNote} drawing={value} onDrawingChange={setValue} onSave={save} />
+    }
+    render(<ControlledPanel />)
+    expect(screen.queryByRole('group', { name: 'Test drawing editor' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Draw' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add test stroke' }))
+    fireEvent.change(screen.getByLabelText('Your note'), { target: { value: 'A new caption' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Type' }))
+    expect(screen.queryByRole('group', { name: 'Test drawing editor' })).toBeNull()
+    expect(screen.getByRole('img', { name: 'Draft drawing' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Draw' }))
+    expect(screen.getByRole('group', { name: 'Test drawing editor' }).getAttribute('data-strokes')).toBe('1')
+    expect((screen.getByLabelText('Your note') as HTMLTextAreaElement).value).toBe('A new caption')
+    fireEvent.click(screen.getByRole('button', { name: 'Save note' }))
+    expect(save).toHaveBeenCalledTimes(1)
+  })
+
+  it('disables the drawing editor and input modes while the composer is saving', () => {
+    const handlers = props({ drawing, onDrawingChange: vi.fn() })
+    const { rerender } = render(<ReaderNotesPanel {...handlers} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Draw' }))
+    rerender(<ReaderNotesPanel {...handlers} saving />)
+    expect((screen.getByRole('button', { name: 'Type' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: 'Draw' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: 'Add test stroke' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Add test stroke' }))
+    expect(handlers.onDrawingChange).not.toHaveBeenCalled()
+  })
+
+  it('previews saved drawings and sends explicit removal with an inline caption edit', async () => {
+    const drawn = { ...record, payload: { ...record.payload, drawing } }
+    const handlers = props({ records: [drawn] })
+    render(<ReaderNotesPanel {...handlers} />)
+    expect(screen.getByRole('img', { name: 'Saved drawing' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    expect(screen.getByRole('group', { name: 'Test drawing editor' }).getAttribute('data-strokes')).toBe('1')
+    fireEvent.click(screen.getByRole('button', { name: 'Clear test drawing' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Type' }))
+    fireEvent.change(screen.getByLabelText('Edit note'), { target: { value: 'Caption only now' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(handlers.onUpdate).toHaveBeenCalledWith(drawn, { note: 'Caption only now', color: 'BLUE', drawing: null }))
+  })
+
+  it('preserves an existing drawing when only its typed caption is edited', async () => {
+    const drawn = { ...record, payload: { ...record.payload, drawing } }
+    const handlers = props({ records: [drawn] })
+    render(<ReaderNotesPanel {...handlers} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Type' }))
+    fireEvent.change(screen.getByLabelText('Edit note'), { target: { value: 'Updated caption' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(handlers.onUpdate).toHaveBeenCalledWith(drawn, { note: 'Updated caption', color: 'BLUE', drawing }))
   })
 
   it('navigates to the original record without editing or deleting it', () => {

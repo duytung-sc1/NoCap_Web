@@ -5,6 +5,7 @@ import boldUrl from './assets/pdf-fonts/BeVietnamPro-Bold.ttf?url'
 import italicUrl from './assets/pdf-fonts/BeVietnamPro-Italic.ttf?url'
 import boldItalicUrl from './assets/pdf-fonts/BeVietnamPro-BoldItalic.ttf?url'
 import { formattedPdfText } from './notesPdfFormatting'
+import { drawingSvg, hasDrawing, parseDrawing } from './drawing'
 import type { Lang } from './i18n'
 import type { Book, SyncRecord } from './types'
 import type { BookDownload } from './bookDownload'
@@ -29,7 +30,7 @@ function loadFonts() {
   return fontsReady
 }
 
-/** Immutable snapshot of the current account's notes; all user content is plain text. */
+/** Immutable snapshot; prose is formatted text and drawings use validated vectors. */
 export function notesPdfDefinition(annotations: SyncRecord[], books: Book[], lang: Lang, date = new Date()): TDocumentDefinitions {
   const vi = lang === 'vi'
   const title = vi ? 'Trích dẫn và ghi chú' : 'Highlights and notes'
@@ -53,9 +54,17 @@ export function notesPdfDefinition(annotations: SyncRecord[], books: Book[], lan
       const quote = text(item.payload.text) || text(item.payload.snippet)
       const note = text(item.payload.note)
       const chapter = text(item.payload.chapter_title)
-      content.push({ text: item.kind === 'bookmarks' ? (vi ? 'DẤU TRANG' : 'BOOKMARK') : (vi ? 'TRÍCH DẪN' : 'HIGHLIGHT'), style: 'label', margin: [0, 12, 0, 5] })
+      const drawing = parseDrawing(item.payload.drawing)
+      const drawingOnly = !quote && !note && drawing && hasDrawing(drawing)
+      const entryLabel: Content = { text: item.kind === 'bookmarks' ? (vi ? 'DẤU TRANG' : 'BOOKMARK') : (vi ? 'TRÍCH DẪN' : 'HIGHLIGHT'), style: 'label', margin: [0, 12, 0, 5] }
+      if (!drawingOnly) content.push(entryLabel)
       if (quote) content.push({ stack: formattedPdfText(quote), style: 'quote', margin: [12, 0, 0, 8] })
       if (note) content.push({ text: `${vi ? 'Ghi chú' : 'Note'}:`, bold: true, margin: [0, 0, 0, 4] }, { stack: formattedPdfText(note), margin: [0, 0, 0, 8] })
+      if (drawing && hasDrawing(drawing)) content.push({ unbreakable: true, stack: [
+        ...(drawingOnly ? [entryLabel] : []),
+        { text: vi ? 'Bản vẽ:' : 'Drawing:', bold: true, margin: [0, 0, 0, 4] },
+        { svg: drawingSvg(drawing), fit: [499.28, 349.5], margin: [0, 0, 0, 8] },
+      ] })
       if (chapter) content.push({ text: `${vi ? 'Vị trí' : 'Location'}: ${chapter}`, style: 'metadata', margin: [0, 0, 0, 8] })
       content.push({ canvas: [{ type: 'line', x1: 0, y1: 0, x2: 499.28, y2: 0, lineWidth: 0.5, lineColor: '#dce4e8' }], margin: [0, 2, 0, 4] })
     }
