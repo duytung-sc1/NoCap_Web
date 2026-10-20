@@ -31,6 +31,11 @@ export const SYNC_KINDS = [
   'review_items',
   'reading_sessions',
   'per_book_preferences',
+  'knowledge_topics',
+  'topic_annotations',
+  'annotation_links',
+  'exam_plans',
+  'review_attempts',
 ] as const
 
 export type SyncKind = typeof SYNC_KINDS[number]
@@ -52,7 +57,7 @@ export type SyncOperation = {
   recreate?: boolean
   payload: Record<string, unknown>
 }
-export type PendingOperation = { key: string; profile: string; operation: SyncOperation; attempted: boolean; conflicted?: boolean; needsBlobUpload?: boolean }
+export type PendingOperation = { key: string; profile: string; operation: SyncOperation; attempted: boolean; conflicted?: boolean; needsBlobUpload?: boolean; remoteDeleted?: boolean }
 export type LocalFile = { key: string; profile: string; book: Book; data: Blob; addedAt: number }
 
 export type ReaderLocation = { locatorJson: string; progression: number; chapterTitle: string }

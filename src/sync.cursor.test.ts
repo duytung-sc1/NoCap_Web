@@ -15,13 +15,14 @@ vi.mock('./api', () => ({
       'categories', 'catalog_books', 'reading_progress', 'bookmarks', 'highlights', 'favorites',
       'tags', 'collections', 'book_tag_cross_ref', 'book_collection_cross_ref', 'review_items',
       'reading_sessions', 'per_book_preferences',
+      'knowledge_topics', 'topic_annotations', 'annotation_links', 'exam_plans', 'review_attempts',
     ].map((kind, index) => ({ seq: index + 1, kind, id: `${kind}-record`, version: 1, deleted: 0, payload: { id: `${kind}-local` } })) : [],
-    cursor: cursor === 0 ? 13 : cursor,
+    cursor: cursor === 0 ? 18 : cursor,
     hasMore: false,
   })),
 }))
 
-it('pulls every Android sync kind and resumes from the persisted cursor', async () => {
+it('pulls every shared and Web research sync kind and resumes from the persisted cursor', async () => {
   const session: Session = {
     token: 'cursor-test-token',
     expiresAt: Date.now() / 1000 + 60,

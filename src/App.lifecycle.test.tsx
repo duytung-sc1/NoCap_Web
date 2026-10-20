@@ -564,7 +564,9 @@ describe('searching inside the open book', () => {
   async function reader() {
     fixtures.getFiles.mockResolvedValue([file('QA document'), file('Another document')])
     window.history.replaceState(null, '', '/read/QA%20document')
-    render(<App />)
+    // A visible mocked reader can precede App's passive keyboard effect. Flush
+    // the asynchronous navigation before testing a shortcut against that reader.
+    await act(async () => { render(<App />) })
     await screen.findByText('QA reader content')
     return screen.getByRole('button', { name: 'Tìm trong sách' })
   }
@@ -593,7 +595,7 @@ describe('searching inside the open book', () => {
 
   it('opens with Ctrl/Cmd+F, focuses its input, and returns focus to the toolbar on Escape', async () => {
     const toggle = await reader()
-    toggle.focus()
+    await act(async () => { toggle.focus() })
     const shortcut = new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true, cancelable: true })
     fireEvent(window, shortcut)
     expect(shortcut.defaultPrevented).toBe(true)

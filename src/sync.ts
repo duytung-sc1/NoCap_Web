@@ -69,7 +69,7 @@ export async function syncNow(session: Session): Promise<{ conflicts: number; ch
       conflicts++
       // Keep the local copy and its pending marker. Pull must not overwrite it
       // with the server version before the user can review the conflict.
-      await updatePendingOperation(item, { conflicted: true })
+      await updatePendingOperation(item, { conflicted: true, remoteDeleted: !!latest?.deleted })
     }
   }
   let cursor = await getSyncCursor(profile)
@@ -197,6 +197,13 @@ export async function getConflicts(profile: string): Promise<PendingOperation[]>
   return allPending.filter(item => !!item.conflicted)
 }
 
+const researchKinds = new Set<SyncKind>(['knowledge_topics', 'topic_annotations', 'annotation_links', 'exam_plans', 'review_attempts'])
+
+/** Research identities are delete-wins; retaining an edit requires a fresh item. */
+export function canKeepLocalConflict(item: PendingOperation): boolean {
+  return !(researchKinds.has(item.operation.kind) && item.remoteDeleted === true && !item.operation.deleted)
+}
+
 export async function resolveConflict(
   session: Session,
   key: string,
@@ -226,6 +233,19 @@ export async function resolveConflict(
     if (!remote) throw new Error('Chưa tìm thấy bản cloud. Bản trên máy vẫn được giữ.')
     await acceptRemoteConflict(item, remote, expectedLocal)
   } else {
+    // Older outbox entries may not yet know the remote record was deleted.
+    // Preserve the local payload and operation identity while making that state
+    // visible to the conflict UI, rather than sending an unsupported recreate.
+    if (researchKinds.has(item.operation.kind) && remote?.deleted) {
+      if (expectedLocal?.deleted ?? item.operation.deleted) {
+        // Both devices made the same deletion. Accept its authoritative version
+        // instead of issuing an update that cannot modify a server tombstone.
+        await acceptRemoteConflict(item, remote, expectedLocal)
+        return
+      }
+      await updatePendingOperation(item, { conflicted: true, remoteDeleted: true })
+      throw new Error('Mục nghiên cứu này đã bị xóa trên cloud. Chọn Dùng bản cloud; nếu cần, tạo lại thành mục mới. / This research item was deleted in the cloud. Use the cloud version, then create a new item if needed.')
+    }
     const refreshed = await prepareLocalConflict(item, remote)
     await uploadRestoredFile(profile, session.token, refreshed.operation, refreshed.needsBlobUpload)
     await updatePendingOperation(refreshed, { needsBlobUpload: false })

@@ -1,4 +1,4 @@
-import { getRecord } from './store'
+import { applyLocalMutations, getRecord } from './store'
 import { androidRecordId, localRecords, mutate } from './sync'
 import { initialReviewItem, nextReview, type ReviewItemPayload } from './review'
 import { parseDrawing, type Drawing } from './drawing'
@@ -16,7 +16,9 @@ async function currentAnnotation(profile: string, record: SyncRecord) {
 }
 
 export async function updateAnnotation(profile: string, record: SyncRecord, changes: AnnotationChanges, localOnly = false) {
-  const current = await currentAnnotation(profile, record)
+  await applyLocalMutations(profile, records => {
+  const current = records.find(item => item.key === record.key && item.profile === profile && !item.deleted && item.kind === 'highlights')
+  if (!current) throw new Error('Không tìm thấy ghi chú trong tài khoản này.')
   if (current.kind !== 'highlights' || !highlightColors.includes(changes.color)) throw new Error('Ghi chú không hợp lệ.')
   if (typeof changes.note !== 'string') throw new Error('Nội dung ghi chú không hợp lệ.')
   const payload: Record<string, unknown> = { ...current.payload, note: changes.note.trim().slice(0, 10000), color: changes.color, updated_at: Date.now() }
@@ -31,15 +33,17 @@ export async function updateAnnotation(profile: string, record: SyncRecord, chan
   let serialized: string
   try { serialized = JSON.stringify(payload) } catch { throw new Error('Nội dung ghi chú không hợp lệ.') }
   if (serialized.length > 32768) throw new Error('Ghi chú và bản vẽ quá lớn để đồng bộ. Hãy rút ngắn ghi chú hoặc giảm nét vẽ.')
-  await mutate(profile, current.kind, current.id, payload, false, localOnly)
+  return [{ kind: current.kind, id: current.id, payload, localOnly }]
+  })
 }
 
 export async function deleteAnnotation(profile: string, record: SyncRecord, localOnly = false) {
-  const current = await currentAnnotation(profile, record)
-  // Retire linked review cards first; no orphan cards remain after deletion.
-  const linked = (await localRecords(profile)).filter(item => item.kind === 'review_items' && !item.deleted && item.payload.annotation_id === annotationId(current))
-  for (const item of linked) await mutate(profile, item.kind, item.id, { ...item.payload, is_enabled: 0, updated_at: Date.now() }, true, localOnly)
-  await mutate(profile, current.kind, current.id, current.payload, true, localOnly)
+  await applyLocalMutations(profile, records => {
+    const current = records.find(item => item.key === record.key && item.profile === profile && !item.deleted && ['highlights', 'bookmarks'].includes(item.kind))
+    if (!current) throw new Error('Không tìm thấy ghi chú trong tài khoản này.')
+    const linked = records.filter(item => item.kind === 'review_items' && !item.deleted && item.payload.annotation_id === annotationId(current))
+    return [...linked.map(item => ({ kind: item.kind, id: item.id, payload: { ...item.payload, is_enabled: 0, updated_at: Date.now() }, deleted: true, localOnly })), { kind: current.kind, id: current.id, payload: current.payload, deleted: true, localOnly }]
+  })
 }
 
 /** Manually adding a card is basic Reading Memory and remains free. */
@@ -57,13 +61,14 @@ export function addAnnotationReview(profile: string, record: SyncRecord, localOn
 }
 
 async function createAnnotationReview(profile: string, record: SyncRecord, localOnly: boolean) {
-  const current = await currentAnnotation(profile, record)
-  if (current.kind !== 'highlights') throw new Error('Ghi chú không hợp lệ.')
-  const id = annotationId(current)
-  const existing = (await localRecords(profile)).find(item => item.kind === 'review_items' && !item.deleted && item.payload.annotation_id === id)
-  if (existing) return
   const reviewId = crypto.randomUUID()
-  await mutate(profile, 'review_items', androidRecordId('review_items', reviewId), initialReviewItem(reviewId, id, String(current.payload.book_id)), false, localOnly)
+  await applyLocalMutations(profile, records => {
+    const current = records.find(item => item.key === record.key && item.profile === profile && !item.deleted && item.kind === 'highlights')
+    if (!current) throw new Error('Không tìm thấy ghi chú trong tài khoản này.')
+    const id = annotationId(current)
+    if (records.some(item => item.kind === 'review_items' && !item.deleted && item.payload.annotation_id === id)) return []
+    return [{ kind: 'review_items', id: androidRecordId('review_items', reviewId), payload: initialReviewItem(reviewId, id, String(current.payload.book_id)), localOnly }]
+  })
 }
 
 export async function rateAnnotationReview(profile: string, record: SyncRecord, rating: 'again' | 'good', localOnly = false) {

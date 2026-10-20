@@ -4,7 +4,7 @@ import { ApiError, deleteAccount, forgotPassword, getCatalog, getEntitlement, ge
 import type { StealthPosition } from './stealth/StealthReader'
 import { readStealthCheckpoint, stealthLocator } from './stealth/checkpoint'
 import { applyLibraryRestore, getCachedCatalog, getFile, getFiles, getOfflineBook, getOfflineBooks, getPending, keyFor, readSession, removeFile, removeLocalDocument, removeOfflineBook, saveCachedCatalog, saveSession, SESSION_STORAGE_KEY } from './store'
-import { androidCompositeRecordId, androidRecordId, broadcastSyncRequired, connectLiveSync, getConflicts, getDeviceId, localRecords, mutate, profileFor, readableError, resolveConflict, syncNow } from './sync'
+import { androidCompositeRecordId, androidRecordId, broadcastSyncRequired, canKeepLocalConflict, connectLiveSync, getConflicts, getDeviceId, localRecords, mutate, profileFor, readableError, resolveConflict, syncNow } from './sync'
 import { prepareBookDownload, saveBookDownload } from './bookDownload'
 import { currentLocalFile, mergeBooksById } from './library'
 import { importWithChunkRecovery } from './lazyRecovery'
@@ -23,16 +23,21 @@ import { AccountSettings, type AccountSettingsSection } from './AccountSettings'
 import { useAdminAccess } from './admin/useAdminAccess'
 import { AnnotationEditor, AnnotationDeleteDialog } from './AnnotationDialogs'
 import { ProRequiredDialog } from './ProRequiredDialog'
-import { addAnnotationReview, annotationId, deleteAnnotation, rateAnnotationReview, updateAnnotation, type AnnotationChanges } from './annotations'
+import { addAnnotationReview, annotationId, deleteAnnotation, updateAnnotation, type AnnotationChanges } from './annotations'
+import { buildReviewQueue, reconcileReviewSession, recordReviewAttempt, type ReviewRating, type ReviewScope, type ReviewSessionState } from './reviewSession'
 import { hasDrawing, parseDrawing, type Drawing } from './drawing'
 import { DrawingPreview } from './DrawingEditor'
 import { clearReaderNoteDraft, emptyReaderNoteDraft, readReaderNoteDraft, writeReaderNoteDraft, type ReaderNoteDraft } from './readerNoteDrafts'
 import { allowsPro, proAccessExpiresAt, verifyProAccess, type ProFeature } from './entitlements'
 
 const AdminWorkspace = lazy(() => importWithChunkRecovery(() => import('./admin/AdminWorkspace')))
+const ResearchWorkspace = lazy(() => importWithChunkRecovery(() => import('./ResearchWorkspace')).then(module => ({ default: module.ResearchWorkspace })))
+const AnnotationSourceActions = lazy(() => importWithChunkRecovery(() => import('./ResearchWorkspace')).then(module => ({ default: module.AnnotationSourceActions })))
+const ComparisonReader = lazy(() => importWithChunkRecovery(() => import('./ComparisonReader')).then(module => ({ default: module.ComparisonReader })))
 import { readingActivity } from './readingStats'
 import { translate } from './uiText'
 import { ImportDocumentDialog } from './ImportDocumentDialog'
+import { ComparisonSourcesDialog } from './ComparisonSourcesDialog'
 import { ReaderErrorBoundary } from './ReaderErrorBoundary'
 import { ReaderNotesPanel } from './ReaderNotesPanel'
 import { ReaderSearchPanel } from './ReaderSearchPanel'
@@ -138,6 +143,10 @@ function App() {
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('all')
   const [reader, setReader] = useState<{ book: Book; bytes: ArrayBuffer; initial?: string } | null>(null)
+  const [comparison, setComparison] = useState<{ profile: string; books: [Book, Book]; initialLocators: [string | undefined, string | undefined] } | null>(null)
+  const [comparisonChoosing, setComparisonChoosing] = useState(false)
+  const comparisonPositions = useRef(new Map<string, { profile: string; book: Book; location: ReaderLocation; session: Session | null }>())
+  const comparisonProgressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [readerLoading, setReaderLoading] = useState(false)
   const [readerError, setReaderError] = useState('')
   const [notice, setNotice] = useState('')
@@ -196,11 +205,16 @@ function App() {
   const [shelfFilter, setShelfFilter] = useState<ShelfFilter>('all')
   const [organizationFilter, setOrganizationFilter] = useState('all')
   const [reviewOpen, setReviewOpen] = useState(false)
-  const [reviewIndex, setReviewIndex] = useState(0)
   const [cardFlipped, setCardFlipped] = useState(false)
-  const [reviewQueue, setReviewQueue] = useState<SyncRecord[]>([])
+  const [reviewSession, setReviewSession] = useState<ReviewSessionState>({ scope: {}, queue: [], index: 0 })
+  const activeReview = reconcileReviewSession(reviewSession, records, profile)
+  const reviewIndex = activeReview.index
+  const reviewQueue = activeReview.queue
   const reviewRatingActive = useRef(false)
-  const [reviewStats, setReviewStats] = useState({ mastered: 0, reviewAgain: 0 })
+  const reviewRun = useRef(0)
+  const reviewStarting = useRef(false)
+  const [reviewBusy, setReviewBusy] = useState(false)
+  const [reviewStats, setReviewStats] = useState({ mastered: 0, reviewAgain: 0, skipped: 0 })
   const [entitlement, setEntitlement] = useState<Entitlement | null>(null)
   const [accountSection, setAccountSection] = useState<AccountSettingsSection>('profile')
   const [controls, setControls] = useState<{ previous: () => void; next: () => void } | null>(null)
@@ -310,6 +324,7 @@ function App() {
 
   useEffect(() => {
     const onGlobalKey = (e: KeyboardEvent) => {
+      if (comparison || comparisonChoosing) return
       if (stealthActive) return
       if (reader && (e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'f' && !editingAnnotation && !deletingAnnotation && !authOpen && !proRequiredFeature) {
         e.preventDefault()
@@ -344,7 +359,7 @@ function App() {
     }
     window.addEventListener('keydown', onGlobalKey)
     return () => window.removeEventListener('keydown', onGlobalKey)
-  }, [reader, tocOpen, settingsOpen, noteOpen, searchOpen, reviewOpen, authOpen, selectedBook, stealthActive, setPage, closeBookDetails, editingAnnotation, deletingAnnotation, annotationBusy, proRequiredFeature, openReaderSearch])
+  }, [comparison, comparisonChoosing, reader, tocOpen, settingsOpen, noteOpen, searchOpen, reviewOpen, authOpen, selectedBook, stealthActive, setPage, closeBookDetails, editingAnnotation, deletingAnnotation, annotationBusy, proRequiredFeature, openReaderSearch])
 
   useEffect(() => {
     const updateDay = () => setStatsNow(ms())
@@ -359,7 +374,8 @@ function App() {
     setTagsCollectionsOpen(false); setNewTagName(''); setNewCollectionName('')
     setOrganizationFilter('all')
     setStealthGrant(null)
-    setReviewOpen(false); setReviewQueue([]); setReviewIndex(0)
+    reviewRun.current++
+    setReviewOpen(false); setReviewSession({ scope: {}, queue: [], index: 0 }); setComparison(null); setComparisonChoosing(false)
   }, [profile])
 
   useEffect(() => {
@@ -380,6 +396,16 @@ function App() {
     setOfflineIds(new Set([...nextOffline, ...publicOffline].map(item => item.bookId)))
     setLoadedProfile(selectedProfile)
   }, [])
+  const currentReviewKey = reviewQueue[reviewIndex]?.key
+  useEffect(() => { setCardFlipped(false) }, [currentReviewKey])
+  useEffect(() => {
+    const channel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('nocap_tab_sync') : null
+    const refresh = () => { void refreshLocal(profile).catch(() => {}) }
+    const onMessage = (event: MessageEvent) => { if (event.data?.type === 'sync_required' && event.data.profile === profile) refresh() }
+    channel?.addEventListener('message', onMessage)
+    window.addEventListener('focus', refresh)
+    return () => { channel?.close(); window.removeEventListener('focus', refresh) }
+  }, [profile, refreshLocal])
   useEffect(() => {
     let active = true
     void (async () => {
@@ -475,6 +501,23 @@ function App() {
     await refreshLocal(selectedProfile).catch(() => {})
     if (activeSession && navigator.onLine && book.source !== 'local') void synchronize(activeSession, true)
   }, [refreshLocal, synchronize, lang])
+
+  const flushComparisonProgress = useCallback(() => {
+    if (comparisonProgressTimer.current) { clearTimeout(comparisonProgressTimer.current); comparisonProgressTimer.current = null }
+    const positions = [...comparisonPositions.current.values()]
+    comparisonPositions.current.clear()
+    for (const saved of positions) void persistReadingProgress(saved.profile, saved.book, saved.location, saved.session)
+  }, [persistReadingProgress])
+  const recordComparisonLocation = useCallback((book: Book, next: ReaderLocation) => {
+    const owner = profileRef.current
+    comparisonPositions.current.set(`${owner}:${book.id}`, { profile: owner, book, location: next, session: sessionRef.current })
+    if (comparisonProgressTimer.current) clearTimeout(comparisonProgressTimer.current)
+    comparisonProgressTimer.current = setTimeout(flushComparisonProgress, 1000)
+  }, [flushComparisonProgress])
+  useEffect(() => {
+    window.addEventListener('pagehide', flushComparisonProgress)
+    return () => { window.removeEventListener('pagehide', flushComparisonProgress); flushComparisonProgress() }
+  }, [flushComparisonProgress])
 
   useEffect(() => {
     if (!session) return
@@ -882,7 +925,11 @@ function App() {
       void refreshLocal(profileFor(session))
       void synchronize(session, true)
     } catch (err) {
-      if (isCurrent()) setNotice(readableError(err, lang))
+      if (isCurrent()) {
+        setNotice(readableError(err, lang))
+        const latest = await getConflicts(targetProfile).catch(() => null)
+        if (isCurrent() && latest) setConflicts(latest)
+      }
     }
   }
 
@@ -1521,73 +1568,114 @@ async function sha256Hex(file: Blob): Promise<string> {
     } catch (error) { if (profileRef.current === targetProfile) setNotice(readableError(error, lang)) }
   }
 
-  async function startFlashcardReview(autoGenerate = false) {
+  async function researchChanged() {
+    const owner = profile
+    if (profileRef.current !== owner) return
+    broadcastSyncRequired(owner)
+    await refreshLocal(owner)
+    if (profileRef.current === owner && session && navigator.onLine) void synchronize(session, true)
+  }
+
+  async function loadComparisonBook(book: Book, signal: AbortSignal): Promise<ArrayBuffer> {
+    const owner = profile
+    const activeSession = session
+    if (profileRef.current !== owner) throw new Error(lang === 'vi' ? 'Tài khoản đã thay đổi.' : 'Account changed.')
+    const [stored, offlineCopy] = await Promise.all([getFile(owner, book.id), getOfflineBook(offlineProfileFor(book, owner), book.id)])
+    signal.throwIfAborted()
+    if (profileRef.current !== owner || sessionRef.current?.token !== activeSession?.token) throw new Error(lang === 'vi' ? 'Phiên đọc đã thay đổi.' : 'Reading session changed.')
+    const local = currentLocalFile(book, stored)
+    const bytes = local ? await local.data.arrayBuffer() : offlineCopy ? await offlineCopy.data.arrayBuffer() : await loadBookBytes(book, activeSession?.token, { signal })
+    signal.throwIfAborted()
+    if (profileRef.current !== owner || !bytes.byteLength) throw new Error(lang === 'vi' ? 'Không mở được nguồn này.' : 'Unable to open this source.')
+    return bytes
+  }
+
+  function compareBooks(left: Book, right: Book, locators?: [string | undefined, string | undefined]) {
+    if (readerRef.current) closeReaderRef.current()
+    setPage('memory')
+    setComparisonChoosing(false)
+    setComparison({ profile, books: [left, right], initialLocators: locators || [toText(progressFor(records, left.id)?.payload.locator_json) || undefined, toText(progressFor(records, right.id)?.payload.locator_json) || undefined] })
+  }
+
+  async function compareNotes(left: SyncRecord, right: SyncRecord) {
+    const latest = await localRecords(profile)
+    if (profileRef.current !== profile) return
+    const a = latest.find(note => note.key === left.key && !note.deleted && note.kind === 'highlights')
+    const b = latest.find(note => note.key === right.key && !note.deleted && note.kind === 'highlights')
+    const first = books.find(book => book.id === a?.payload.book_id), second = books.find(book => book.id === b?.payload.book_id)
+    if (!a || !b || !first || !second) { setNotice(lang === 'vi' ? 'Một nguồn không còn trong thư viện. Ghi chú trích dẫn vẫn được giữ lại.' : 'One source is no longer available. Your saved quotation is retained.'); return }
+    compareBooks(first, second, [toText(a.payload.locator_json), toText(b.payload.locator_json)])
+  }
+
+  async function openResearchSource(record: SyncRecord) {
+    const latest = (await localRecords(profile)).find(note => note.key === record.key && !note.deleted)
+    if (profileRef.current !== profile) return
+    const book = books.find(item => item.id === latest?.payload.book_id)
+    if (!latest || !book) { setNotice(lang === 'vi' ? 'Nguồn không còn trong thư viện. Ghi chú trích dẫn vẫn được giữ lại.' : 'This source is no longer in your library. Your saved quotation is retained.'); return }
+    const locatorJson = toText(latest.payload.locator_json)
+    const opened = await openBook(book, locatorJson)
+    if (opened && profileRef.current === profile && readerRef.current?.id === book.id && locatorJson) setNoteNavigation({ locatorJson, requestId: ++noteNavigationId.current })
+  }
+
+  async function startFlashcardReview(autoGenerate = false, scope: ReviewScope = {}) {
+    if (reviewStarting.current || reviewRatingActive.current) return
     if (autoGenerate && !await requireProFeature('ADVANCED_READING_MEMORY')) return
     const targetProfile = profile
     if (profileRef.current !== targetProfile) return
-    const eligible = annotations.filter(r => r.kind === 'highlights')
-    if (!eligible.length) {
-      setNotice(translate("Chưa có trích dẫn hoặc ghi chú nào trong mục Điều đáng nhớ để ôn tập.", lang))
-      return
-    }
+    reviewStarting.current = true
+    const run = ++reviewRun.current
     try {
-      const now = ms()
       if (autoGenerate) {
-        for (const highlight of eligible) {
+        for (const highlight of annotations.filter(record => record.kind === 'highlights')) {
           if (profileRef.current !== targetProfile) return
           await addAnnotationReview(targetProfile, highlight, books.find(book => book.id === highlight.payload.book_id)?.source === 'local')
         }
       }
-      const persistedReviewItems = (await localRecords(targetProfile)).filter(item => item.kind === 'review_items' && !item.deleted)
-      const dueAnnotations = new Set(
-        persistedReviewItems
-          .filter(item => reviewIsDue(item.payload as unknown as ReviewItemPayload, now))
-          .map(item => toText(item.payload.annotation_id)),
-      )
-      const queue = eligible.filter(item => dueAnnotations.has(toText(item.payload.id) || item.id))
+      const queue = buildReviewQueue(await localRecords(targetProfile), targetProfile, scope)
       await refreshLocal(targetProfile)
-      if (profileRef.current !== targetProfile) return
+      if (profileRef.current !== targetProfile || reviewRun.current !== run) return
       if (session && online) void synchronize(session, true)
       if (!queue.length) {
-        setNotice((lang === 'vi' ? 'Chưa có thẻ đến hạn. Bạn có thể thêm từng ghi chú vào lịch ôn hoặc dùng Pro để tạo thẻ tự động.' : 'No cards are due. Add individual notes to your review schedule, or use Pro to generate cards automatically.'))
+        setNotice(lang === 'vi' ? 'Chưa có thẻ cần ôn trong phạm vi này. Hãy thêm ghi chú vào Flashcards; thẻ đã nhớ sẽ xuất hiện khi đến hạn.' : 'No cards need review in this scope. Add notes to Flashcards; remembered cards return when due.')
         return
       }
-      const shuffled = [...queue].sort(() => Math.random() - 0.5)
-      setReviewQueue(shuffled)
-      setReviewIndex(0)
+      setReviewSession({ scope, queue, index: 0 })
       setCardFlipped(false)
-      setReviewStats({ mastered: 0, reviewAgain: 0 })
+      setReviewStats({ mastered: 0, reviewAgain: 0, skipped: 0 })
       setReviewOpen(true)
       trackWebFeature('review_start', 'memory')
     } catch (error) {
-      setNotice(readableError(error, lang))
-    }
+      if (profileRef.current === targetProfile) setNotice(readableError(error, lang))
+    } finally { reviewStarting.current = false }
   }
 
-  async function handleFlashcardRating(rating: 'again' | 'good') {
+  async function handleFlashcardRating(rating: ReviewRating) {
     if (reviewRatingActive.current || !reviewQueue.length || reviewIndex >= reviewQueue.length) return
     reviewRatingActive.current = true
+    setReviewBusy(true)
     const currentCard = reviewQueue[reviewIndex]
     const targetProfile = profile
+    const run = reviewRun.current
+    const scope = activeReview.scope
     try {
       const localOnly = books.find(book => book.id === currentCard.payload.book_id)?.source === 'local'
-      await rateAnnotationReview(targetProfile, currentCard, rating, localOnly)
+      const committed = await recordReviewAttempt(targetProfile, currentCard, rating, scope, localOnly)
+      broadcastSyncRequired(targetProfile)
+      const latest = await localRecords(targetProfile)
       await refreshLocal(targetProfile)
-      if (profileRef.current !== targetProfile) return
+      if (profileRef.current !== targetProfile || reviewRun.current !== run || !committed) return
       if (session && online && !localOnly) void synchronize(session, true)
       setCardFlipped(false)
-      if (rating === 'again') {
-        setReviewStats(prev => ({ ...prev, reviewAgain: prev.reviewAgain + 1 }))
-        setReviewQueue(prev => [...prev, currentCard])
-        setReviewIndex(prev => prev + 1)
-      } else {
-        setReviewStats(prev => ({ ...prev, mastered: prev.mastered + 1 }))
-        setReviewIndex(prev => prev + 1)
-        if (reviewIndex + 1 >= reviewQueue.length) trackWebFeature('review_complete', 'memory')
-      }
+      setReviewStats(prev => ({ ...prev, mastered: prev.mastered + Number(rating === 'good'), reviewAgain: prev.reviewAgain + Number(rating === 'again'), skipped: prev.skipped + Number(rating === 'skip') }))
+      setReviewSession(previous => {
+        const current = reconcileReviewSession(previous, latest, targetProfile)
+        if (current.queue[current.index]?.key !== currentCard.key) return current
+        return { ...current, queue: rating === 'again' ? [...current.queue, currentCard] : current.queue, index: current.index + 1 }
+      })
+      if (rating !== 'again' && reviewIndex + 1 >= reviewQueue.length) trackWebFeature('review_complete', 'memory')
     } catch (error) {
       if (profileRef.current === targetProfile) setNotice(readableError(error, lang))
-    } finally { reviewRatingActive.current = false }
+    } finally { reviewRatingActive.current = false; setReviewBusy(false) }
   }
 
   async function deleteBook(book: Book) {
@@ -1629,7 +1717,7 @@ async function sha256Hex(file: Blob): Promise<string> {
 
   return <div className="app-shell">
     <div className="analog-grain-overlay" aria-hidden="true" />
-    <OceanWaves enabled={!reader && !reviewOpen} />
+    <OceanWaves enabled={!reader && !reviewOpen && !comparison} />
     <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
       <div className="brand"><div className="brand-mark"><BookOpen size={24} /></div><div><strong>NoCap</strong><span>Quiet Knowledge Workspace</span></div><button className="mobile-close icon-button" onClick={() => setSidebarOpen(false)} aria-label={translate("Đóng menu", lang)}><X size={20} /></button></div>
       <div className="sidebar-caption">{curT.nav.mySpace}</div>
@@ -1640,7 +1728,7 @@ async function sha256Hex(file: Blob): Promise<string> {
     </aside>
     {sidebarOpen && <button className="sidebar-shade" aria-label={translate("Đóng menu", lang)} onClick={() => setSidebarOpen(false)} />}
 
-    <main className="main-area">
+    <main className="main-area" inert={!!comparison || comparisonChoosing || reviewOpen}>
       <header className="swiss-header">
         <div className="swiss-header-brand" onClick={() => { setPage('home'); setQuery(''); setCategory('all') }}>
           <div className="swiss-header-logo">
@@ -1952,8 +2040,12 @@ async function sha256Hex(file: Blob): Promise<string> {
               <div className="count-chip" style={{ background: 'rgba(255,255,255,0.08)', color: '#c8d8f8', border: '1px solid rgba(100,140,255,0.2)' }}>{curT.banners.memory.statsSnippet(annotations.length, dueReviewCount)}</div>
               {annotations.length > 0 && <><button className="light-button" onClick={() => void startFlashcardReview()}><Sparkles size={15} /> {curT.banners.memory.reviewBtn}</button><button className="light-button" onClick={() => void startFlashcardReview(true)}><Sparkles size={15} />{lang === 'vi' ? 'Tạo thẻ tự động · Pro' : 'Auto-generate cards · Pro'}</button><button className="light-button" disabled={pdfExportBusy} aria-busy={pdfExportBusy} onClick={() => void exportPdf()}><FileDown size={15} /> {pdfExportBusy ? (lang === 'vi' ? 'Đang tạo PDF…' : 'Creating PDF…') : curT.banners.memory.exportBtn}</button></>}
             </div>
-          </div><label className="search-field memory-search"><Search size={18} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder={curT.memoryPage.searchPlaceholder} aria-label={translate("Tìm ghi chú", lang)} /></label>{annotations.filter(record => `${record.payload.text || ''} ${record.payload.note || ''} ${record.payload.chapter_title || ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())).length ? <div className="memory-list">{annotations.filter(record => `${record.payload.text || ''} ${record.payload.note || ''} ${record.payload.chapter_title || ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())).map(record => { const book = books.find(item => item.id === record.payload.book_id); return <div className="memory-item" key={record.key}><div className="memory-icon">{record.kind === 'highlights' ? <Highlighter size={18} /> : <Bookmark size={18} />}</div><div><div className="memory-book">{book?.title || curT.memoryPage.privateDoc}</div><blockquote>{toText(record.payload.text) || toText(record.payload.chapter_title) || curT.memoryPage.bookmarkFallback}</blockquote>{!!record.payload.note && <p>{toText(record.payload.note)}</p>}{hasDrawing(record.payload.drawing) && <DrawingPreview drawing={record.payload.drawing} label={lang === 'vi' ? 'Ghi chú vẽ tay' : 'Handwritten note'} />}</div><div className="memory-item-actions">
-          {book && <button className="text-button" onClick={() => void openBook(book, toText(record.payload.locator_json))}>{curT.memoryPage.openBook} <ArrowRight size={15} /></button>}
+          </div>
+          <div className="section-header" style={{ margin: '22px 0 12px' }}><h3>{lang === 'vi' ? 'Không gian nghiên cứu' : 'Research workspace'}</h3><button className="secondary" onClick={() => setComparisonChoosing(true)}><Layers size={16} />{lang === 'vi' ? 'Đọc đối chiếu hai nguồn' : 'Compare two sources'}</button></div>
+          <Suspense fallback={<p className="muted">{lang === 'vi' ? 'Đang mở chủ đề…' : 'Loading topics…'}</p>}><ResearchWorkspace key={profile} profile={profile} lang={lang} records={records} books={books} onChanged={researchChanged} onOpenSource={record => { void openResearchSource(record).catch(error => setNotice(readableError(error, lang))) }} onCompare={(left, right) => { void compareNotes(left, right).catch(error => setNotice(readableError(error, lang))) }} onStartReview={scope => { void startFlashcardReview(false, scope) }} onAddReview={async record => { await addAnnotationReview(profile, record, books.find(book => book.id === record.payload.book_id)?.source === 'local'); await researchChanged() }} /></Suspense>
+          <h3 style={{ margin: '28px 0 14px' }}>{lang === 'vi' ? 'Tất cả ghi chú' : 'All notes'}</h3>
+          <label className="search-field memory-search"><Search size={18} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder={curT.memoryPage.searchPlaceholder} aria-label={translate("Tìm ghi chú", lang)} /></label>{annotations.filter(record => `${record.payload.text || ''} ${record.payload.note || ''} ${record.payload.chapter_title || ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())).length ? <div className="memory-list">{annotations.filter(record => `${record.payload.text || ''} ${record.payload.note || ''} ${record.payload.chapter_title || ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())).map(record => { const book = books.find(item => item.id === record.payload.book_id); return <div className="memory-item" key={record.key}><div className="memory-icon">{record.kind === 'highlights' ? <Highlighter size={18} /> : <Bookmark size={18} />}</div><div><div className="memory-book">{book?.title || curT.memoryPage.privateDoc}</div><blockquote>{toText(record.payload.text) || toText(record.payload.chapter_title) || curT.memoryPage.bookmarkFallback}</blockquote>{!!record.payload.note && <p>{toText(record.payload.note)}</p>}{hasDrawing(record.payload.drawing) && <DrawingPreview drawing={record.payload.drawing} label={lang === 'vi' ? 'Ghi chú vẽ tay' : 'Handwritten note'} />}</div><div className="memory-item-actions">
+          <Suspense fallback={null}><AnnotationSourceActions record={record} records={records} books={books} lang={lang} onOpenSource={item => { void openResearchSource(item).catch(error => setNotice(readableError(error, lang))) }} onCompare={(left, right) => { void compareNotes(left, right).catch(error => setNotice(readableError(error, lang))) }} /></Suspense>
           {record.kind === 'highlights' && <>
             {!reviewItems.some(item => item.payload.annotation_id === annotationId(record)) && <button className="text-button" onClick={() => void handleAddReview(record)}><Plus size={15} />{lang === 'vi' ? 'Thêm vào ôn tập' : 'Add to review'}</button>}
             <button className="icon-button" aria-label={lang === 'vi' ? 'Sửa highlight và ghi chú' : 'Edit highlight and note'} title={lang === 'vi' ? 'Sửa' : 'Edit'} onClick={() => { setAnnotationError(''); setEditingAnnotation(record) }}><Edit3 size={17} /></button>
@@ -2062,6 +2154,8 @@ async function sha256Hex(file: Blob): Promise<string> {
 
     {(readerLoading || readerError) && <div className="overlay"><div className="loading-card"><button className="icon-button close-floating" onClick={() => setPage(backgroundPageRef.current)} aria-label={lang === 'vi' ? 'Đóng' : 'Close'}><X size={20} /></button>{readerLoading ? <><div className="loader" /><h2>{lang === 'vi' ? 'Đang mở sách…' : 'Opening book…'}</h2><p>{lang === 'vi' ? 'Đang chuẩn bị nội dung để đọc.' : 'Preparing the document for reading.'}</p></> : <><FileText size={32} /><h2>{lang === 'vi' ? 'Chưa mở được tài liệu' : 'Unable to open document'}</h2><p>{readerError}</p><button className="primary" onClick={() => setPage(backgroundPageRef.current)}>{lang === 'vi' ? 'Đóng' : 'Close'}</button></>}</div></div>}
 
+    {comparisonChoosing && <ComparisonSourcesDialog books={books} initialBookId={reader?.book.id} lang={lang} onClose={() => setComparisonChoosing(false)} onCompare={(left, right) => compareBooks(left, right)} />}
+    {comparison?.profile === profile && <Suspense fallback={<div className="overlay"><div className="loading-card"><p>{lang === 'vi' ? 'Đang mở hai nguồn…' : 'Opening both sources…'}</p><button className="secondary" onClick={() => setComparison(null)}>{lang === 'vi' ? 'Đóng' : 'Close'}</button></div></div>}><ComparisonReader key={JSON.stringify([profile, comparison.books.map(book => book.id), comparison.initialLocators])} profile={profile} lang={lang} books={comparison.books} initialLocators={comparison.initialLocators} records={records} loadBook={loadComparisonBook} onChanged={researchChanged} onLocation={recordComparisonLocation} onClose={() => { flushComparisonProgress(); setComparison(null) }} /></Suspense>}
     {reader && noticeBanner}
     {reader && <div className={`reader-shell ${theme}`}>
       <div className="reader-topbar">
@@ -2069,6 +2163,7 @@ async function sha256Hex(file: Blob): Promise<string> {
         <button className="reader-back" onClick={() => setPage('library')} aria-label={lang === 'vi' ? 'Quay lại tủ sách' : 'Back to library'}><ArrowLeft size={19} /><span>{lang === 'vi' ? 'Tủ sách' : 'Library'}</span></button>
         <div className="reader-title"><strong>{reader.book.title}</strong><small>{bookLabel(reader.book, lang)}</small></div>
         <div className="reader-actions">
+          <button className="icon-button" onClick={() => setComparisonChoosing(true)} aria-label={lang === 'vi' ? 'Đọc đối chiếu hai nguồn' : 'Compare two sources'} title={lang === 'vi' ? 'Đọc đối chiếu' : 'Compare sources'}><Layers size={19} /></button>
           <button className="stealth-topbar-pill" title={curT.stealth.btnTitle} aria-label={curT.stealth.btnLabel} onClick={() => void launchStealth()}><Briefcase size={15} /><span>{lang === 'vi' ? 'Đọc ẩn · Pro (F2)' : 'Stealth · Pro (F2)'}</span></button>
           <button className="icon-button" title={lang === 'vi' ? 'Mục lục sách' : 'Table of contents'} aria-label={lang === 'vi' ? 'Mục lục' : 'Table of contents'} onClick={() => { setNavigateTarget(null); setTocOpen(true) }}><List size={20} /></button>
           <button ref={searchToggle} className="icon-button reader-search-toggle" title={lang === 'vi' ? 'Tìm trong sách (Ctrl+F / ⌘F)' : 'Search in book (Ctrl+F / ⌘F)'} aria-label={lang === 'vi' ? 'Tìm trong sách' : 'Search in book'} aria-expanded={searchOpen} aria-controls="reader-search-panel" onClick={() => { setSearchOpen(open => !open); setNoteOpen(false); setActiveSearchHit(null) }}><Search size={19} /></button>
@@ -2131,9 +2226,9 @@ async function sha256Hex(file: Blob): Promise<string> {
     {settingsOpen && reader && <div className="modal-shade" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setSettingsOpen(false) }}><div className="dialog settings-popup" role="dialog" aria-modal="true" aria-label={translate("Tùy chỉnh đọc", lang)}><div className="dialog-header"><h2>{translate("Tùy chỉnh đọc", lang)}</h2><button className="icon-button" onClick={() => setSettingsOpen(false)} aria-label={translate("Đóng", lang)}><X size={18} /></button></div><label className="range-label">{translate("Cỡ chữ", lang)} <strong>{fontSize}%</strong><input type="range" min="80" max="170" step="10" value={fontSize} onChange={event => updateComfort({ fontSize: Number(event.target.value) })} /></label><div className="setting-group"><span className="setting-label">{translate("Kiểu chữ", lang)}</span><div className="toggle-row"><button className={`choice-chip ${fontFamily === 'serif' ? 'active' : ''}`} onClick={() => updateComfort({ fontFamily: 'serif' })}>{translate("Literata · Sách", lang)}</button><button className={`choice-chip ${fontFamily === 'sans' ? 'active' : ''}`} onClick={() => updateComfort({ fontFamily: 'sans' })}>{curT.accountPage.sansChoice}</button><button className={`choice-chip ${fontFamily === 'mono' ? 'active' : ''}`} onClick={() => updateComfort({ fontFamily: 'mono' })}>{translate("Đơn cách", lang)}</button></div></div><div className="setting-group"><span className="setting-label">{translate("Căn lề", lang)}</span><div className="toggle-row"><button className={`choice-chip ${textAlignment === 'left' ? 'active' : ''}`} onClick={() => updateComfort({ textAlignment: 'left' })}><AlignLeft size={15} />  {translate("Trái", lang)}</button><button className={`choice-chip ${textAlignment === 'justify' ? 'active' : ''}`} onClick={() => updateComfort({ textAlignment: 'justify' })}><AlignJustify size={15} />  {translate("Căn đều 2 bên", lang)}</button></div></div><div className="setting-group"><span className="setting-label">{translate("Khoảng cách dòng", lang)}</span><div className="toggle-row"><button className={`choice-chip ${lineHeight === 1.4 ? 'active' : ''}`} onClick={() => updateComfort({ lineHeight: 1.4 })}>{translate("Gọn (1.4)", lang)}</button><button className={`choice-chip ${lineHeight === 1.65 ? 'active' : ''}`} onClick={() => updateComfort({ lineHeight: 1.65 })}>{translate("Vừa (1.65)", lang)}</button><button className={`choice-chip ${lineHeight === 1.9 ? 'active' : ''}`} onClick={() => updateComfort({ lineHeight: 1.9 })}>{translate("Thoáng (1.9)", lang)}</button></div></div><div className="setting-group"><span className="setting-label">{translate("Độ rộng trang", lang)}</span><div className="toggle-row"><button className={`choice-chip ${readerWidth === 'narrow' ? 'active' : ''}`} onClick={() => updateComfort({ readerWidth: 'narrow' })}>{translate("Gọn", lang)}</button><button className={`choice-chip ${readerWidth === 'standard' ? 'active' : ''}`} onClick={() => updateComfort({ readerWidth: 'standard' })}>{translate("Tiêu chuẩn", lang)}</button><button className={`choice-chip ${readerWidth === 'wide' ? 'active' : ''}`} onClick={() => updateComfort({ readerWidth: 'wide' })}>{translate("Rộng", lang)}</button></div></div><div className="setting-group"><span className="setting-label">{translate("Màu nền", lang)}</span><div className="theme-row">{(['paper', 'sepia', 'night'] as const).map(value => <button key={value} className={`theme-chip ${value} ${theme === value ? 'chosen' : ''}`} onClick={() => updateComfort({ theme: value })}>{value === 'paper' ? translate("Giấy sáng", lang) : value === 'sepia' ? translate("Vàng dịu", lang) : translate("Ban đêm", lang)}</button>)}</div></div><div className="setting-group stealth-settings-section"><span className="setting-label">{lang === 'vi' ? 'Chế độ ngụy trang công sở (Boss Key)' : 'Workplace Disguise (Boss Key)'}</span><p className="muted" style={{ fontSize: '11px', margin: '4px 0 10px', lineHeight: 1.5 }}>{curT.stealth.keyboardGuide} {lang === 'vi' ? 'F2: bật/tắt Đọc ẩn · Pro. F10: toàn màn hình. Alt + 1/2/3: Excel/VS Code/Word. F12 hoặc Alt + P: ẩn nội dung sách.' : 'F2: enter/leave Stealth · Pro. F10: fullscreen. Alt + 1/2/3: Excel/VS Code/Word. F12 or Alt + P: hide book content.'}</p><button type="button" className="stealth-launch-btn" onClick={() => void launchStealth()}><Briefcase size={16} /> {lang === 'vi' ? 'Bật Đọc ẩn · Pro (F2)' : 'Activate Stealth · Pro (F2)'}</button></div></div></div>}
 
 
-    {reviewOpen && reviewQueue.every(card => card.profile === profile) && <div className="modal-shade" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setReviewOpen(false) }}><div className="flashcard-modal" role="dialog" aria-modal="true" aria-label={translate("Ôn tập ghi chú Flashcards", lang)}>
+    {reviewOpen && reviewSession.queue.every(card => card.profile === profile) && <div className="modal-shade" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setReviewOpen(false) }}><div className="flashcard-modal" role="dialog" aria-modal="true" aria-label={translate("Ôn tập ghi chú Flashcards", lang)}>
       <div className="flashcard-header">
-        <div className="flashcard-header-copy"><p className="eyebrow">{translate('ÔN TẬP GHI CHÚ', lang)}</p><p className="flashcard-count">{reviewIndex < reviewQueue.length ? `${translate('Thẻ', lang)} ${reviewIndex + 1} / ${reviewQueue.length}` : translate('Đã hoàn thành', lang)}</p></div>
+        <div className="flashcard-header-copy"><p className="eyebrow">{translate('ÔN TẬP GHI CHÚ', lang)}</p>{(activeReview.scope.topicId || activeReview.scope.examPlanId) && <p className="muted" style={{ fontSize: 12, margin: '4px 0', overflowWrap: 'anywhere' }}>{toText(records.find(record => !record.deleted && record.payload.id === (activeReview.scope.topicId || activeReview.scope.examPlanId) && record.kind === (activeReview.scope.topicId ? 'knowledge_topics' : 'exam_plans'))?.payload.name)}</p>}<p className="flashcard-count">{reviewIndex < reviewQueue.length ? `${translate('Thẻ', lang)} ${reviewIndex + 1} / ${reviewQueue.length}` : translate('Đã hoàn thành', lang)}</p></div>
         <span className="flashcard-mastered"><strong>{reviewStats.mastered}</strong><span>{translate('đã thuộc', lang)}</span></span>
         <button type="button" className="icon-button flashcard-close" onClick={() => setReviewOpen(false)} aria-label={translate('Đóng', lang)} autoFocus><X size={20} /></button>
       </div>
@@ -2164,19 +2259,21 @@ async function sha256Hex(file: Blob): Promise<string> {
         </div>
         <button className="flip-card-btn" onClick={() => setCardFlipped(!cardFlipped)}><RotateCcw size={15} /> {cardFlipped ? translate('Xem lại mặt trước', lang) : translate('Lật thẻ xem ghi chú', lang)}</button>
         <div className="flashcard-actions">
-          <button className="rating-btn again" onClick={() => void handleFlashcardRating('again')}>{translate('Cần ôn lại', lang)}</button>
-          <button className="rating-btn good" onClick={() => void handleFlashcardRating('good')}>{translate('Đã nhớ rõ', lang)}</button>
+          <button className="rating-btn again" disabled={reviewBusy} onClick={() => void handleFlashcardRating('again')}>{translate('Cần ôn lại', lang)}</button>
+          <button className="rating-btn good" disabled={reviewBusy} onClick={() => void handleFlashcardRating('good')}>{translate('Đã nhớ rõ', lang)}</button>
         </div>
+        <button className="text-button" disabled={reviewBusy} onClick={() => void handleFlashcardRating('skip')}>{lang === 'vi' ? 'Bỏ qua lần này — không tính là quên' : 'Skip for now — not a failed review'}</button>
       </>
     })() : <div className="review-complete">
-      <h2>{translate("Hoàn thành phiên ôn tập!", lang)}</h2>
-      <p className="muted">{translate("Tuyệt vời! Bạn đã xem lại toàn bộ các thẻ ghi chú trong phiên này.", lang)}</p>
+      <h2>{lang === 'vi' ? 'Phiên ôn đã kết thúc' : 'Review session finished'}</h2>
+      <p className="muted">{lang === 'vi' ? 'Thẻ bỏ qua vẫn chưa được tính là đã ôn. Ghi chú bị gỡ khỏi chủ đề không nhận kết quả ôn tập.' : 'Skipped cards remain unreviewed. Notes removed from a topic receive no review result.'}</p>
       <div className="review-stats-row">
         <div className="review-stat-pill">{translate('Đã nhớ:', lang)} {reviewStats.mastered} {lang === 'en' && reviewStats.mastered === 1 ? 'card' : translate('thẻ', lang)}</div>
         <div className="review-stat-pill">{translate('Ôn lại:', lang)} {reviewStats.reviewAgain} {lang === 'en' && reviewStats.reviewAgain === 1 ? 'time' : translate('lần', lang)}</div>
+        <div className="review-stat-pill">{lang === 'vi' ? 'Bỏ qua:' : 'Skipped:'} {reviewStats.skipped}</div>
       </div>
       <div className="review-complete-actions">
-        <button className="secondary" onClick={() => void startFlashcardReview()}>{translate("Ôn tập lại", lang)}</button>
+        <button className="secondary" onClick={() => void startFlashcardReview(false, activeReview.scope)}>{translate("Ôn tập lại", lang)}</button>
         <button className="primary" onClick={() => setReviewOpen(false)}>{translate("Hoàn tất", lang)}</button>
       </div>
     </div>}</div></div>}
@@ -2270,7 +2367,8 @@ async function sha256Hex(file: Blob): Promise<string> {
       <p className="muted">{lang === 'vi' ? 'Chọn phiên bản muốn giữ cho mỗi mục.' : 'Choose which version to keep for each item.'}</p>
       <div style={{ maxHeight: '55vh', overflow: 'auto' }}>{conflicts.map(item => <section key={item.key}>
         <p>{toText(item.operation.payload.text) || toText(item.operation.payload.name) || item.operation.kind}</p>
-        <div className="dialog-actions"><button className="secondary" onClick={() => void handleResolveConflict(item.key, 'take_remote')}>{lang === 'vi' ? 'Dùng bản cloud' : 'Use cloud version'}</button><button className="primary" onClick={() => void handleResolveConflict(item.key, 'keep_local')}>{lang === 'vi' ? 'Giữ bản trên máy' : 'Keep local version'}</button></div>
+        {!canKeepLocalConflict(item) && <p className="muted">{lang === 'vi' ? 'Mục nghiên cứu này đã bị xóa trên thiết bị khác. Dùng bản cloud để xác nhận xóa; bạn có thể tạo một mục mới. Ghi chú gốc vẫn được giữ.' : 'This research item was deleted on another device. Use the cloud version to accept deletion; you can create a new item. Original notes are retained.'}</p>}
+        <div className="dialog-actions"><button className="secondary" onClick={() => void handleResolveConflict(item.key, 'take_remote')}>{lang === 'vi' ? 'Dùng bản cloud' : 'Use cloud version'}</button><button className="primary" disabled={!canKeepLocalConflict(item)} onClick={() => void handleResolveConflict(item.key, 'keep_local')}>{lang === 'vi' ? 'Giữ bản trên máy' : 'Keep local version'}</button></div>
       </section>)}</div>
     </div></div>}
 

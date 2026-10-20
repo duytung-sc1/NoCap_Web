@@ -71,6 +71,9 @@ async function withDatabase<T>(operation: (database: IDBPDatabase<NoCapDB>) => P
 
 const range = (profile: string) => IDBKeyRange.bound(`${profile}:`, `${profile}:\uffff`)
 export const keyFor = (profile: string, id: string) => `${profile}:${id}`
+// A legacy client can advance past Web-only rows. Replay once with the new
+// feed, using an independent cursor that an older open tab cannot overwrite.
+const syncCursorKey = (profile: string) => `sync-cursor:research-v1:${profile}`
 
 export async function getFiles(profile: string) { return withDatabase(database => database.getAll('files', range(profile))) }
 export async function getFile(profile: string, id: string) { return withDatabase(database => database.get('files', keyFor(profile, id))) }
@@ -90,13 +93,13 @@ export async function saveCachedCatalog(books: Book[], categories: Category[]) {
   await withDatabase(database => database.put('metadata', { key: 'public-catalog', books, categories, savedAt: Date.now() }))
 }
 export async function getSyncCursor(profile: string): Promise<number> {
-  const value = await withDatabase(database => database.get('metadata', `sync-cursor:${profile}`))
+  const value = await withDatabase(database => database.get('metadata', syncCursorKey(profile)))
   const cursor = value && 'cursor' in value ? Number(value.cursor) : 0
   return Number.isSafeInteger(cursor) && cursor >= 0 ? cursor : 0
 }
 export async function saveSyncCursor(profile: string, cursor: number) {
   if (!Number.isSafeInteger(cursor) || cursor < 0) throw new Error('Invalid sync cursor')
-  await withDatabase(database => database.put('metadata', { key: `sync-cursor:${profile}`, cursor }))
+  await withDatabase(database => database.put('metadata', { key: syncCursorKey(profile), cursor }))
 }
 export async function removeLocalDocument(profile: string, id: string) {
   await withDatabase(async database => {
@@ -147,8 +150,23 @@ function retainCompletedProgress(kind: SyncKind, payload: Record<string, unknown
 
 /** Commit the visible record and its outbox together, including across tabs. */
 export async function saveLocalMutation(profile: string, kind: SyncKind, id: string, payload: Record<string, unknown>, deleted: boolean, localOnly: boolean) {
-  const key = keyFor(profile, `${kind}:${id}`)
+  await withSyncTransaction(transaction => writeLocalMutation(transaction, profile, { kind, id, payload, deleted, localOnly }))
+}
+
+export type LocalMutation = { kind: SyncKind; id: string; payload: Record<string, unknown>; deleted?: boolean; localOnly?: boolean }
+
+/** Recheck relationships and commit the entire user action in one transaction.
+ * Builders are synchronous: no network work may interrupt this transaction. */
+export async function applyLocalMutations(profile: string, build: (records: SyncRecord[]) => LocalMutation[]) {
   await withSyncTransaction(async transaction => {
+    const current = await transaction.objectStore('records').getAll(range(profile))
+    const changes = build(current)
+    for (const change of changes) await writeLocalMutation(transaction, profile, change)
+  })
+}
+
+async function writeLocalMutation(transaction: SyncTransaction, profile: string, { kind, id, payload, deleted = false, localOnly = false }: LocalMutation) {
+  const key = keyFor(profile, `${kind}:${id}`)
     const records = transaction.objectStore('records')
     const pendingStore = transaction.objectStore('pending')
     const current = await records.get(key)
@@ -164,7 +182,6 @@ export async function saveLocalMutation(profile: string, kind: SyncKind, id: str
         recreate: current?.deleted && !deleted ? true : pending?.operation.recreate,
       },
     })
-  })
 }
 
 /** Freeze the latest outbox payload before any asynchronous upload/push. */
@@ -179,7 +196,7 @@ export async function claimPendingOperation(key: string): Promise<PendingOperati
   })
 }
 
-export async function updatePendingOperation(item: PendingOperation, patch: Pick<Partial<PendingOperation>, 'needsBlobUpload' | 'conflicted'>) {
+export async function updatePendingOperation(item: PendingOperation, patch: Pick<Partial<PendingOperation>, 'needsBlobUpload' | 'conflicted' | 'remoteDeleted'>) {
   await withSyncTransaction(async transaction => {
     const store = transaction.objectStore('pending')
     const current = await store.get(item.key)
@@ -245,7 +262,7 @@ export async function applyRemoteChanges(profile: string, changes: SyncRecord[],
       await records.put(change)
       count++
     }
-    const key = `sync-cursor:${profile}`
+    const key = syncCursorKey(profile)
     const previous = await transaction.objectStore('metadata').get(key)
     await transaction.objectStore('metadata').put({ key, cursor: Math.max(cursor, previous && 'cursor' in previous ? previous.cursor : 0) })
     return count
