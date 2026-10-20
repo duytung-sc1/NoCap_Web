@@ -20,9 +20,18 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
+async function renderReader() {
+  let view!: ReturnType<typeof render>
+  // The extractor resolves asynchronously. Flush its state update and passive
+  // keyboard-listener effect before dispatching keys; rendered cells alone can
+  // precede the listener that knows about those rows.
+  await act(async () => { view = render(<StealthReader {...props} />) })
+  return view
+}
+
 describe('Excel reading pages and restoration', () => {
   it('keeps paging on the keyboard, opens each new page at the top and prevents out-of-range navigation', async () => {
-    const { container } = render(<StealthReader {...props} />)
+    const { container } = await renderReader()
     await screen.findByRole('cell', { name: 'Paragraph 0' })
     const grid = container.querySelector<HTMLDivElement>('.excel-grid-container')!
     expect(screen.queryByRole('navigation', { name: 'Điều hướng trang đọc' })).toBeNull()
@@ -46,7 +55,7 @@ describe('Excel reading pages and restoration', () => {
 
   it('restores the exact chapter row on re-entry and marks the preceding reading position', async () => {
     saveStealthCheckpoint(props.profile, book.id, { progression: 73 / 94, sourceHref: 'chapter.xhtml', rowIndex: 73, rowCount: 95, rowId: 'REC-73', rowOffset: 10 })
-    const { container, unmount } = render(<StealthReader {...props} />)
+    const { container, unmount } = await renderReader()
     await screen.findByRole('cell', { name: 'Paragraph 73' })
     expect(container.querySelector('.excel-tr.last-read')?.textContent).toContain('Paragraph 73')
     expect(progress.mock.calls.at(-1)?.[0]).toMatchObject({ rowIndex: 73, rowOffset: 10 })
@@ -54,7 +63,7 @@ describe('Excel reading pages and restoration', () => {
     fireEvent(window, new Event('pagehide'))
     expect(readStealthCheckpoint(props.profile, book.id)?.rowIndex).toBe(80)
     unmount()
-    render(<StealthReader {...props} />)
+    await renderReader()
     await screen.findByRole('cell', { name: 'Paragraph 80' })
     expect(screen.getByLabelText('Vị trí lần đọc trước')).toBeTruthy()
     fireEvent.keyDown(window, { key: 'F2' })
@@ -62,7 +71,7 @@ describe('Excel reading pages and restoration', () => {
   })
 
   it('saves the visible row on wheel scrolling and never substitutes emergency data', async () => {
-    const { container } = render(<StealthReader {...props} />)
+    const { container } = await renderReader()
     await screen.findByRole('cell', { name: 'Paragraph 0' })
     const grid = container.querySelector<HTMLDivElement>('.excel-grid-container')!
     const rect = (top: number, bottom: number) => ({ top, bottom, height: bottom - top, width: 100, left: 0, right: 100, x: 0, y: top, toJSON: () => ({}) })

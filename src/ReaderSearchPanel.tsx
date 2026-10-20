@@ -7,6 +7,7 @@ import './ReaderSearchPanel.css'
 import { trackWebFeature } from './webAnalytics'
 
 export type ReaderSearchPanelProps = {
+  idPrefix?: string
   open: boolean
   lang: Lang
   bookTitle: string
@@ -21,8 +22,10 @@ export type ReaderSearchPanelProps = {
 type CompletedSearch = { query: string; source: ReaderSearchSource; retry: number; result: ReaderSearchResult }
 
 /** Keep mounted while closed so a completed search and its query survive toggling. */
-export function ReaderSearchPanel({ open, lang, bookTitle, source, format, activeId, onNavigate, onClearActive, onClose }: ReaderSearchPanelProps) {
+export function ReaderSearchPanel({ open, lang, bookTitle, source, format, activeId, onNavigate, onClearActive, onClose, idPrefix }: ReaderSearchPanelProps) {
   const vi = lang === 'vi'
+  const panelId = idPrefix ? `${idPrefix}-search-panel` : 'reader-search-panel'
+  const queryId = idPrefix ? `${idPrefix}-search-query` : 'reader-search-query'
   const [query, setQuery] = useState('')
   const [retry, setRetry] = useState(0)
   const [completed, setCompleted] = useState<CompletedSearch | null>(null)
@@ -92,12 +95,12 @@ export function ReaderSearchPanel({ open, lang, bookTitle, source, format, activ
     onNavigate(hits[next])
   }
 
-  return <aside id="reader-search-panel" className="reader-search-panel" role="complementary" aria-label={vi ? 'Tìm trong sách' : 'Search in book'} hidden={!open}>
+  return <aside id={panelId} className="reader-search-panel" role="complementary" aria-label={vi ? 'Tìm trong sách' : 'Search in book'} hidden={!open}>
     <header className="reader-search-heading"><div><span className="reader-search-kicker">{vi ? 'Tìm lại một ý tưởng' : 'Find a passage'}</span><h2>{vi ? 'Tìm trong sách' : 'Search in book'}</h2><p title={bookTitle}>{bookTitle}</p></div><button type="button" className="reader-search-close" onClick={onClose} aria-label={vi ? 'Đóng bảng tìm kiếm' : 'Close search panel'}><X size={19} aria-hidden="true" /></button></header>
     <div className="reader-search-content">
       <form className="reader-search-form" onSubmit={event => { event.preventDefault(); navigate(1) }}>
-        <label htmlFor="reader-search-query">{vi ? 'Từ khóa trong sách' : 'Search book text'}</label>
-        <div className="reader-search-field"><Search size={16} aria-hidden="true" /><input ref={input} id="reader-search-query" type="search" value={query} maxLength={200} disabled={unsupported} autoComplete="off" spellCheck={false} placeholder={vi ? 'Nhập một từ hoặc cụm từ…' : 'Enter a word or phrase…'} onChange={event => changeQuery(event.target.value)} onKeyDown={event => {
+        <label htmlFor={queryId}>{vi ? 'Từ khóa trong sách' : 'Search book text'}</label>
+        <div className="reader-search-field"><Search size={16} aria-hidden="true" /><input ref={input} id={queryId} type="search" value={query} maxLength={200} disabled={unsupported} autoComplete="off" spellCheck={false} placeholder={vi ? 'Nhập một từ hoặc cụm từ…' : 'Enter a word or phrase…'} onChange={event => changeQuery(event.target.value)} onKeyDown={event => {
           if (event.key === 'Enter') { event.preventDefault(); navigate(event.shiftKey ? -1 : 1) }
         }} />{query && <button type="button" onClick={() => { changeQuery(''); input.current?.focus() }} aria-label={vi ? 'Xóa từ khóa' : 'Clear search'}><X size={15} aria-hidden="true" /></button>}</div>
       </form>

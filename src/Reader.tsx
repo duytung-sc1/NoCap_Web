@@ -40,6 +40,7 @@ type Props = {
   annotations?: ReaderAnnotation[]
   onSearchReady?: (source: ReaderSearchSource | null) => void
   onSearchRequest?: () => void
+  keyboardActive?: boolean
 }
 
 /** Callback changes must not reopen a document or replace its search engine. */
@@ -147,7 +148,7 @@ async function displayEpubLocation(view: Rendition, target: string | undefined, 
   }
 }
 
-function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme, onLocation, onSelection, onControls, onToc, navigateTarget, navigateProgression, navigateLocator, annotations = [], onSearchReady, onSearchRequest }: Props) {
+function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme, onLocation, onSelection, onControls, onToc, navigateTarget, navigateProgression, navigateLocator, annotations = [], onSearchReady, onSearchRequest, keyboardActive = true }: Props) {
   const publishSearch = useSearchPublication(onSearchReady)
   const language = sourceBook.language
   const publicationLanguage = useRef<string | undefined>(undefined)
@@ -159,6 +160,8 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
   const locationRef = useRef(onLocation)
   const selectionRef = useRef(onSelection)
   const searchRequestRef = useRef(onSearchRequest)
+  const keyboardActiveRef = useRef(keyboardActive)
+  useEffect(() => { keyboardActiveRef.current = keyboardActive }, [keyboardActive])
   useEffect(() => { searchRequestRef.current = onSearchRequest }, [onSearchRequest])
   const controlsRef = useRef(onControls)
   const onTocRef = useRef(onToc)
@@ -282,7 +285,7 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
         rendition.current = view
         // Keyboard events inside an EPUB iframe do not reach the app window.
         view.on('keydown', (event: KeyboardEvent) => {
-          if (!alive || !searchRequestRef.current || !(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLowerCase() !== 'f') return
+          if (!alive || !keyboardActiveRef.current || !searchRequestRef.current || !(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLowerCase() !== 'f') return
           event.preventDefault()
           searchRequestRef.current()
         })

@@ -8,6 +8,7 @@ import type { SyncRecord } from './types'
 import './ReaderNotesPanel.css'
 
 export type ReaderNotesPanelProps = {
+  idPrefix?: string
   open: boolean
   lang: Lang
   bookTitle: string
@@ -113,12 +114,14 @@ export function ReaderNotesPanel(props: ReaderNotesPanelProps) {
   const { open, lang, bookTitle, records, note, color, quote, drawing = null, saving, canSave, onNoteChange, onDrawingChange, onColorChange, onClearQuote, onSave, onNavigate, onUpdate, onDelete, onClose } = props
   const vi = lang === 'vi'
   const [search, setSearch] = useState('')
+  const panelId = props.idPrefix ? `${props.idPrefix}-notes-panel` : 'reader-notes-panel'
+  const draftId = props.idPrefix ? `${props.idPrefix}-note-draft` : 'reader-note-draft'
   const [mode, setMode] = useState<'type' | 'draw'>('type')
   const notes = records.filter(record => !record.deleted && record.kind === 'highlights')
   const needle = search.trim().toLocaleLowerCase(lang)
   const filtered = notes.filter(record => !needle || [record.payload.text, record.payload.note, record.payload.chapter_title].some(value => String(value || '').toLocaleLowerCase(lang).includes(needle)))
 
-  return <aside id="reader-notes-panel" className="reader-notes-panel" role="complementary" aria-label={vi ? 'Ghi chú khi đọc' : 'Reading notes'} hidden={!open}>
+  return <aside id={panelId} className="reader-notes-panel" role="complementary" aria-label={vi ? 'Ghi chú khi đọc' : 'Reading notes'} hidden={!open}>
     <header className="reader-notes-heading"><div><span className="reader-notes-kicker">{vi ? 'Đọc & lưu ý tưởng' : 'Read & collect ideas'}</span><h2>{vi ? 'Ghi chú khi đọc' : 'Reading notes'}</h2><p title={bookTitle}>{bookTitle}</p></div><button type="button" className="reader-notes-close" onClick={onClose} aria-label={vi ? 'Đóng bảng ghi chú' : 'Close notes panel'}><X size={19} aria-hidden="true" /></button></header>
     <div className="reader-notes-content">
       <form className="reader-note-composer" onSubmit={event => { event.preventDefault(); if (!saving && canSave) onSave() }}>
@@ -130,8 +133,8 @@ export function ReaderNotesPanel(props: ReaderNotesPanelProps) {
         </div>}
         {onDrawingChange && mode === 'draw' && <><DrawingEditor value={drawing} onChange={onDrawingChange} lang={lang} disabled={saving} /><p className="reader-note-drawing-hint">{vi ? 'Bản nháp được giữ trên trình duyệt này. Bấm Lưu ghi chú để lưu vào thư viện. Chú thích bên dưới là tùy chọn.' : 'Your draft stays in this browser. Save your note to add it to your library. The caption below is optional.'}</p></>}
         {mode === 'type' && hasDrawing(drawing) && <DrawingPreview drawing={drawing} label={vi ? 'Bản vẽ nháp' : 'Draft drawing'} />}
-        <label htmlFor="reader-note-draft">{vi ? 'Ghi chú của bạn' : 'Your note'}</label>
-        <textarea id="reader-note-draft" value={note} rows={4} maxLength={10000} disabled={saving} placeholder={vi ? 'Điều gì khiến bạn muốn ghi nhớ?' : 'What would you like to remember?'} onChange={event => onNoteChange(event.target.value)} />
+        <label htmlFor={draftId}>{vi ? 'Ghi chú của bạn' : 'Your note'}</label>
+        <textarea id={draftId} value={note} rows={4} maxLength={10000} disabled={saving} placeholder={vi ? 'Điều gì khiến bạn muốn ghi nhớ?' : 'What would you like to remember?'} onChange={event => onNoteChange(event.target.value)} />
         <div className="reader-note-composer-bottom"><NoteColors lang={lang} color={color} disabled={saving} onChange={onColorChange} /><button type="submit" className="reader-note-save" disabled={saving || !canSave}>{saving ? (vi ? 'Đang lưu…' : 'Saving…') : (vi ? 'Lưu ghi chú' : 'Save note')}</button></div>
       </form>
       <section className="reader-notes-saved" aria-label={vi ? 'Ghi chú của sách này' : 'Notes in this book'}>
