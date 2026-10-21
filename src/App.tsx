@@ -41,6 +41,9 @@ import { ComparisonSourcesDialog } from './ComparisonSourcesDialog'
 import { ReaderErrorBoundary } from './ReaderErrorBoundary'
 import { ReaderNotesPanel } from './ReaderNotesPanel'
 import { ReaderSearchPanel } from './ReaderSearchPanel'
+import { Volume2 } from 'lucide-react'
+import { ReaderSpeechPanel } from './ReaderSpeechPanel'
+import { speechScopeKey, type ReaderSpeechSource } from './readerSpeech'
 import type { ReaderSearchHit, ReaderSearchSource } from './readerSearch'
 import { detectReaderFormat } from './readerFormat'
 import { useWebAnalytics } from './useWebAnalytics'
@@ -184,6 +187,10 @@ function App() {
   const [readerSearchSource, setReaderSearchSource] = useState<ReaderSearchSource | null>(null)
   const [activeSearchHit, setActiveSearchHit] = useState<ReaderSearchHit | null>(null)
   const searchToggle = useRef<HTMLButtonElement>(null)
+  const [speechOpen, setSpeechOpen] = useState(false)
+  const [readerSpeechSource, setReaderSpeechSource] = useState<ReaderSpeechSource | null>(null)
+  const speechToggle = useRef<HTMLButtonElement>(null)
+  const onReaderSpeechReady = useCallback((source: ReaderSpeechSource | null) => setReaderSpeechSource(() => source), [])
   const onReaderSearchReady = useCallback((source: ReaderSearchSource | null) => setReaderSearchSource(() => source), [])
   const openReaderSearch = useCallback(() => {
     setNoteOpen(false); setSearchOpen(true); setTocOpen(false); setSettingsOpen(false)
@@ -344,6 +351,7 @@ function App() {
         if (proRequiredFeature) { setProRequiredFeature(null); return }
         if (tocOpen) { setTocOpen(false); return }
         if (settingsOpen) { setSettingsOpen(false); return }
+        if (speechOpen) { e.preventDefault(); setSpeechOpen(false); speechToggle.current?.focus(); return }
         if (searchOpen) { e.preventDefault(); setSearchOpen(false); setActiveSearchHit(null); searchToggle.current?.focus(); return }
         if (noteOpen) { e.preventDefault(); setNoteOpen(false); notesToggle.current?.focus(); return }
         if (reviewOpen) { setReviewOpen(false); return }
@@ -359,7 +367,7 @@ function App() {
     }
     window.addEventListener('keydown', onGlobalKey)
     return () => window.removeEventListener('keydown', onGlobalKey)
-  }, [comparison, comparisonChoosing, reader, tocOpen, settingsOpen, noteOpen, searchOpen, reviewOpen, authOpen, selectedBook, stealthActive, setPage, closeBookDetails, editingAnnotation, deletingAnnotation, annotationBusy, proRequiredFeature, openReaderSearch])
+  }, [comparison, comparisonChoosing, reader, tocOpen, settingsOpen, noteOpen, searchOpen, speechOpen, reviewOpen, authOpen, selectedBook, stealthActive, setPage, closeBookDetails, editingAnnotation, deletingAnnotation, annotationBusy, proRequiredFeature, openReaderSearch])
 
   useEffect(() => {
     const updateDay = () => setStatsNow(ms())
@@ -1170,6 +1178,7 @@ async function sha256Hex(file: Blob): Promise<string> {
     setReaderError(''); setReaderLoading(true); setLocation(null); setSelection(null); setStealthProgressRequest(null); setControls(null); setToc([]); setNavigateTarget(null)
     setNoteOpen(false); resetReaderNoteDraft(); setNoteNavigation(null); noteFlight.current = null; setNoteSaving(false)
     setSearchOpen(false); setReaderSearchSource(null); setActiveSearchHit(null)
+    setSpeechOpen(false); setReaderSpeechSource(null)
     try {
       const [localResult, offlineResult] = await Promise.allSettled([
         getFile(profile, book.id),
@@ -1316,6 +1325,7 @@ async function sha256Hex(file: Blob): Promise<string> {
     setToc([]); setTocOpen(false); setSettingsOpen(false); setNoteOpen(false); setNavigateTarget(null)
     resetReaderNoteDraft(); setNoteNavigation(null); noteFlight.current = null; setNoteSaving(false)
     setSearchOpen(false); setReaderSearchSource(null); setActiveSearchHit(null)
+    setSpeechOpen(false); setReaderSpeechSource(null)
   }
   closeReaderRef.current = closeReader
 
@@ -2168,16 +2178,20 @@ async function sha256Hex(file: Blob): Promise<string> {
           <button className="icon-button" title={lang === 'vi' ? 'Mục lục sách' : 'Table of contents'} aria-label={lang === 'vi' ? 'Mục lục' : 'Table of contents'} onClick={() => { setNavigateTarget(null); setTocOpen(true) }}><List size={20} /></button>
           <button ref={searchToggle} className="icon-button reader-search-toggle" title={lang === 'vi' ? 'Tìm trong sách (Ctrl+F / ⌘F)' : 'Search in book (Ctrl+F / ⌘F)'} aria-label={lang === 'vi' ? 'Tìm trong sách' : 'Search in book'} aria-expanded={searchOpen} aria-controls="reader-search-panel" onClick={() => { setSearchOpen(open => !open); setNoteOpen(false); setActiveSearchHit(null) }}><Search size={19} /></button>
           <button className="icon-button" title={lang === 'vi' ? 'Tùy chỉnh đọc & font' : 'Reading settings'} aria-label={lang === 'vi' ? 'Tùy chỉnh' : 'Settings'} onClick={() => setSettingsOpen(true)}><Type size={20} /></button>
+          <button ref={speechToggle} className="icon-button" title={lang === 'vi' ? 'Đọc thành tiếng · Bản thử' : 'Read aloud · Preview'} aria-label={lang === 'vi' ? 'Đọc thành tiếng' : 'Read aloud'} aria-expanded={speechOpen} aria-controls="reader-speech-panel" onClick={() => setSpeechOpen(open => !open)}><Volume2 size={20} /></button>
           <button className={`icon-button ${currentBookmarked ? 'active' : ''}`} title={currentBookmarked ? (lang === 'vi' ? 'Bỏ dấu trang' : 'Remove bookmark') : (lang === 'vi' ? 'Thêm dấu trang' : 'Add bookmark')} aria-label={currentBookmarked ? (lang === 'vi' ? 'Bỏ dấu trang' : 'Remove bookmark') : (lang === 'vi' ? 'Đánh dấu vị trí' : 'Bookmark position')} aria-pressed={currentBookmarked} disabled={bookmarkSaving === keyFor(profile, reader.book.id)} aria-busy={bookmarkSaving === keyFor(profile, reader.book.id)} onClick={() => void toggleBookmark()}><Bookmark size={20} fill={currentBookmarked ? 'currentColor' : 'none'} /></button>
           <button ref={notesToggle} className={`reader-notes-toggle ${noteOpen ? 'active' : ''}`} title={lang === 'vi' ? 'Vừa đọc vừa ghi chú' : 'Read and take notes'} aria-label={lang === 'vi' ? 'Bảng ghi chú' : 'Notes panel'} aria-expanded={noteOpen} aria-controls="reader-notes-panel" onClick={() => { setNoteOpen(open => !open); setSearchOpen(false); setActiveSearchHit(null) }}><PanelRightOpen size={18} /><span>{lang === 'vi' ? 'Ghi chú' : 'Notes'}</span></button>
         </div>
       </div>
+      {speechOpen && !stealthActive && !comparison && <ReaderSpeechPanel key={`speech:${profile}:${reader.book.id}`} lang={lang} language={reader.book.language}
+        source={readerSpeechSource} selection={selection?.text || ''} scopeKey={JSON.stringify([speechScopeKey(location?.locatorJson), navigateTarget, noteNavigation?.requestId, stealthProgressRequest?.requestId])}
+        onClose={() => { setSpeechOpen(false); speechToggle.current?.focus() }} />}
       <div className="reader-workspace">
         <div className="reader-document-column">
           <div className="reader-body">
             <ReaderErrorBoundary key={`${profile}:${reader.book.id}`} lang={lang} onClose={() => setPage('library')}>
               <Suspense fallback={<div className="reader-error">{lang === 'vi' ? 'Đang chuẩn bị trình đọc…' : 'Preparing reader…'}</div>}>
-                <ReaderPane lang={lang} book={reader.book} bytes={reader.bytes} initial={reader.initial} fontSize={fontSize} fontFamily={fontFamily} lineHeight={lineHeight} textAlignment={textAlignment} readerWidth={readerWidth} theme={theme} onLocation={onLocation} onSelection={selectReaderPassage} onControls={setControls} onToc={setToc} navigateTarget={navigateTarget} navigateProgression={stealthProgressRequest} navigateLocator={noteNavigation} annotations={readerAnnotations} onSearchReady={onReaderSearchReady} onSearchRequest={openReaderSearch} />
+                <ReaderPane lang={lang} book={reader.book} bytes={reader.bytes} initial={reader.initial} fontSize={fontSize} fontFamily={fontFamily} lineHeight={lineHeight} textAlignment={textAlignment} readerWidth={readerWidth} theme={theme} onLocation={onLocation} onSelection={selectReaderPassage} onControls={setControls} onToc={setToc} navigateTarget={navigateTarget} navigateProgression={stealthProgressRequest} navigateLocator={noteNavigation} annotations={readerAnnotations} onSearchReady={onReaderSearchReady} onSpeechReady={onReaderSpeechReady} onSearchRequest={openReaderSearch} />
               </Suspense>
             </ReaderErrorBoundary>
           </div>

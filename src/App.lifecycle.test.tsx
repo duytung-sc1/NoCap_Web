@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { LocalFile, ReaderAnnotation, Session, SyncRecord } from './types'
 import type { ReaderSearchResult, ReaderSearchSource } from './readerSearch'
+import type { ReaderSpeechSource } from './readerSpeech'
+import { MockSynthesis, MockUtterance } from './readerSpeech.testUtils'
 import { readSession, saveSession, SESSION_STORAGE_KEY } from './store'
 import App from './App'
 import { ApiError } from './api'
@@ -56,16 +58,18 @@ vi.mock('./bookDownload', async importOriginal => ({
 }))
 vi.mock('./Reader', async () => {
   const { useEffect } = await import('react')
-  return { ReaderPane: ({ onLocation, onSelection, navigateLocator, annotations, onSearchReady, onSearchRequest }: {
+  return { ReaderPane: ({ onLocation, onSelection, navigateLocator, annotations, onSearchReady, onSearchRequest, onSpeechReady }: {
     onLocation: (location: object) => void
     onSelection: (text: string, locator: string) => void
     navigateLocator?: { locatorJson: string; requestId: number } | null
     annotations?: ReaderAnnotation[]
     onSearchReady?: (source: ReaderSearchSource | null) => void
     onSearchRequest?: () => void
+    onSpeechReady?: (source: ReaderSpeechSource | null) => void
   }) => {
     useEffect(() => { onLocation({ locatorJson: '{"type":"TEXT","progression":0.6}', progression: 0.6, chapterTitle: 'QA' }) }, [onLocation])
     useEffect(() => { onSearchReady?.(fixtures.searchBook); return () => onSearchReady?.(null) }, [onSearchReady])
+    useEffect(() => { onSpeechReady?.(async () => ({ text: 'QA spoken book text', label: 'QA', truncated: false })); return () => onSpeechReady?.(null) }, [onSpeechReady])
     if (fixtures.readerThrows) throw new Error('QA reader bundle/render failure')
     return <><p>QA reader content</p><button onClick={() => onLocation({ locatorJson: '{"type":"TEXT","progression":0.1}', progression: 0.1, chapterTitle: 'Old normal view' })}>QA background reader location</button><button onClick={() => onSelection('A selected passage worth remembering', '{"type":"TEXT","progression":0.35,"text":"A selected passage worth remembering"}')}>QA select passage</button><button onClick={onSearchRequest}>QA embedded reader search request</button><output data-testid="qa-reader-navigation">{JSON.stringify(navigateLocator || null)}</output><output data-testid="qa-reader-annotations">{JSON.stringify(annotations || [])}</output></>
   } }
@@ -129,6 +133,32 @@ describe('library write failures and concurrent actions', () => {
     await screen.findByText('QA reader content')
     return screen.getByRole('button', { name: 'Đánh dấu vị trí' })
   }
+
+  it('opens read aloud alongside notes and stops speech on Escape and reader exit', async () => {
+    const speech = new MockSynthesis()
+    vi.stubGlobal('speechSynthesis', speech.api()); vi.stubGlobal('SpeechSynthesisUtterance', MockUtterance)
+    try {
+      await reader()
+      fireEvent.click(screen.getByRole('button', { name: 'Đọc thành tiếng' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Nghe phần hiện tại' }))
+      await waitFor(() => expect(speech.spoken).toHaveLength(1))
+      expect(speech.spoken[0].text).toBe('QA spoken book text')
+      fireEvent.click(screen.getByRole('button', { name: 'Bảng ghi chú' }))
+      expect(screen.getByRole('button', { name: 'Tạm dừng' })).toBeTruthy()
+      const before = speech.cancel.mock.calls.length
+      fireEvent.keyDown(window, { key: 'Escape' })
+      expect(screen.queryByRole('button', { name: 'Nghe phần hiện tại' })).toBeNull()
+      expect(speech.cancel.mock.calls.length).toBeGreaterThan(before)
+      expect(screen.getByText('QA reader content')).toBeTruthy()
+      fireEvent.click(screen.getByRole('button', { name: 'Đọc thành tiếng' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Nghe phần hiện tại' }))
+      await waitFor(() => expect(speech.spoken).toHaveLength(2))
+      const beforeExit = speech.cancel.mock.calls.length
+      fireEvent.click(screen.getByRole('button', { name: 'Trở về Trang chủ' }))
+      expect(speech.cancel.mock.calls.length).toBeGreaterThan(beforeExit)
+      expect(screen.queryByText('QA reader content')).toBeNull()
+    } finally { cleanup(); vi.unstubAllGlobals() }
+  })
 
   it('creates only one bookmark while its storage write is pending', async () => {
     const button = await reader()

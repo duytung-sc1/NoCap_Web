@@ -16,6 +16,8 @@ import { translate } from './uiText'
 import type { Lang } from './i18n'
 import type { ReaderSearchSource } from './readerSearch'
 import { createArticleSearchSource, createEpubSearchSource, createPdfSearchSource } from './readerSearchSources'
+import type { ReaderSpeechSource } from './readerSpeech'
+import { captureReaderSpeech } from './readerSpeechText'
 
 GlobalWorkerOptions.workerSrc = workerUrl
 
@@ -39,6 +41,7 @@ type Props = {
   navigateLocator?: { locatorJson: string; requestId: number } | null
   annotations?: ReaderAnnotation[]
   onSearchReady?: (source: ReaderSearchSource | null) => void
+  onSpeechReady?: (source: ReaderSpeechSource | null) => void
   onSearchRequest?: () => void
   keyboardActive?: boolean
 }
@@ -73,11 +76,23 @@ function contentVersion(bytes: ArrayBuffer): number {
 export function ReaderPane(props: Props) {
   const format = detectReaderFormat(props.book, props.bytes)
   const contentKey = `${props.book.id}:${props.book.fileUrl || ''}:${contentVersion(props.bytes)}`
-  if (format === 'pdf') return <PdfPane key={contentKey} {...props} />
-  if (format === 'epub') return <EpubPane key={contentKey} {...props} />
-  if (format === 'cbz') return <CbzPane key={contentKey} {...props} />
-  if (format === 'image') return <ImagePane key={contentKey} {...props} />
-  return <TextPane key={contentKey} {...props} format={format} />
+  const root = useRef<HTMLDivElement>(null)
+  const { onSpeechReady } = props
+  useEffect(() => {
+    let active = true
+    const source: ReaderSpeechSource = async signal => {
+      if (!active || signal.aborted || !root.current) throw new DOMException('Reader closed', 'AbortError')
+      return captureReaderSpeech(root.current, format)
+    }
+    onSpeechReady?.(source)
+    return () => { active = false; onSpeechReady?.(null) }
+  }, [contentKey, format, onSpeechReady])
+  const pane = format === 'pdf' ? <PdfPane key={contentKey} {...props} />
+    : format === 'epub' ? <EpubPane key={contentKey} {...props} />
+    : format === 'cbz' ? <CbzPane key={contentKey} {...props} />
+    : format === 'image' ? <ImagePane key={contentKey} {...props} />
+    : <TextPane key={contentKey} {...props} format={format} />
+  return <div ref={root} className="reader-pane-frame">{pane}</div>
 }
 
 function parseInitial(value?: string): Record<string, unknown> | null {
@@ -510,6 +525,7 @@ function PdfPane({ lang = 'vi', bytes, initial, onLocation, onSelection, onContr
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null)
   const textLayerDiv = useRef<HTMLDivElement>(null)
   const [textLayerVersion, setTextLayerVersion] = useState(0)
+  const [speechPage, setSpeechPage] = useState<number | null>(null)
   const renderedTextPage = useRef(0)
   const [pdfHighlights, setPdfHighlights] = useState<{ page: number; rects: Array<PdfRect & { id: string; color: string }> }>({ page: 0, rects: [] })
   const [renderWidth, setRenderWidth] = useState(800)
@@ -604,6 +620,7 @@ function PdfPane({ lang = 'vi', bytes, initial, onLocation, onSelection, onContr
     let render: RenderTask | null = null
     let textLayer: TextLayer | null = null
     renderedTextPage.current = 0
+    setSpeechPage(null)
     textLayerDiv.current?.replaceChildren()
     setPdfHighlights({ page: 0, rects: [] })
     void document.getPage(page).then(async pdfPage => {
@@ -645,6 +662,7 @@ function PdfPane({ lang = 'vi', bytes, initial, onLocation, onSelection, onContr
           resizeAnchor.current = null
           pageMetrics.current = { page, height: viewport.height, width: viewport.width }
           renderedTextPage.current = page
+          setSpeechPage(page)
           setTextLayerVersion(value => value + 1)
         }
       }
@@ -736,6 +754,8 @@ function PdfPane({ lang = 'vi', bytes, initial, onLocation, onSelection, onContr
     <div className="pdf-host" ref={host}>
       <div
         className="pdf-page-container"
+        data-read-aloud-page={page}
+        data-read-aloud-ready={speechPage === page}
         style={{
           position: 'relative',
           display: 'inline-block',

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { ReaderPane } from './Reader'
 import type { ReaderSearchSource } from './readerSearch'
+import type { ReaderSpeechSource } from './readerSpeech'
 
 const fixture = vi.hoisted(() => ({ getPage: vi.fn(), convert: vi.fn(), loadPdf: vi.fn(), renderPage: vi.fn() }))
 vi.mock('mammoth', () => ({ convertToHtml: fixture.convert }))
@@ -12,7 +13,9 @@ vi.mock('pdfjs-dist', () => ({
   TextLayer: class {
     options: { container: HTMLElement; textContentSource: { items: Array<{ str: string }> } }
     constructor(options: { container: HTMLElement; textContentSource: { items: Array<{ str: string }> } }) { this.options = options }
-    async render() { this.options.container.textContent = this.options.textContentSource.items.map(item => item.str).join('') }
+    async render() {
+      this.options.container.replaceChildren(...this.options.textContentSource.items.map(item => { const span = document.createElement('span'); span.textContent = item.str; return span }))
+    }
     cancel() {}
   },
 }))
@@ -49,6 +52,44 @@ afterEach(() => {
 })
 
 describe('document reader restoration', () => {
+  it('publishes current text for speech without saving progress, and invalidates replaced book sources', async () => {
+    const ready = vi.fn<(source: ReaderSpeechSource | null) => void>()
+    const bytes = new TextEncoder().encode('First source text.').buffer as ArrayBuffer
+    const book = { id: 'speech-text', title: 'QA', author: 'QA', format: 'TXT' }
+    const { rerender, unmount } = render(<ReaderPane {...base} book={book} bytes={bytes} onSpeechReady={ready} />)
+    await screen.findByText('First source text.')
+    const source = ready.mock.calls.at(-1)![0]!, positions = base.onLocation.mock.calls.length
+    expect((await source(new AbortController().signal)).text).toBe('First source text.')
+    expect(base.onLocation).toHaveBeenCalledTimes(positions)
+    const calls = ready.mock.calls.length
+    rerender(<ReaderPane {...base} book={book} bytes={bytes} onSpeechReady={ready} fontSize={125} />)
+    expect(ready).toHaveBeenCalledTimes(calls)
+    rerender(<ReaderPane {...base} book={book} bytes={new TextEncoder().encode('Other source text.').buffer as ArrayBuffer} onSpeechReady={ready} />)
+    await screen.findByText('Other source text.')
+    await expect(source(new AbortController().signal)).rejects.toMatchObject({ name: 'AbortError' })
+    const current = ready.mock.calls.at(-1)![0]!
+    expect((await current(new AbortController().signal)).text).toBe('Other source text.')
+    const abort = new AbortController(); abort.abort()
+    await expect(current(abort.signal)).rejects.toMatchObject({ name: 'AbortError' })
+    unmount(); expect(ready).toHaveBeenLastCalledWith(null)
+  })
+
+  it('never reads a stale PDF page while the next page text is being prepared', async () => {
+    const pending = deferred<Awaited<ReturnType<typeof fixture.getPage>>>()
+    const original = fixture.getPage.getMockImplementation()!, pageTwo = await original(2)
+    fixture.getPage.mockImplementation((page: number) => page === 2 ? pending.promise : original(page))
+    const ready = vi.fn<(source: ReaderSpeechSource | null) => void>()
+    render(<ReaderPane {...base} book={{ id: 'speech-pdf', title: 'QA', author: 'QA', format: 'PDF' }} bytes={new ArrayBuffer(20)} onSpeechReady={ready} />)
+    await screen.findByText('PDF page 1')
+    const source = ready.mock.calls.at(-1)![0]!
+    expect((await source(new AbortController().signal)).text).toBe('PDF page 1')
+    act(() => { base.onControls.mock.calls.at(-1)![0].next() })
+    await expect(source(new AbortController().signal)).rejects.toThrow('preparing')
+    act(() => { pending.resolve(pageTwo) })
+    await screen.findByText('PDF page 2')
+    expect((await source(new AbortController().signal)).text).toBe('PDF page 2')
+  })
+
   it('publishes search only after DOCX decoding and keeps its engine stable while notes or comfort settings change', async () => {
     const pending = deferred<{ value: string }>(); fixture.convert.mockReturnValue(pending.promise)
     const ready = vi.fn<(source: ReaderSearchSource | null) => void>()
