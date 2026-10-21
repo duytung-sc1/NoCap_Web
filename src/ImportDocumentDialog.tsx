@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
-import { Download, FileUp, Link, X } from 'lucide-react'
+import { BookOpen, Download, FileUp, Link, X } from 'lucide-react'
 import type { Lang } from './i18n'
 import { downloadHttpsPublication, httpsImportMessage, type ImportProgress } from './httpsImport'
 import { HttpsImportError, publicationSource } from '../shared/httpsPublication'
+import { ChapterImportPanel } from './ChapterImportPanel'
 
-export function ImportDocumentDialog({ lang, onClose, onPickFile, onImport }: {
-  lang: Lang; onClose: () => void; onPickFile: () => void
+export function ImportDocumentDialog({ lang, profile, onClose, onPickFile, onImport }: {
+  lang: Lang; profile: string; onClose: () => void; onPickFile: () => void
   onImport: (file: File, sourceUrl: string) => Promise<boolean>
 }) {
   const vi = lang === 'vi'
-  const [fromUrl, setFromUrl] = useState(false)
+  const [source, setSource] = useState<'choose' | 'url' | 'chapters'>('choose')
+  const [savingChapters, setSavingChapters] = useState(false)
   const [url, setUrl] = useState('')
   const [phase, setPhase] = useState<'idle' | 'download' | 'save'>('idle')
   const [progress, setProgress] = useState<ImportProgress>({ received: 0 })
@@ -23,7 +25,7 @@ export function ImportDocumentDialog({ lang, onClose, onPickFile, onImport }: {
     return () => { mounted.current = false; active.current?.abort(); previous?.focus() }
   }, [])
   const close = () => {
-    if (phase === 'save') return
+    if (phase === 'save' || savingChapters) return
     active.current?.abort()
     onClose()
   }
@@ -53,19 +55,20 @@ export function ImportDocumentDialog({ lang, onClose, onPickFile, onImport }: {
     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close() }
     if (event.key === 'F2') { event.preventDefault(); event.stopPropagation() }
     if (event.key === 'Tab') {
-      const controls = Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), a[href]') || [])
+      const controls = Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href]') || [])
       const target = event.shiftKey ? controls.at(-1) : controls[0]
       if (document.activeElement === (event.shiftKey ? controls[0] : controls.at(-1))) { event.preventDefault(); target?.focus() }
     }
-  }}><div ref={dialog} className="dialog import-document-dialog" role="dialog" aria-modal="true" aria-labelledby="import-document-title">
-    <button className="icon-button dialog-close" onClick={close} disabled={phase === 'save'} aria-label={vi ? 'Đóng' : 'Close'}><X size={19} /></button>
+  }}><div ref={dialog} className={`dialog import-document-dialog${source === 'chapters' ? ' chapter-import-dialog' : ''}`} role="dialog" aria-modal="true" aria-labelledby="import-document-title">
+    <button className="icon-button dialog-close" onClick={close} disabled={phase === 'save' || savingChapters} aria-label={vi ? 'Đóng' : 'Close'}><X size={19} /></button>
     <p className="eyebrow">NOCAP</p>
-    <h2 id="import-document-title">{vi ? 'Thêm tài liệu' : 'Import document'}</h2>
-    {!fromUrl ? <>
+    <h2 id="import-document-title">{source === 'chapters' ? (vi ? 'Nhập truyện nhiều chương' : 'Import story chapters') : (vi ? 'Thêm tài liệu' : 'Import document')}</h2>
+    {source === 'chapters' ? <ChapterImportPanel key={profile} lang={lang} profile={profile} onImport={onImport} onClose={onClose} onBack={() => setSource('choose')} onBusyChange={setSavingChapters} /> : source === 'choose' ? <>
       <p>{vi ? 'Chọn tệp trên máy hoặc tải tài liệu từ liên kết HTTPS.' : 'Choose a file on your device or download a document from an HTTPS link.'}</p>
       <div className="import-source-options">
         <button className="import-source-option" onClick={() => { onClose(); onPickFile() }} autoFocus><FileUp size={23} /><span><strong>{vi ? 'Từ thiết bị' : 'From device'}</strong><small>{vi ? 'Chọn tệp có sẵn trên máy.' : 'Choose an existing file.'}</small></span></button>
-        <button className="import-source-option" onClick={() => setFromUrl(true)}><Link size={23} /><span><strong>{vi ? 'Từ liên kết HTTPS' : 'From HTTPS link'}</strong><small>{vi ? 'Tải tệp hoặc lưu nội dung bài viết.' : 'Download a file or save a readable article.'}</small></span></button>
+        <button className="import-source-option" onClick={() => setSource('url')}><Link size={23} /><span><strong>{vi ? 'Từ liên kết HTTPS' : 'From HTTPS link'}</strong><small>{vi ? 'Tải tệp hoặc lưu nội dung bài viết.' : 'Download a file or save a readable article.'}</small></span></button>
+        <button className="import-source-option" onClick={() => setSource('chapters')}><BookOpen size={23} /><span><strong>{vi ? 'Từ mục lục truyện' : 'From story contents'}</strong><small>{vi ? 'Chọn một khoảng chương và gộp thành sách EPUB.' : 'Choose a chapter range and combine it into an EPUB book.'}</small></span></button>
       </div>
       <p className="import-help">EPUB, PDF, CBZ, DOCX, TXT, Markdown, HTML, JPG, PNG, WebP · {vi ? 'Tối đa 250 MB' : 'Up to 250 MB'}</p>
     </> : <form onSubmit={event => { event.preventDefault(); void submit() }}>
@@ -78,7 +81,7 @@ export function ImportDocumentDialog({ lang, onClose, onPickFile, onImport }: {
         {phase === 'download' && <><progress max={progress.total || 1} value={progress.total ? Math.min(progress.received, progress.total) : undefined} aria-label={vi ? 'Tiến độ tải' : 'Download progress'} /><small>{(progress.received / 1024 / 1024).toFixed(1)} MB{progress.total ? ` / ${(progress.total / 1024 / 1024).toFixed(1)} MB` : ''}</small></>}
       </div>}
       {error && <p role="alert" className="form-message">{error}</p>}
-      <div className="dialog-actions"><button type="button" className="secondary" onClick={() => { if (busy) close(); else { setFromUrl(false); setError('') } }} disabled={phase === 'save'}>{phase === 'download' ? (vi ? 'Hủy tải' : 'Cancel download') : (vi ? 'Quay lại' : 'Back')}</button><button className="primary" disabled={busy || !url.trim()}><Download size={16} />{busy ? (vi ? 'Đang xử lý…' : 'Working…') : (vi ? 'Tải và thêm vào tủ sách' : 'Download and add to library')}</button></div>
+      <div className="dialog-actions"><button type="button" className="secondary" onClick={() => { if (busy) close(); else { setSource('choose'); setError('') } }} disabled={phase === 'save'}>{phase === 'download' ? (vi ? 'Hủy tải' : 'Cancel download') : (vi ? 'Quay lại' : 'Back')}</button><button className="primary" disabled={busy || !url.trim()}><Download size={16} />{busy ? (vi ? 'Đang xử lý…' : 'Working…') : (vi ? 'Tải và thêm vào tủ sách' : 'Download and add to library')}</button></div>
     </form>}
   </div></div>
 }

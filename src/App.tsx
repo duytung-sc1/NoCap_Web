@@ -2149,7 +2149,7 @@ async function sha256Hex(file: Blob): Promise<string> {
       </footer>
 
       <input ref={fileInput} type="file" accept=".epub,.pdf,.cbz,.txt,.md,.markdown,.html,.htm,.docx,.jpg,.jpeg,.png,.webp" hidden onChange={event => { const file = event.target.files?.[0]; if (file) void importFile(file); event.target.value = '' }} />
-      {importOpen && <ImportDocumentDialog lang={lang} onClose={() => setImportOpen(false)} onPickFile={() => fileInput.current?.click()} onImport={importFile} />}
+      {importOpen && <ImportDocumentDialog key={profile} profile={profile} lang={lang} onClose={() => setImportOpen(false)} onPickFile={() => fileInput.current?.click()} onImport={importFile} />}
     </main>
 
     {(readerLoading || readerError) && <div className="overlay"><div className="loading-card"><button className="icon-button close-floating" onClick={() => setPage(backgroundPageRef.current)} aria-label={lang === 'vi' ? 'Đóng' : 'Close'}><X size={20} /></button>{readerLoading ? <><div className="loader" /><h2>{lang === 'vi' ? 'Đang mở sách…' : 'Opening book…'}</h2><p>{lang === 'vi' ? 'Đang chuẩn bị nội dung để đọc.' : 'Preparing the document for reading.'}</p></> : <><FileText size={32} /><h2>{lang === 'vi' ? 'Chưa mở được tài liệu' : 'Unable to open document'}</h2><p>{readerError}</p><button className="primary" onClick={() => setPage(backgroundPageRef.current)}>{lang === 'vi' ? 'Đóng' : 'Close'}</button></>}</div></div>}

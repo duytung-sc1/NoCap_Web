@@ -1,0 +1,72 @@
+.dialog.import-document-dialog.chapter-import-dialog { width: min(760px, calc(100vw - 32px)); }
+.chapter-import-panel { color: #253f43; font-size: 13px; }
+.chapter-import-panel p { line-height: 1.6; }
+.chapter-import-intro { margin: 0 0 14px; }
+.chapter-import-notice { padding: 12px 14px; margin: 0 0 20px; background: #f0f7f5; color: #526967; border-radius: 10px; font-size: 12px; }
+.chapter-import-panel button { white-space: normal; }
+.chapter-import-panel button:focus-visible, .chapter-import-panel input:focus-visible, .chapter-import-panel select:focus-visible { outline: 2px solid #147d70; outline-offset: 3px; }
+.chapter-import-panel button:disabled { cursor: default; opacity: .5; }
+.chapter-import-panel .import-help { font-size: 12px; color: #607470; margin: 9px 0 0; }
+.chapter-recovery { padding: 16px; border: 1px solid #bcded5; border-radius: 12px; margin: 0 0 20px; background: #f7fbf9; }
+.chapter-recovery > strong { color: #166c60; }
+.chapter-recovery p { margin: 7px 0 12px; overflow-wrap: anywhere; }
+.chapter-inline-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; }
+.chapter-subtle-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 0; background: transparent; color: #526a67; min-height: 38px; padding: 8px; font-size: 12px; border-radius: 7px; }
+.chapter-subtle-button:hover { background: #edf4f1; color: #126d60; }
+.chapter-discovery-row { display: flex; align-items: stretch; gap: 10px; }
+.chapter-discovery-row input { flex: 1; margin-top: 0; }
+.chapter-discovery-row .secondary { flex: none; min-width: 110px; }
+.chapter-discovery-status { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding: 10px 0; color: #166e61; }
+.chapter-selection, .chapter-batch { border-top: 1px solid #e0e9e6; padding-top: 18px; margin-top: 23px; }
+.chapter-import-panel h3 { color: #183c3f; font-size: 16px; line-height: 1.5; margin: 0 0 7px; overflow-wrap: anywhere; }
+.chapter-selection h3:focus { outline: none; }
+.chapter-range-mode { display: grid; grid-template-columns: 100px minmax(0, 220px); align-items: center; gap: 10px; margin-top: 16px; }
+.chapter-range-mode label { margin: 0; }
+.chapter-range-mode select { width: 100%; min-height: 40px; border: 1px solid #dfe5e7; border-radius: 8px; padding: 8px 10px; color: #203047; background: #fff; font: inherit; font-size: 12px; }
+.chapter-range-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); align-items: end; gap: 14px; }
+.chapter-range-fields input { margin-top: 0 !important; }
+.chapter-range-mode select { display: block; width: 100%; min-height: 42px; padding: 9px 12px; border: 1px solid #dfe5e7; border-radius: 8px; background: #fff; color: #253f43; font: inherit; }
+.chapter-range-mode select:focus-visible { outline: 2px solid #147d70; outline-offset: 3px; }
+.chapter-range-count { min-height: 44px; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: center; gap: 6px; padding: 8px 5px; color: #426b63; }
+.chapter-range-count strong { font-size: 24px; line-height: 1; color: #147b6d; }
+.chapter-range-count span { font-size: 11px; }
+.chapter-range-summary { display: grid; gap: 8px; margin-top: 15px; padding: 13px 15px; border: 1px solid #e0eae6; background: #fafcfb; border-radius: 9px; }
+.chapter-range-summary p { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 12px; margin: 0; }
+.chapter-range-summary span { font-size: 11px; color: #60766f; }
+.chapter-range-summary strong { font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }
+.chapter-import-warning { border-left: 3px solid #be8b40; padding: 10px 12px; background: #fff8eb; border-radius: 0 8px 8px 0; color: #70542c; font-size: 12px; }
+.chapter-batch-counts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 15px 0; }
+.chapter-batch-counts span { display: grid; gap: 4px; text-align: center; background: #f2f7f5; border-radius: 9px; padding: 12px 6px; color: #5d736d; font-size: 11px; }
+.chapter-batch-counts strong { font-size: 24px; line-height: 1.3; font-weight: 700; color: #1d7162; }
+.chapter-batch-counts .has-errors { background: #fff5ef; color: #956044; }
+.chapter-batch-counts .has-errors strong { color: #956044; }
+.chapter-batch progress { accent-color: #168b77; width: 100%; height: 7px; display: block; }
+.chapter-batch-status { font-size: 12px; color: #536f65; margin: 12px 0; }
+.chapter-preview { margin-top: 22px; border: 1px solid #dce8e3; border-radius: 11px; overflow: hidden; }
+.chapter-preview-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 15px; background: #f3f8f5; }
+.chapter-preview-heading strong { font-size: 12px; color: #24594f; }
+.chapter-preview-heading > span { font-size: 11px; color: #63776f; white-space: nowrap; }
+.chapter-preview ol { margin: 0; padding: 0 15px 0 48px; max-height: 235px; overflow-y: auto; }
+.chapter-preview li { position: relative; border-top: 1px solid #edf1ef; padding: 9px 0 9px 1px; font-size: 12px; line-height: 1.5; color: #687d75; }
+.chapter-preview li:first-child { border-top: 0; }
+.chapter-preview-title { color: #344f48; overflow-wrap: anywhere; }
+.chapter-status { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; font-size: 10px; white-space: nowrap; color: #768980; }
+.chapter-status-done { color: #147867; }
+.chapter-status-error { color: #a16340; }
+.chapter-preview-pages { display: flex; justify-content: center; align-items: center; gap: 10px; background: #fafcfb; border-top: 1px solid #e5ede9; padding: 4px; font-size: 11px; color: #60756c; }
+.chapter-confirmation { border: 1px solid #d6c7a7; border-radius: 10px; padding: 13px 15px; margin-top: 18px; background: #fffbf2; }
+.chapter-confirmation p { margin: 0 0 12px; font-size: 12px; color: #675637; }
+.chapter-confirmation .chapter-inline-actions { justify-content: end; }
+.chapter-import-actions { border-top: 1px solid #e2ebe7; padding-top: 18px; gap: 8px !important; }
+.chapter-import-actions > .secondary:first-child { margin-right: auto; }
+@media (max-width: 540px) {
+  .dialog.import-document-dialog.chapter-import-dialog { padding: 24px 19px; max-height: 92dvh; }
+  .chapter-discovery-row { flex-direction: column; }
+  .chapter-discovery-row .secondary { align-self: end; }
+  .chapter-range-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; }
+  .chapter-range-count { grid-column: 1 / -1; justify-content: start; padding: 6px 0 0; min-height: 0; }
+  .chapter-range-summary p { grid-template-columns: 65px minmax(0, 1fr); gap: 8px; }
+  .chapter-import-actions > .primary { flex: 1 1 100%; }
+  .chapter-preview-heading { padding: 11px; }
+  .chapter-preview ol { padding-left: 41px; }
+}

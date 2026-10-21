@@ -1,4 +1,5 @@
-import { HttpsImportError, IMPORT_TIMEOUT_MS, MAX_PUBLICATION_BYTES, MAX_REDIRECTS, publicationUrl } from '../shared/httpsPublication.ts'
+import { HttpsImportError, IMPORT_TIMEOUT_MS, MAX_HTML_BYTES, MAX_PUBLICATION_BYTES, MAX_REDIRECTS, publicationUrl } from '../shared/httpsPublication.ts'
+import { chapterIndexUrl, MAX_CHAPTER_INDEX_BYTES } from '../shared/chapterImport.ts'
 
 const noCache = { 'Cache-Control': 'private, no-store', 'CDN-Cache-Control': 'no-store', 'Cloudflare-CDN-Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'Content-Security-Policy': "sandbox; default-src 'none'", 'X-Frame-Options': 'DENY', 'Cross-Origin-Resource-Policy': 'same-origin' }
 type Fetcher = typeof fetch
@@ -35,7 +36,7 @@ async function requirePublicDns(host: string, fetcher: Fetcher, signal: AbortSig
   if (addresses.some(address => !isPublicAddress(address))) throw new HttpsImportError('PUBLIC_URL_REQUIRED')
 }
 
-async function readInput(request: Request, signal: AbortSignal): Promise<string> {
+async function readInput(request: Request, signal: AbortSignal): Promise<{ url: string; mode?: 'html' | 'chapter-index' }> {
   if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/json')) throw new HttpsImportError('INVALID_URL')
   const reader = request.body?.getReader()
   if (!reader) throw new HttpsImportError('INVALID_URL')
@@ -53,10 +54,11 @@ async function readInput(request: Request, signal: AbortSignal): Promise<string>
       if (bytes > 16_384) { await reader.cancel(); throw new HttpsImportError('INVALID_URL', 413) }
       chunks.push(new Uint8Array(value))
     }
-    let data: { url?: unknown }
+    let data: { url?: unknown; mode?: unknown }
     try { data = JSON.parse(await new Blob(chunks).text()) } catch { throw new HttpsImportError('INVALID_URL') }
     if (!data || typeof data.url !== 'string') throw new HttpsImportError('INVALID_URL')
-    return data.url
+    if (data.mode !== undefined && data.mode !== 'html' && data.mode !== 'chapter-index') throw new HttpsImportError('INVALID_URL')
+    return { url: data.url, ...(data.mode ? { mode: data.mode as 'html' | 'chapter-index' } : {}) }
   } finally { signal.removeEventListener('abort', cancel); reader.releaseLock() }
 }
 
@@ -74,7 +76,10 @@ export async function handleHttpsImport(request: Request, fetcher: Fetcher = (in
   let upstream: Response | undefined
   let stage = 'input'
   try {
-    let url = publicationUrl(await readInput(request, controller.signal))
+    const input = await readInput(request, controller.signal)
+    let url = input.mode === 'chapter-index' ? chapterIndexUrl(input.url) : publicationUrl(input.url)
+    const maxBytes = input.mode === 'chapter-index' ? MAX_CHAPTER_INDEX_BYTES : input.mode === 'html' ? MAX_HTML_BYTES : MAX_PUBLICATION_BYTES
+    const sizeError = input.mode === 'chapter-index' ? 'CHAPTER_INDEX_INVALID' : input.mode === 'html' ? 'HTML_TOO_LARGE' : 'FILE_TOO_LARGE'
     const appHost = new URL(request.url).hostname
     for (let redirects = 0; ; redirects++) {
       if (url.pathname.replace(/\/+$/, '') === '/api/import' && (url.hostname === appHost || url.hostname === 'ntlab.id.vn' || url.hostname.endsWith('.nocap-web.pages.dev'))) throw new HttpsImportError('PUBLIC_URL_REQUIRED')
@@ -88,11 +93,14 @@ export async function handleHttpsImport(request: Request, fetcher: Fetcher = (in
       await upstream.body?.cancel()
       if (!location) throw new HttpsImportError('SOURCE_UNAVAILABLE', 502)
       if (redirects >= MAX_REDIRECTS) throw new HttpsImportError('TOO_MANY_REDIRECTS', 502)
-      try { url = publicationUrl(new URL(location, url).toString()) } catch (error) { if (error instanceof HttpsImportError) throw error; throw new HttpsImportError('INVALID_URL') }
+      try {
+        const next = new URL(location, url).toString()
+        url = input.mode === 'chapter-index' ? chapterIndexUrl(next) : publicationUrl(next)
+      } catch (error) { if (error instanceof HttpsImportError) throw error; throw new HttpsImportError('INVALID_URL') }
     }
     if (!upstream.ok || upstream.status === 206 || !upstream.body) throw new HttpsImportError('SOURCE_UNAVAILABLE', 502)
     const length = Number(upstream.headers.get('content-length') || 0)
-    if (length > MAX_PUBLICATION_BYTES) throw new HttpsImportError('FILE_TOO_LARGE', 413)
+    if (length > maxBytes) throw new HttpsImportError(sizeError, 413)
     const headers = new Headers(noCache)
     headers.set('Content-Type', upstream.headers.get('content-type') || 'application/octet-stream')
     headers.set('X-NoCap-Source', encodeURIComponent(url.toString()))
@@ -107,7 +115,7 @@ export async function handleHttpsImport(request: Request, fetcher: Fetcher = (in
           const { done, value } = await reader.read()
           if (done) { cleanup(); output.close(); return }
           count += value.byteLength
-          if (count > MAX_PUBLICATION_BYTES) throw new HttpsImportError('FILE_TOO_LARGE', 413)
+          if (count > maxBytes) throw new HttpsImportError(sizeError, 413)
           output.enqueue(value)
         } catch (error) { cleanup(); controller.abort(error); await reader.cancel(error).catch(() => {}); output.error(error) }
       },

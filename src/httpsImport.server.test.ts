@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { handleHttpsImport, isPublicAddress } from '../server/httpsImport'
-import { IMPORT_TIMEOUT_MS, MAX_PUBLICATION_BYTES } from '../shared/httpsPublication'
+import { IMPORT_TIMEOUT_MS, MAX_HTML_BYTES, MAX_PUBLICATION_BYTES } from '../shared/httpsPublication'
+import { MAX_CHAPTER_INDEX_BYTES } from '../shared/chapterImport'
 
 const origin = 'https://nocap.example.org'
 const request = (url = 'https://books.example.org/book.pdf', extra: Record<string, string> = {}) => new Request(`${origin}/api/import`, {
@@ -19,6 +20,44 @@ function mockNetwork(remote: (url: string, init: RequestInit) => Response | Prom
 }
 
 describe('public HTTPS download endpoint', () => {
+  it('restricts chapter-index mode to the public read-only endpoint and validated pagination', async () => {
+    const indexRequest = (url: string) => new Request(`${origin}/api/import`, { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ url, mode: 'chapter-index' }) })
+    const endpoint = 'https://api.sstruyen.pics/novels/77/chapters?page=1&keyword=&limit=50&sort=asc'
+    for (const invalid of [endpoint.replace('api.sstruyen.pics', 'other.example.org'), endpoint.replace('/novels/77/chapters', '/user/me'), endpoint.replace('page=1', 'page=41'), endpoint.replace('keyword=', 'keyword=secret'), endpoint + '&token=private', endpoint + '&page=2']) {
+      const fetcher = vi.fn()
+      expect((await handleHttpsImport(indexRequest(invalid), fetcher)).status).toBe(400)
+      expect(fetcher).not.toHaveBeenCalled()
+    }
+    const redirected = await handleHttpsImport(indexRequest(endpoint), mockNetwork(() => new Response(null, { status: 302, headers: { Location: 'https://other.example.org/chapters' } })))
+    expect(redirected.status).toBe(400)
+    let canceled = false
+    const large = await handleHttpsImport(indexRequest(endpoint), mockNetwork(() => new Response(new ReadableStream({ cancel() { canceled = true } }), { headers: { 'Content-Length': String(MAX_CHAPTER_INDEX_BYTES + 1) } })))
+    expect(large.status).toBe(413)
+    expect(await large.json()).toMatchObject({ error: { code: 'CHAPTER_INDEX_INVALID' } })
+    expect(canceled).toBe(true)
+    const valid = await handleHttpsImport(indexRequest(endpoint), mockNetwork(() => Response.json({ chapters: [] })))
+    expect(await valid.json()).toEqual({ chapters: [] })
+    expect(valid.headers.get('Cache-Control')).toContain('no-store')
+  })
+  it('enforces the smaller HTML limit on declared and streamed bodies and rejects unknown modes', async () => {
+    const htmlRequest = (mode = 'html') => new Request(`${origin}/api/import`, { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ url: 'https://books.example.org/catalog', mode }) })
+    const unused = vi.fn()
+    expect((await handleHttpsImport(htmlRequest('unbounded'), unused)).status).toBe(400)
+    expect(unused).not.toHaveBeenCalled()
+    let canceled = false
+    const declared = await handleHttpsImport(htmlRequest(), mockNetwork(() => new Response(new ReadableStream({ cancel() { canceled = true } }), { headers: { 'Content-Length': String(MAX_HTML_BYTES + 1) } })))
+    expect(declared.status).toBe(413)
+    expect(await declared.json()).toMatchObject({ error: { code: 'HTML_TOO_LARGE' } })
+    expect(canceled).toBe(true)
+    canceled = false
+    const chunk = new Uint8Array(1024 * 1024)
+    const streamed = await handleHttpsImport(htmlRequest(), mockNetwork(() => new Response(new ReadableStream({ pull(output) { output.enqueue(chunk) }, cancel() { canceled = true } }))))
+    const reader = streamed.body!.getReader()
+    let bytes = 0
+    await expect((async () => { while (true) { const { done, value } = await reader.read(); if (done) break; bytes += value.length } })()).rejects.toMatchObject({ code: 'HTML_TOO_LARGE' })
+    expect(bytes).toBeLessThanOrEqual(MAX_HTML_BYTES)
+    expect(canceled).toBe(true)
+  })
   it('rejects malformed/insecure/internal destinations before making requests', async () => {
     for (const url of ['not-a-url', 'http://books.example.org/a.pdf', 'https://localhost/a.pdf', 'https://127.1/a.pdf', 'https://0x7f000001/a.pdf', 'https://[::1]/a.pdf', 'https://files.local/a.pdf', 'https://user:password@books.example.org/a.pdf', 'https://books.example.org:8443/a.pdf']) {
       const fetcher = vi.fn()
