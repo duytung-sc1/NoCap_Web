@@ -34,6 +34,34 @@ beforeEach(() => {
 afterEach(() => { tracker?.stop(); tracker = undefined; vi.restoreAllMocks(); vi.useRealTimers() })
 
 describe('first-party Web analytics', () => {
+  it.each(['navigate', 'reload'] as const)('starts a fresh direct session after reconnecting a document loaded by %s', async navigationType => {
+    window.history.replaceState(null, '', '/?utm_source=facebook&utm_medium=social&utm_campaign=launch-2026')
+    vi.mocked(performance.getEntriesByType).mockReturnValue([{ type: navigationType }] as unknown as PerformanceEntry[])
+    start().setPage('home'); await advance(1)
+    const initial = batches[0]
+    expect(initial.context?.utmCampaign).toBe('launch-2026')
+    online = false; window.dispatchEvent(new Event('offline'))
+    online = true; window.dispatchEvent(new Event('online')); await advance(1)
+    const resumed = batches.at(-1)!
+    expect(resumed.visitorId).toBe(initial.visitorId)
+    expect(resumed.sessionId).not.toBe(initial.sessionId)
+    expect(resumed.context).toMatchObject({ referrerHost: '', utmSource: '', utmMedium: '', utmCampaign: '', device: initial.context!.device })
+    expect(JSON.parse(sessionStorage.getItem('nocap-web-analytics-session-v1')!).id).toBe(resumed.sessionId)
+  })
+
+  it('does not restore a reload session or replay its campaign after leaving the administrator area', async () => {
+    window.history.replaceState(null, '', '/?utm_source=facebook&utm_campaign=launch-2026')
+    vi.mocked(performance.getEntriesByType).mockReturnValue([{ type: 'reload' }] as unknown as PerformanceEntry[])
+    const client = start(); client.setPage('home'); await advance(1)
+    const initial = batches[0]
+    client.setPage(null); client.feature('checkout_start'); await advance(1)
+    const before = events().filter(event => event.type === 'page_view').length
+    client.setPage('library'); await advance(1)
+    expect(events().filter(event => event.type === 'page_view')).toHaveLength(before + 1)
+    expect(batches.at(-1)?.sessionId).not.toBe(initial.sessionId)
+    expect(batches.at(-1)?.context?.utmCampaign).toBe('')
+  })
+
   it('keeps entry UTM across SPA routes and reloads, then starts a direct session after idle', async () => {
     window.history.replaceState(null, '', '/?utm_source=facebook&utm_medium=social&utm_campaign=launch-2026&secret=PRIVATE')
     const client = start(); client.setPage('home'); await advance(1)

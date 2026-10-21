@@ -240,7 +240,9 @@ The backend requires migrations `0014_web_analytics.sql`, `0015_web_acquisition.
 Attribution is fixed at session entry. Valid UTM overrides the inferred source/medium;
 referrer inference recognizes common search/social hosts, otherwise uses a referral
 hostname or direct/no-referrer. A same-document session after 30 minutes idle starts
-without campaign attribution. Historical sessions remain unknown; the dashboard
+without campaign attribution, as do sessions after reconnecting or returning from
+the administrator area. Reload restoration is allowed only for the first session
+of a document. Historical sessions remain unknown; the dashboard
 shows coverage and the first context collection time. Each source/medium or campaign
 table shows up to 20 groups ranked by sessions, with an explicit truncation notice;
 analytics CSV includes those same groups and all device groups. Distinct browser

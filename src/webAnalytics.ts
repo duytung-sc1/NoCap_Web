@@ -52,6 +52,7 @@ export function createWebAnalytics(options: Options = {}) {
   let visitorId: string | null = null
   let currentSession: Session | null = null
   let entryContext: AnalyticsContext | null = null
+  let initialSessionPending = true
   let lastSample = now()
   let lastInteraction = lastSample
   let pendingActiveMs = 0
@@ -69,6 +70,13 @@ export function createWebAnalytics(options: Options = {}) {
       try { localStorage.removeItem(VISITOR_KEY); sessionStorage.removeItem(SESSION_KEY) } catch { /* Optional. */ }
     }
   }
+  function clearSession() {
+    currentSession = null
+    try { sessionStorage.removeItem(SESSION_KEY) } catch { /* Optional. */ }
+  }
+  function directContext(): AnalyticsContext {
+    return { referrerHost: '', utmSource: '', utmMedium: '', utmCampaign: '', device: currentSession?.context?.device ?? entryContext?.device ?? 'unknown' }
+  }
   function identity() {
     entryContext ??= captureAnalyticsContext()
     if (!visitorId) {
@@ -80,15 +88,21 @@ export function createWebAnalytics(options: Options = {}) {
       try { write(localStorage, VISITOR_KEY, { id: visitorId, expiresAt: now() + VISITOR_TTL_MS }) } catch { /* Storage getter may be blocked. */ }
     }
     if (!currentSession) {
+      const firstSession = initialSessionPending
+      initialSessionPending = false
       let stored: Session | null = null
-      try { stored = read(sessionStorage, SESSION_KEY) as Session | null } catch { /* Optional. */ }
-      // A new tab can inherit sessionStorage from its opener. Only reuse a session on reload.
-      const navigation = performance.getEntriesByType?.('navigation')[0] as PerformanceNavigationTiming | undefined
+      if (firstSession) try { stored = read(sessionStorage, SESSION_KEY) as Session | null } catch { /* Optional. */ }
+      // The navigation type remains "reload" for the entire document lifetime.
+      // Restore storage only for its first session, never after a session boundary.
+      const navigation = firstSession ? performance.getEntriesByType?.('navigation')[0] as PerformanceNavigationTiming | undefined : undefined
       currentSession = navigation?.type === 'reload' && stored && typeof stored.id === 'string' && uuidPattern.test(stored.id)
         && typeof stored.lastActivityAt === 'number' && Number.isFinite(stored.lastActivityAt)
         && now() >= stored.lastActivityAt && now() - stored.lastActivityAt < SESSION_IDLE_MS
         ? { id: stored.id.toLowerCase(), lastActivityAt: stored.lastActivityAt, context: storedAnalyticsContext(stored.context) ?? entryContext }
-        : { id: crypto.randomUUID(), lastActivityAt: now(), context: entryContext }
+        : { id: crypto.randomUUID(), lastActivityAt: now(), context: firstSession ? entryContext : directContext() }
+      // Reconnect and opt-in can enqueue before resumeSession; persist immediately
+      // so a reload restores this session rather than the previous one.
+      try { write(sessionStorage, SESSION_KEY, currentSession) } catch { /* Optional. */ }
     }
   }
   function enqueue(type: AnalyticsEvent['type'], activeMs = 0, target = page) {
@@ -122,7 +136,7 @@ export function createWebAnalytics(options: Options = {}) {
     let rotated = false
     if (now() - currentSession!.lastActivityAt >= SESSION_IDLE_MS || now() < currentSession!.lastActivityAt) {
       drainActive()
-      currentSession = { id: crypto.randomUUID(), lastActivityAt: now(), context: { referrerHost: '', utmSource: '', utmMedium: '', utmCampaign: '', device: currentSession!.context?.device ?? 'unknown' } }
+      currentSession = { id: crypto.randomUUID(), lastActivityAt: now(), context: directContext() }
       enqueue('page_view')
       rotated = true
     }
@@ -183,7 +197,7 @@ export function createWebAnalytics(options: Options = {}) {
   function pageHide() { sample(); drainActive(); foreground = false; void flush(true) }
   function pageShow() { foreground = document.visibilityState === 'visible' && document.hasFocus(); lastSample = now(); if (foreground) { resumeSession(); lastInteraction = now() } }
   function connection() {
-    discard(); currentSession = null; lastSample = now(); lastInteraction = now()
+    discard(); clearSession(); lastSample = now(); lastInteraction = now()
     if (allowed() && page) { enqueue('page_view'); void flush() }
   }
   function preference(event: Event) {
@@ -205,7 +219,7 @@ export function createWebAnalytics(options: Options = {}) {
       const safe = next && PAGES.includes(next) ? next : null
       if (safe === page && currentView === viewKey) return
       sample(); drainActive(); page = safe; currentView = viewKey; lastSample = now()
-      if (!safe) { void flush(); currentSession = null; return }
+      if (!safe) { void flush(); clearSession(); return }
       if (!allowed()) return
       const rotated = resumeSession(); lastInteraction = now(); if (!rotated) enqueue('page_view'); void flush()
     },
