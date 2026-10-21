@@ -1,5 +1,6 @@
 import type { Lang } from './i18n'
 import { HttpsImportError, IMPORT_TIMEOUT_MS, MAX_HTML_BYTES, MAX_PUBLICATION_BYTES, publicationMediaTypes, publicationUrl, safePublicationName, suggestedPublicationName } from '../shared/httpsPublication'
+import { chapterIndexUrl, MAX_CHAPTER_INDEX_BYTES } from '../shared/chapterImport'
 
 export type ImportProgress = { received: number; total?: number }
 
@@ -14,6 +15,15 @@ const messages: Record<string, [string, string]> = {
   EMPTY_FILE: ['Tệp tải về không có nội dung.', 'The downloaded file is empty.'],
   UNSUPPORTED_FORMAT: ['Không nhận diện được tài liệu. Hỗ trợ EPUB, PDF, CBZ, DOCX, TXT, Markdown, HTML, JPG, PNG và WebP.', 'Unrecognized document. Supported: EPUB, PDF, CBZ, DOCX, TXT, Markdown, HTML, JPG, PNG and WebP.'],
   HTML_TOO_LARGE: ['Trang HTML vượt giới hạn 8 MB để trích xuất nội dung.', 'The HTML page exceeds the 8 MB article extraction limit.'],
+  HTML_REQUIRED: ['Liên kết này không trả về trang HTML. Hãy dùng đường dẫn trang mục lục hoặc chương truyện.', 'This link does not return an HTML page. Use a table of contents or chapter page URL.'],
+  CHAPTER_CATALOG_EMPTY: ['Không tìm thấy liên kết chương công khai trong mục lục. Trang có thể cần JavaScript hoặc đăng nhập; hãy thử link mục lục khác.', 'No public chapter links were found. The page may require JavaScript or signing in; try another table of contents URL.'],
+  CHAPTER_INDEX_INVALID: ['Danh sách chương từ nguồn không khớp hoặc đã thay đổi. Hãy quét lại mục lục.', 'The source chapter index is inconsistent or has changed. Scan the table of contents again.'],
+  BATCH_TOO_LARGE: ['Nội dung các chương vượt tổng giới hạn 50 MB. Hãy chia thành nhiều tập nhỏ hơn.', 'The selected chapters exceed the combined 50 MB limit. Split them into smaller volumes.'],
+  BATCH_STALE: ['Đợt tải đã được thay thế hoặc cập nhật ở cửa sổ khác. Hãy mở lại phần nhập truyện.', 'This download was replaced or changed in another window. Reopen chapter import.'],
+  BATCH_STORAGE_FAILED: ['Không lưu được tiến độ tải trong trình duyệt. Kiểm tra dung lượng và quyền lưu trữ rồi thử lại.', 'Could not save download progress in this browser. Check available storage and storage permissions, then retry.'],
+  BATCH_EMPTY: ['Chưa tải xong chương nào để tạo sách. Hãy tải hoặc thử lại các chương trước.', 'No chapters have completed. Download or retry chapters before creating a book.'],
+  BATCH_TOO_MANY: ['Hãy chọn từ 1 đến 500 chương trong mỗi đợt tải.', 'Select between 1 and 500 chapters per download.'],
+  BATCH_INVALID: ['Danh sách chương hoặc khoảng đã chọn không hợp lệ. Hãy quét lại mục lục và chọn lại.', 'The chapter list or selected range is invalid. Scan the table of contents and select again.'],
   NO_ARTICLE: ['Không tìm thấy nội dung chính để đọc. Trang có thể chỉ chứa liên kết hoặc yêu cầu đăng nhập.', 'No readable article found. The page may contain only links or require signing in.'],
   SAVE_FAILED: ['Không lưu được tài liệu. Kiểm tra bộ nhớ trình duyệt rồi thử lại.', 'Could not save the document. Check browser storage and try again.'],
   ORIGIN_REJECTED: ['Không tải được từ trang này. Hãy mở lại NoCap rồi thử lại.', 'Download unavailable from this page. Reopen NoCap and try again.'],
@@ -25,7 +35,7 @@ export function httpsImportMessage(error: unknown, lang: Lang): string {
 }
 
 /** Sanitize before parsing; remote images/frames never become network requests. */
-async function extractArticle(file: Blob): Promise<{ html: string; title: string }> {
+export async function extractArticle(file: Blob): Promise<{ html: string; title: string }> {
   if (file.size > MAX_HTML_BYTES) throw new HttpsImportError('HTML_TOO_LARGE')
   const { default: DOMPurify } = await import('dompurify')
   const clean = DOMPurify.sanitize(await file.text(), {
@@ -113,8 +123,10 @@ export async function publicationFile(blob: Blob, headers: Headers, finalUrl: st
   return new File([blob], safePublicationName(name, detected), { type: publicationMediaTypes[detected] })
 }
 
-export async function downloadHttpsPublication(raw: string, options: { signal?: AbortSignal; onProgress?: (progress: ImportProgress) => void } = {}): Promise<File> {
-  const url = publicationUrl(raw)
+async function downloadHttpsBlob(raw: string, options: { signal?: AbortSignal; onProgress?: (progress: ImportProgress) => void; mode?: 'html' | 'chapter-index' } = {}): Promise<{ blob: Blob; headers: Headers; url: string }> {
+  const url = options.mode === 'chapter-index' ? chapterIndexUrl(raw) : publicationUrl(raw)
+  const maxBytes = options.mode === 'chapter-index' ? MAX_CHAPTER_INDEX_BYTES : options.mode === 'html' ? MAX_HTML_BYTES : MAX_PUBLICATION_BYTES
+  const sizeError = options.mode === 'chapter-index' ? 'CHAPTER_INDEX_INVALID' : options.mode === 'html' ? 'HTML_TOO_LARGE' : 'FILE_TOO_LARGE'
   const controller = new AbortController()
   const cancel = () => controller.abort(options.signal?.reason)
   if (options.signal?.aborted) cancel()
@@ -122,13 +134,14 @@ export async function downloadHttpsPublication(raw: string, options: { signal?: 
   const timer = setTimeout(() => controller.abort(new HttpsImportError('DOWNLOAD_TIMEOUT', 504)), IMPORT_TIMEOUT_MS)
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
   try {
-    const response = await fetch('/api/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: url.toString() }), signal: controller.signal, credentials: 'omit', cache: 'no-store', redirect: 'error', referrerPolicy: 'no-referrer' })
+    controller.signal.throwIfAborted()
+    const response = await fetch('/api/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: url.toString(), ...(options.mode ? { mode: options.mode } : {}) }), signal: controller.signal, credentials: 'omit', cache: 'no-store', redirect: 'error', referrerPolicy: 'no-referrer' })
     if (!response.ok) {
       const data = await response.json().catch(() => null) as { error?: { code?: string } } | null
       throw new HttpsImportError(data?.error?.code || 'SOURCE_UNAVAILABLE', response.status)
     }
     const total = Number(response.headers.get('content-length') || 0)
-    if (total > MAX_PUBLICATION_BYTES) { await response.body?.cancel(); throw new HttpsImportError('FILE_TOO_LARGE') }
+    if (total > maxBytes) { await response.body?.cancel(); throw new HttpsImportError(sizeError) }
     if (!response.body) throw new HttpsImportError('EMPTY_FILE')
     reader = response.body.getReader()
     const chunks: BlobPart[] = []
@@ -140,7 +153,7 @@ export async function downloadHttpsPublication(raw: string, options: { signal?: 
       const { done, value } = await reader.read()
       if (done) break
       received += value.byteLength
-      if (received > MAX_PUBLICATION_BYTES) { await reader.cancel(); throw new HttpsImportError('FILE_TOO_LARGE') }
+      if (received > maxBytes) { await reader.cancel(); throw new HttpsImportError(sizeError) }
       chunks.push(value as BlobPart)
       if (performance.now() - lastReport >= 100 || received === total) {
         options.onProgress?.({ received, total: total > 0 ? total : undefined })
@@ -152,9 +165,9 @@ export async function downloadHttpsPublication(raw: string, options: { signal?: 
     const source = response.headers.get('X-NoCap-Source')
     let finalUrl = url.toString()
     if (source) { try { finalUrl = publicationUrl(decodeURIComponent(source)).toString() } catch { /* use the initial URL */ } }
-    const file = await publicationFile(new Blob(chunks), response.headers, finalUrl)
     controller.signal.throwIfAborted()
-    return file
+    if (!received) throw new HttpsImportError('EMPTY_FILE')
+    return { blob: new Blob(chunks), headers: response.headers, url: finalUrl }
   } catch (error) {
     if (controller.signal.aborted) throw controller.signal.reason
     if (error instanceof HttpsImportError) throw error
@@ -165,4 +178,32 @@ export async function downloadHttpsPublication(raw: string, options: { signal?: 
     await reader?.cancel().catch(() => {})
     reader?.releaseLock()
   }
+}
+
+export async function downloadHttpsPublication(raw: string, options: { signal?: AbortSignal; onProgress?: (progress: ImportProgress) => void } = {}): Promise<File> {
+  const response = await downloadHttpsBlob(raw, options)
+  const file = await publicationFile(response.blob, response.headers, response.url)
+  options.signal?.throwIfAborted()
+  return file
+}
+
+/** Fetch inert HTML through the same public-only, bounded transport used by file import. */
+export async function downloadHttpsHtml(raw: string, options: { signal?: AbortSignal } = {}): Promise<{ html: string; url: string }> {
+  const response = await downloadHttpsBlob(raw, { ...options, mode: 'html' })
+  const mediaType = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase()
+  const html = await response.blob.text()
+  options.signal?.throwIfAborted()
+  if (!['text/html', 'application/xhtml+xml', 'text/plain', 'application/octet-stream', ''].includes(mediaType)
+    || !/<(?:!doctype\s+html|html|head|body|title|main|article|div|ul|ol|a)\b/i.test(html.slice(0, 8192))) throw new HttpsImportError('HTML_REQUIRED')
+  return { html, url: response.url }
+}
+
+/** Inert JSON metadata only, restricted to the supported public chapter-list endpoint. */
+export async function downloadHttpsChapterIndex(raw: string, options: { signal?: AbortSignal } = {}): Promise<unknown> {
+  const response = await downloadHttpsBlob(raw, { ...options, mode: 'chapter-index' })
+  const final = chapterIndexUrl(response.url)
+  if (final.origin !== new URL(raw).origin) throw new HttpsImportError('CHAPTER_INDEX_INVALID')
+  const text = await response.blob.text()
+  options.signal?.throwIfAborted()
+  try { return JSON.parse(text) } catch { throw new HttpsImportError('CHAPTER_INDEX_INVALID') }
 }

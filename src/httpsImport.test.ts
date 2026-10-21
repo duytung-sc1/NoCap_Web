@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import JSZip from 'jszip'
-import { downloadHttpsPublication, httpsImportMessage, publicationFile } from './httpsImport'
+import { downloadHttpsChapterIndex, downloadHttpsHtml, downloadHttpsPublication, httpsImportMessage, publicationFile } from './httpsImport'
 import { IMPORT_TIMEOUT_MS, MAX_HTML_BYTES, MAX_PUBLICATION_BYTES, publicationSource, safePublicationName, suggestedPublicationName } from '../shared/httpsPublication'
 
 describe('publication detection and naming', () => {
@@ -36,6 +36,40 @@ describe('publication detection and naming', () => {
 })
 
 describe('HTTPS client download', () => {
+  it('downloads public index metadata through the bounded proxy without accepting arbitrary JSON sources', async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(Response.json({ chapters: [{ id: 77, name: 'Chapter 1', slug: 'chuong-1' }] }))
+      .mockResolvedValueOnce(new Response('not JSON'))
+    const endpoint = 'https://api.sstruyen.pics/novels/77/chapters?page=1&keyword=&limit=50&sort=asc'
+    vi.stubGlobal('fetch', fetcher)
+    try {
+      expect(await downloadHttpsChapterIndex(endpoint)).toEqual({ chapters: [{ id: 77, name: 'Chapter 1', slug: 'chuong-1' }] })
+      expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({ url: endpoint, mode: 'chapter-index' })
+      await expect(downloadHttpsChapterIndex(endpoint)).rejects.toMatchObject({ code: 'CHAPTER_INDEX_INVALID' })
+      await expect(downloadHttpsChapterIndex('https://other.example.org/private.json')).rejects.toMatchObject({ code: 'PUBLIC_URL_REQUIRED' })
+      expect(fetcher).toHaveBeenCalledTimes(2)
+    } finally { vi.unstubAllGlobals() }
+  })
+  it('requests bounded HTML mode, keeps the redirect base and rejects binary or oversized pages', async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(new Response('<html><body>A chapter</body></html>', { headers: { 'Content-Type': 'text/html', 'X-NoCap-Source': encodeURIComponent('https://cdn.example.org/story/') } }))
+      .mockResolvedValueOnce(new Response('%PDF-binary', { headers: { 'Content-Type': 'application/pdf' } }))
+      .mockResolvedValueOnce(new Response('oversized', { headers: { 'Content-Type': 'text/html', 'Content-Length': String(MAX_HTML_BYTES + 1) } }))
+    vi.stubGlobal('fetch', fetcher)
+    try {
+      expect(await downloadHttpsHtml('https://books.example.org/catalog')).toEqual({ html: '<html><body>A chapter</body></html>', url: 'https://cdn.example.org/story/' })
+      expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({ url: 'https://books.example.org/catalog', mode: 'html' })
+      await expect(downloadHttpsHtml('https://books.example.org/catalog')).rejects.toMatchObject({ code: 'HTML_REQUIRED' })
+      await expect(downloadHttpsHtml('https://books.example.org/catalog')).rejects.toMatchObject({ code: 'HTML_TOO_LARGE' })
+    } finally { vi.unstubAllGlobals() }
+  })
+  it('does not contact the proxy when already canceled', async () => {
+    const fetcher = vi.fn()
+    vi.stubGlobal('fetch', fetcher)
+    try {
+      const controller = new AbortController(); controller.abort()
+      await expect(downloadHttpsHtml('https://books.example.org/catalog', { signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' })
+      expect(fetcher).not.toHaveBeenCalled()
+    } finally { vi.unstubAllGlobals() }
+  })
   it('downloads with progress, correct filename, no auth/cookies or HTTP cache', async () => {
     const data = '%PDF-1.7 document'
     const fetcher = vi.fn().mockResolvedValue(new Response(data, { headers: { 'Content-Length': String(data.length), 'Content-Disposition': 'attachment; filename="My book.pdf"', 'Content-Type': 'application/pdf' } }))

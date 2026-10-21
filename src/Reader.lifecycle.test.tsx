@@ -235,10 +235,12 @@ describe('document reader restoration', () => {
     const locatorJson = JSON.stringify({ type: 'TEXT', blockIndex: 1, characterOffset: 7, selectedText: 'target phrase', textStartOffset: 13, textEndOffset: 26, scrollOffsetPx: 999 })
     const { container, rerender } = render(<ReaderPane {...base} book={book} bytes={bytes} navigateLocator={{ locatorJson, requestId: 1 }} />)
     expect(reached).toHaveLength(0)
+    const host = container.querySelector<HTMLElement>('.text-host')!
+    // Set viewport geometry before decoding can schedule the navigation frame.
+    // A delayed test worker may run that frame before findByText returns.
+    Object.defineProperties(host, { clientHeight: { configurable: true, value: 400 }, scrollHeight: { configurable: true, value: 2000 } })
     await act(async () => { pending.resolve({ value: '<p>First.</p><p>Before target phrase after.</p>' }); await pending.promise })
     await screen.findByText('Before target phrase after.')
-    const host = container.querySelector<HTMLElement>('.text-host')!
-    Object.defineProperties(host, { clientHeight: { configurable: true, value: 400 }, scrollHeight: { configurable: true, value: 2000 } })
     await waitFor(() => expect(reached).toContain('target phrase'))
     expect(host.scrollTop).toBe(228)
 
