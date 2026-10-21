@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { BarChart3, BookOpen, Database, History, LayoutDashboard, Megaphone, Plus, RefreshCw, Tags, Users } from 'lucide-react'
+import { BarChart3, BookOpen, CreditCard, Database, History, LayoutDashboard, Megaphone, Plus, RefreshCw, Tags, Users } from 'lucide-react'
 import { ApiError } from '../api'
 import type { Lang } from '../i18n'
 import { adminRequest, type AdminCategory, type AdminIdentity, type AdminUser, type Announcement, type AuditEntry, type CatalogRow, type Conflict, type Overview, type PageResult, type StorageScan } from './api'
@@ -7,8 +7,9 @@ import './AdminWorkspace.css'
 import { adminError } from './errors'
 import { AdminTransactions } from './AdminTransactions'
 import { AdminAnalytics } from './AdminAnalytics'
+import { AdminPayments } from './AdminPayments'
 
-type View = 'overview' | 'analytics' | 'catalog' | 'categories' | 'users' | 'announcements' | 'storage' | 'audit'
+type View = 'overview' | 'analytics' | 'payments' | 'catalog' | 'categories' | 'users' | 'announcements' | 'storage' | 'audit'
 type Dataset = { overview?: Overview; catalog?: PageResult<CatalogRow>; categories?: PageResult<AdminCategory>; users?: PageResult<AdminUser>; announcements?: PageResult<Announcement>; audit?: PageResult<AuditEntry> }
 type Modal = { kind: 'book'; row?: CatalogRow } | { kind: 'category'; item?: AdminCategory }
   | { kind: 'announcement'; item?: Announcement } | { kind: 'conflicts'; user: AdminUser } | { kind: 'transactions'; user: AdminUser } | { kind: 'avatar' }
@@ -79,6 +80,7 @@ export default function AdminWorkspace({ token, admin, lang, onSignIn, onCatalog
   const sections = [
     { id: 'overview' as const, label: text('Tổng quan', 'Overview'), icon: LayoutDashboard },
     { id: 'analytics' as const, label: text('Thống kê Web', 'Web Analytics'), icon: BarChart3 },
+    { id: 'payments' as const, label: text('Giao dịch & Pro', 'Payments & Pro'), icon: CreditCard },
     { id: 'catalog' as const, label: text('Sách', 'Books'), icon: BookOpen },
     { id: 'categories' as const, label: text('Thể loại', 'Categories'), icon: Tags },
     { id: 'users' as const, label: text('Người dùng & Pro', 'Users & Pro'), icon: Users },
@@ -100,7 +102,7 @@ export default function AdminWorkspace({ token, admin, lang, onSignIn, onCatalog
   }, [token])
   useEffect(() => {
     const controller = new AbortController()
-    const paths: Record<View, string> = { overview: 'overview', analytics: '', catalog: `catalog?page=${page}&q=${encodeURIComponent(search)}`, categories: 'categories', users: `users?page=${page}&q=${encodeURIComponent(search)}`, announcements: 'announcements', storage: '', audit: `audit?page=${page}` }
+    const paths: Record<View, string> = { overview: 'overview', analytics: '', payments: '', catalog: `catalog?page=${page}&q=${encodeURIComponent(search)}`, categories: 'categories', users: `users?page=${page}&q=${encodeURIComponent(search)}`, announcements: 'announcements', storage: '', audit: `audit?page=${page}` }
     const path = paths[view]
     void (path ? adminRequest<unknown>(token, path, controller.signal) : Promise.resolve(null)).then(value => {
       if (!controller.signal.aborted) setResource({ key, data: path ? { [view]: value } : {} })
@@ -197,12 +199,13 @@ export default function AdminWorkspace({ token, admin, lang, onSignIn, onCatalog
   return <section className="admin-workspace" aria-label={text('Khu vực quản trị NoCap', 'NoCap administrator workspace')}>
     <header className="admin-workspace-heading"><div><p className="eyebrow">NOCAP · {text('QUẢN TRỊ', 'ADMINISTRATION')}</p><h1>{text('Quản trị thư viện', 'Library administration')}</h1><p>{text('Quản lý sách, người đọc và dịch vụ NoCap.', 'Manage books, readers and NoCap services.')}</p></div><div className="admin-identity"><strong>{admin.name || admin.email}</strong><span>{admin.email}</span>{button(text('Đổi ảnh đại diện', 'Change avatar'), () => { setAvatar(admin.photoUrl || ''); open({ kind: 'avatar' }) })}</div></header>
     <div className="admin-workspace-layout"><nav className="admin-navigation" aria-label={text('Mục quản trị', 'Administration sections')}>{sections.map(section => <button type="button" key={section.id} aria-current={view === section.id ? 'page' : undefined} disabled={busy} onClick={() => { setView(section.id); setPage(0); setSearch(''); setQuery(''); setNotice(''); setModal(null) }}><section.icon size={18} />{section.label}</button>)}</nav>
-    <div className="admin-main"><div className="admin-heading-row"><h2>{title}</h2>{view !== 'analytics' && <div key="actions" className="admin-actions"><button className="secondary" disabled={loading || busy} onClick={() => { setNotice(''); setRevision(n => n + 1) }}><RefreshCw size={15} />{text('Tải lại', 'Refresh')}</button>{['catalog', 'categories', 'announcements'].includes(view) && <button className="primary" disabled={busy || loading || !!loaded?.error} onClick={() => open(view === 'catalog' ? { kind: 'book' } : view === 'categories' ? { kind: 'category' } : { kind: 'announcement' })}><Plus size={15} />{text('Thêm mới', 'Add new')}</button>}</div>}</div>
+    <div className="admin-main"><div className="admin-heading-row"><h2>{title}</h2>{view !== 'analytics' && view !== 'payments' && <div key="actions" className="admin-actions"><button className="secondary" disabled={loading || busy} onClick={() => { setNotice(''); setRevision(n => n + 1) }}><RefreshCw size={15} />{text('Tải lại', 'Refresh')}</button>{['catalog', 'categories', 'announcements'].includes(view) && <button className="primary" disabled={busy || loading || !!loaded?.error} onClick={() => open(view === 'catalog' ? { kind: 'book' } : view === 'categories' ? { kind: 'category' } : { kind: 'announcement' })}><Plus size={15} />{text('Thêm mới', 'Add new')}</button>}</div>}</div>
       {(view === 'catalog' || view === 'users') && <form className="admin-search" onSubmit={event => { event.preventDefault(); setPage(0); setSearch(query) }}><label className="sr-only" htmlFor="admin-search">{text('Tìm kiếm', 'Search')}</label><input id="admin-search" value={query} onChange={event => setQuery(event.target.value)} maxLength={100} placeholder={view === 'catalog' ? text('Tên sách hoặc tác giả…', 'Book title or author…') : text('Email hoặc tên người dùng…', 'Email or display name…')} /><button className="secondary">{text('Tìm kiếm', 'Search')}</button></form>}
       {notice && <p className="admin-notice" role="status">{notice}</p>}
       {reauth && <div className="admin-notice" role="alert"><p>{text('Vui lòng đăng nhập lại để tiếp tục quản trị.', 'Sign in again to continue administration.')}</p><button className="primary" onClick={signInAgain}>{text('Đăng nhập lại', 'Sign in again')}</button></div>}
-      {loading && view !== 'analytics' && <p role="status">{text('Đang tải dữ liệu…', 'Loading data…')}</p>}
+      {loading && view !== 'analytics' && view !== 'payments' && <p role="status">{text('Đang tải dữ liệu…', 'Loading data…')}</p>}
       {view === 'analytics' && <AdminAnalytics token={token} lang={lang} onError={handleFailure} onSignIn={signInAgain} />}
+      {view === 'payments' && <AdminPayments token={token} lang={lang} onError={handleFailure} onSignIn={signInAgain} />}
       {loaded?.error && <div role="alert" className="admin-notice"><p>{loaded.error}</p>{button(text('Thử lại', 'Retry'), () => setRevision(n => n + 1))}</div>}
       {data?.overview && <><div className="admin-metrics">{[
         [text('Sách', 'Books'), data.overview.books], [text('Thể loại', 'Categories'), data.overview.categories], [text('Người dùng', 'Users'), data.overview.users],

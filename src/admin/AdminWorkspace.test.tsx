@@ -18,6 +18,7 @@ beforeEach(() => {
     if (data) return { success: true }
     if (path === 'overview') return { books: 1, categories: 1, users: 1, activeUsers: 1, proSnapshots: 0, syncRecords: 0, syncConflicts: 0 }
     if (path.startsWith('analytics?')) return { enabled: true, trackingStartedAt: null, timezone: 'Asia/Ho_Chi_Minh', days: 7, from: '2026-10-12', to: '2026-10-18', generatedAt: 1792299600000, summary: { visitors: 0, sessions: 0, pageViews: 0, activeMs: 0, newVisitors: 0, returningVisitors: 0 }, daily: [], topPages: [], events: [] }
+    if (path.startsWith('transactions?')) return { from: '2026-10-12', to: '2026-10-18', timezone: 'Asia/Ho_Chi_Minh', generatedAt: 1792299600000, currency: 'VND', filters: { status: 'ALL', plan: 'ALL', q: '' }, summary: { orders: 0, paidOrders: 0, paidCustomers: 0, paidAmount: 0 }, plans: [], daily: [], statuses: [], items: [], page: 0, totalRows: 0, hasMore: false, undatedPaidOrders: 0 }
     if (path.startsWith('catalog')) return { items: [book], hasMore: false }
     if (path === 'categories') return { items: [{ id: 'fiction', name: 'Fiction', bookCount: 1 }] }
     if (path.startsWith('users/conflicts')) return { items: [{ kind: 'highlights', recordId: 'safe-id', baseVersion: 1, currentVersion: 2, reason: 'STALE_VERSION' }], hasMore: false }
@@ -31,6 +32,17 @@ beforeEach(() => {
 afterEach(() => cleanup())
 
 describe('administrator workspace', () => {
+  it('opens global payments separately from the per-user history and handles revoked access', async () => {
+    setup(); await screen.findByText('Tài khoản được bật')
+    fireEvent.click(screen.getByRole('button', { name: 'Giao dịch & Pro' }))
+    await screen.findByText('Không có giao dịch phù hợp bộ lọc.')
+    expect(screen.getAllByRole('button', { name: 'Tải lại' })).toHaveLength(1)
+    expect(screen.getByRole('button', { name: 'Giao dịch & Pro' }).getAttribute('aria-current')).toBe('page')
+    request.mockRejectedValueOnce(new ApiError(403, 'Revoked', 'ADMIN_REQUIRED'))
+    fireEvent.click(screen.getByRole('button', { name: 'Tải lại' }))
+    await waitFor(() => expect(callbacks.onAccessLost).toHaveBeenCalledOnce())
+    expect(screen.queryByRole('heading', { name: 'Khách trả tiền' })).toBeNull()
+  })
   it('distinguishes enabled accounts from measured Web traffic and opens the analytics section once', async () => {
     setup()
     expect(await screen.findByText('Tài khoản được bật')).toBeTruthy()

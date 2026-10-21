@@ -204,13 +204,17 @@ settings and restores full opacity without changing the saved reading position.
 
 The administrator workspace includes **Web Analytics** with Vietnam-calendar
 Today/7/30/90-day reports, distinct estimated browsers and per-tab sessions,
-page views, total/average active time, feature counts and aggregate CSV export.
+page views, total/average active time, feature counts, traffic sources, UTM campaigns,
+coarse device groups and aggregate CSV export.
 These are browser estimates, not unique people, account DAU or live online presence.
 The older overview count is explicitly labelled **Enabled accounts**.
 
-`src/webAnalytics.ts` sends only allowlisted page categories and event names,
-random visitor/session IDs, event IDs and active milliseconds. It never receives
-document identifiers, titles, URL parameters, search queries, account IDs or tokens.
+`src/webAnalytics.ts` sends allowlisted page categories and event names,
+random visitor/session IDs, event IDs and active milliseconds. Optional session context
+contains a public referrer hostname, normalized `utm_source`, `utm_medium` and
+`utm_campaign` slugs, and a desktop/mobile/tablet/unknown device enum. It never sends
+full URLs, other URL parameters, document identifiers, titles, search queries,
+account IDs, tokens, or raw user-agent strings.
 The API hashes identifiers with its own key, rejects unknown fields, deduplicates
 events, caps elapsed time and retains approximately 90 days of event history.
 No third-party analytics SDK is used. Server collection must be enabled separately;
@@ -222,7 +226,7 @@ especially with multiple tabs, network delays, browser blocking or cleared stora
 Telemetry is best effort and offline activity is not uploaded later.
 
 Guests and signed-in users can opt out under **Account > Web privacy**.
-The collector also honors DNT/GPC, omits credentials and referrers, and never
+The collector also honors DNT/GPC, omits credentials and the HTTP Referer header, and never
 records administrator page views. Android is unchanged.
 
 Collection defaults to the supported production domains only. Set
@@ -230,8 +234,33 @@ Collection defaults to the supported production domains only. Set
 set it to `true`, point `VITE_API_BASE_URL` at a local Worker and explicitly allow
 the local page origin in the local Worker's `WEB_ANALYTICS_ORIGINS`.
 Never point local telemetry at production for testing.
-The backend requires migration `0014_web_analytics.sql` and the secret
+The backend requires migrations `0014_web_analytics.sql`, `0015_web_acquisition.sql` and the secret
 `WEB_ANALYTICS_KEY` (at least 32 characters), documented in the backend README.
+
+Attribution is fixed at session entry. Valid UTM overrides the inferred source/medium;
+referrer inference recognizes common search/social hosts, otherwise uses a referral
+hostname or direct/no-referrer. A same-document session after 30 minutes idle starts
+without campaign attribution. Historical sessions remain unknown; the dashboard
+shows coverage and the first context collection time. Each source/medium or campaign
+table shows up to 20 groups ranked by sessions, with an explicit truncation notice;
+analytics CSV includes those same groups and all device groups. Distinct browser
+counts across groups are not additive. No campaign-to-payment attribution is claimed.
+
+Example campaign link:
+`https://nocap.rest/?utm_source=facebook&utm_medium=social&utm_campaign=launch-2026`.
+Labels normalize case, accents and whitespace to slugs of up to 64 characters
+(`a-z`, digits, hyphens, underscores); URL/email-like labels and long digit runs
+are discarded. Never place personal data in campaign tags.
+
+## Payment reporting
+
+**Administration > Payments & Pro** reports recorded SePay orders across accounts,
+with paid amounts, paid orders, distinct paying accounts, 30/365-day plan breakdowns,
+daily paid amounts and complete filtered CSV export (up to 10,000 orders).
+Only PAID orders contribute to paid totals; admin-granted Pro is excluded.
+PAID orders are dated by payment time, other statuses by creation time, in UTC+7.
+Renewal/repeat-purchase metrics are intentionally omitted. See
+`docs/analytics-benchmark-2026-10-21.md` for definitions and remaining analytics gaps.
 
 ## Boundaries
 

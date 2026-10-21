@@ -1,4 +1,5 @@
 import { API_BASE } from './api'
+import { captureAnalyticsContext, storedAnalyticsContext, type AnalyticsContext } from './analyticsContext'
 
 export const ANALYTICS_PREFERENCE_KEY = 'nocap-web-analytics-opt-out-v1'
 const VISITOR_KEY = 'nocap-web-analytics-visitor-v1'
@@ -13,8 +14,8 @@ const FEATURES = ['book_open', 'note_save', 'review_start', 'review_complete', '
 export type AnalyticsPage = typeof PAGES[number]
 export type AnalyticsFeature = typeof FEATURES[number]
 export type AnalyticsEvent = { id: string; type: 'page_view' | 'heartbeat' | AnalyticsFeature; page: AnalyticsPage; activeMs: number }
-export type AnalyticsBatch = { visitorId: string; sessionId: string; events: AnalyticsEvent[] }
-type Session = { id: string; lastActivityAt: number }
+export type AnalyticsBatch = { visitorId: string; sessionId: string; events: AnalyticsEvent[]; context?: AnalyticsContext }
+type Session = { id: string; lastActivityAt: number; context?: AnalyticsContext }
 type Options = { enabled?: boolean; endpoint?: string; now?: () => number; fetcher?: typeof fetch }
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -36,7 +37,8 @@ export function setAnalyticsOptOut(value: boolean) {
   window.dispatchEvent(new CustomEvent(PREFERENCE_EVENT, { detail: value }))
 }
 
-/** First-party aggregate telemetry. It never receives titles, URLs, query text, account IDs or tokens. */
+/** First-party telemetry. Context contains only a hostname, normalized marketing
+ * slugs and a device group; never full URLs, private queries, account IDs or tokens. */
 export function createWebAnalytics(options: Options = {}) {
   const enabled = options.enabled ?? (import.meta.env.VITE_WEB_ANALYTICS_ENABLED !== 'false'
     && (['nocap.rest', 'www.nocap.rest', 'ntlab.id.vn', 'www.ntlab.id.vn'].includes(window.location.hostname)
@@ -49,6 +51,7 @@ export function createWebAnalytics(options: Options = {}) {
   let currentView: string | undefined
   let visitorId: string | null = null
   let currentSession: Session | null = null
+  let entryContext: AnalyticsContext | null = null
   let lastSample = now()
   let lastInteraction = lastSample
   let pendingActiveMs = 0
@@ -67,6 +70,7 @@ export function createWebAnalytics(options: Options = {}) {
     }
   }
   function identity() {
+    entryContext ??= captureAnalyticsContext()
     if (!visitorId) {
       let stored: { id?: string; expiresAt?: number } | null = null
       try { stored = read(localStorage, VISITOR_KEY) as { id?: string; expiresAt?: number } | null } catch { /* No persistent identifier. */ }
@@ -83,7 +87,8 @@ export function createWebAnalytics(options: Options = {}) {
       currentSession = navigation?.type === 'reload' && stored && typeof stored.id === 'string' && uuidPattern.test(stored.id)
         && typeof stored.lastActivityAt === 'number' && Number.isFinite(stored.lastActivityAt)
         && now() >= stored.lastActivityAt && now() - stored.lastActivityAt < SESSION_IDLE_MS
-        ? { ...stored, id: stored.id.toLowerCase() } : { id: crypto.randomUUID(), lastActivityAt: now() }
+        ? { id: stored.id.toLowerCase(), lastActivityAt: stored.lastActivityAt, context: storedAnalyticsContext(stored.context) ?? entryContext }
+        : { id: crypto.randomUUID(), lastActivityAt: now(), context: entryContext }
     }
   }
   function enqueue(type: AnalyticsEvent['type'], activeMs = 0, target = page) {
@@ -91,7 +96,7 @@ export function createWebAnalytics(options: Options = {}) {
     identity()
     let batch = queue.at(-1)
     if (!batch || batch.sessionId !== currentSession!.id || batch.events.length >= 25 || Object.isFrozen(batch.events)) {
-      batch = { visitorId: visitorId!, sessionId: currentSession!.id, events: [] }; queue.push(batch)
+      batch = { visitorId: visitorId!, sessionId: currentSession!.id, context: currentSession!.context, events: [] }; queue.push(batch)
     }
     batch.events.push({ id: crypto.randomUUID(), type, page: target, activeMs: Math.max(0, Math.min(TICK_MS, Math.floor(activeMs))) })
     // Do not persist a telemetry queue or allow an unbounded backlog.
@@ -117,7 +122,7 @@ export function createWebAnalytics(options: Options = {}) {
     let rotated = false
     if (now() - currentSession!.lastActivityAt >= SESSION_IDLE_MS || now() < currentSession!.lastActivityAt) {
       drainActive()
-      currentSession = { id: crypto.randomUUID(), lastActivityAt: now() }
+      currentSession = { id: crypto.randomUUID(), lastActivityAt: now(), context: { referrerHost: '', utmSource: '', utmMedium: '', utmCampaign: '', device: currentSession!.context?.device ?? 'unknown' } }
       enqueue('page_view')
       rotated = true
     }
@@ -140,7 +145,7 @@ export function createWebAnalytics(options: Options = {}) {
       if (response.status === 409) {
         if (currentSession?.id === batch.sessionId) {
           queue = []; pendingActiveMs = 0; lastSample = now()
-          currentSession = { id: crypto.randomUUID(), lastActivityAt: now() }
+          currentSession = { id: crypto.randomUUID(), lastActivityAt: now(), context: currentSession.context }
           try { write(sessionStorage, SESSION_KEY, currentSession) } catch { /* Optional. */ }
           enqueue('page_view')
         }

@@ -35,10 +35,30 @@ export type AdminTransaction = {
   status: AdminTransactionStatus; createdAt: number; expiresAt: number
   paidAt: number | null; transactionId: string | null; entitlementExpiresAt: number | null
 }
+export type AdminPaymentCounts = { orders: number; paidOrders: number; paidCustomers: number; paidAmount: number }
+export type AdminPaymentFilters = { from: string; to: string; status: 'ALL' | AdminTransactionStatus; plan: 'ALL' | '30' | '365' | 'OTHER'; q: string }
+export type AdminPaymentRow = AdminTransaction & { userId: string; email: string; displayName: string | null; recordedAt: number }
+export type AdminPaymentReport = {
+  from: string; to: string; timezone: 'Asia/Ho_Chi_Minh'; generatedAt: number; currency: 'VND'
+  filters: Pick<AdminPaymentFilters, 'status' | 'plan' | 'q'>
+  summary: AdminPaymentCounts
+  plans: (AdminPaymentCounts & { planDays: number })[]
+  daily: (AdminPaymentCounts & { date: string })[]
+  statuses: { status: AdminTransactionStatus; count: number }[]
+  items: AdminPaymentRow[]; page: number; totalRows: number; hasMore: boolean; undatedPaidOrders: number
+}
 export type AdminAnalyticsDays = 1 | 7 | 30 | 90
 export type AdminAnalyticsCounts = {
   visitors: number; sessions: number; pageViews: number; activeMs: number
   newVisitors: number; returningVisitors: number
+}
+export type AdminAcquisitionCounts = { visitors: number; sessions: number; pageViews: number; activeMs: number }
+export type AdminAcquisition = {
+  startedAt: number | null; coveredSessions: number; unknownSessions: number
+  sources: (AdminAcquisitionCounts & { source: string; medium: string })[]
+  campaigns: (AdminAcquisitionCounts & { utmSource: string; utmMedium: string; utmCampaign: string })[]
+  devices: (AdminAcquisitionCounts & { device: 'desktop' | 'mobile' | 'tablet' | 'unknown' })[]
+  sourcesTruncated: boolean; campaignsTruncated: boolean
 }
 export type AdminAnalytics = {
   enabled: boolean; trackingStartedAt: number | null; timezone: 'Asia/Ho_Chi_Minh'
@@ -47,6 +67,7 @@ export type AdminAnalytics = {
   daily: (AdminAnalyticsCounts & { date: string })[]
   topPages: { page: string; pageViews: number; visitors: number; activeMs: number }[]
   events: { type: string; count: number }[]
+  acquisition?: AdminAcquisition
 }
 
 // Use the logged-in reader's session, never dashboard cookies or a client-side role.

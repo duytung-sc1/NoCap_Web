@@ -183,6 +183,6 @@ describe('analytics aggregate CSV', () => {
     expect(csv).not.toContain('heartbeat')
     expect(csv).not.toContain('private-browser-id')
     expect(csv).not.toContain('private@example.test')
-    expect(csv.split('\r\n')[0].split(',')).toHaveLength(9)
+    expect(csv.split('\r\n')[0].split(',')).toHaveLength(13)
   })
 })

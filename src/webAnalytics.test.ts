@@ -18,6 +18,7 @@ function start() { tracker = createWebAnalytics({ enabled: true, endpoint: 'http
 beforeEach(() => {
   vi.useFakeTimers(); vi.setSystemTime(new Date('2026-10-18T04:00:00Z'))
   localStorage.clear(); sessionStorage.clear(); batches.length = 0
+  window.history.replaceState(null, '', '/')
   focused = true; visible = true; online = true; dnt = null; gpc = false
   vi.spyOn(document, 'hasFocus').mockImplementation(() => focused)
   vi.spyOn(performance, 'getEntriesByType').mockReturnValue([])
@@ -33,6 +34,24 @@ beforeEach(() => {
 afterEach(() => { tracker?.stop(); tracker = undefined; vi.restoreAllMocks(); vi.useRealTimers() })
 
 describe('first-party Web analytics', () => {
+  it('keeps entry UTM across SPA routes and reloads, then starts a direct session after idle', async () => {
+    window.history.replaceState(null, '', '/?utm_source=facebook&utm_medium=social&utm_campaign=launch-2026&secret=PRIVATE')
+    const client = start(); client.setPage('home'); await advance(1)
+    window.history.replaceState(null, '', '/library')
+    client.setPage('library'); await advance(1)
+    expect(batches.every(batch => batch.context?.utmCampaign === 'launch-2026')).toBe(true)
+    expect(JSON.stringify(batches)).not.toContain('PRIVATE')
+    const originalId = batches[0].sessionId
+    tracker!.stop()
+    vi.mocked(performance.getEntriesByType).mockReturnValue([{ type: 'reload' }] as unknown as PerformanceEntry[])
+    start().setPage('library'); await advance(1)
+    expect(batches.at(-1)?.sessionId).toBe(originalId)
+    expect(batches.at(-1)?.context?.utmSource).toBe('facebook')
+    await advance(31 * 60_000)
+    window.dispatchEvent(new Event('pointerdown')); await advance(15_000)
+    expect(batches.at(-1)?.sessionId).not.toBe(originalId)
+    expect(batches.at(-1)?.context).toMatchObject({ referrerHost: '', utmSource: '', utmMedium: '', utmCampaign: '' })
+  })
   it('counts normalized page changes once, never sends URLs, document data or auth credentials', async () => {
     const client = start(); client.setPage('home'); client.setPage('home')
     await advance(1); client.setPage('reader'); client.feature('note_save'); await advance(1); await client.flush()

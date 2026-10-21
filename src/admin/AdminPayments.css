@@ -1,0 +1,17 @@
+.admin-payments-filters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; align-items: end; padding: 16px; border: 1px solid #dce3e4; border-radius: 12px; }
+.admin-payments-filters label { display: grid; gap: 6px; min-width: 0; font-weight: 600; font-size: 12px; }
+.admin-payments-filters .admin-payments-search { grid-column: 1 / 4; }
+.admin-payments-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.admin-payments-table { min-width: 920px; table-layout: fixed; }
+.admin-payments-table th:nth-child(1) { width: 22%; }
+.admin-payments-table th:nth-child(2) { width: 26%; }
+.admin-payments-table th:nth-child(3) { width: 15%; }
+.admin-payments-table th:nth-child(4) { width: 14%; }
+.admin-payments-table th:nth-child(5) { width: 23%; }
+.admin-payments-table th:last-child, .admin-payments-table td:last-child { text-align: left; white-space: normal; }
+.admin-payments-table small { display: block; margin-top: 4px; color: #526a7b; font-size: 11px; }
+.admin-payments-status { display: inline-block; padding: 3px 9px; border-radius: 8px; background: #f1f4f5; color: #526a7b; }
+.admin-payments-status-paid { background: #e2f3ee; color: #087d6d; }
+.admin-payments-status-pending, .admin-payments-status-processing { background: #fff4df; color: #7c5b22; }
+@media (max-width: 650px) { .admin-payments-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } .admin-payments-filters .admin-payments-search { grid-column: 1 / -1; } .admin-payments-filters button { grid-column: 1 / -1; } }
+@media (max-width: 380px) { .admin-payments-filters, .admin-payments-metrics { grid-template-columns: 1fr; } }

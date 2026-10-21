@@ -13,7 +13,7 @@ function csvCell(value: string | number) {
 /** Aggregate export only: never serialize extra response properties or browser identifiers. */
 export function analyticsCsv(data: AnalyticsReport) {
   const rows: (string | number)[][] = [
-    ['section', 'date', 'name', 'visitors', 'sessions', 'page_views', 'active_seconds', 'value', 'unit'],
+    ['section', 'date', 'name', 'visitors', 'sessions', 'page_views', 'active_seconds', 'value', 'unit', 'source', 'medium', 'campaign', 'device'],
     ['metadata', '', 'timezone', '', '', '', '', data.timezone, ''],
     ['metadata', '', 'from', '', '', '', '', data.from, 'date'],
     ['metadata', '', 'to', '', '', '', '', data.to, 'date'],
@@ -31,5 +31,16 @@ export function analyticsCsv(data: AnalyticsReport) {
   }
   for (const page of data.topPages) rows.push(['page', '', page.page, numeric(page.visitors), '', numeric(page.pageViews), numeric(page.activeMs) / 1000, '', ''])
   for (const event of data.events) if (featureTypes.has(event.type)) rows.push(['feature', '', event.type, '', '', '', '', numeric(event.count), 'events'])
-  return '\uFEFF' + rows.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n'
+  const acquisition = data.acquisition
+  if (acquisition) {
+    rows.push(['metadata', '', 'acquisition_started_at', '', '', '', '', acquisition.startedAt == null ? '' : new Date(acquisition.startedAt).toISOString(), 'ISO-8601'])
+    rows.push(['metadata', '', 'sessions_with_context', '', '', '', '', numeric(acquisition.coveredSessions), 'sessions'])
+    rows.push(['metadata', '', 'sessions_without_context', '', '', '', '', numeric(acquisition.unknownSessions), 'sessions'])
+    rows.push(['metadata', '', 'sources_top_20_truncated', '', '', '', '', acquisition.sourcesTruncated ? 1 : 0, 'boolean'])
+    rows.push(['metadata', '', 'campaigns_top_20_truncated', '', '', '', '', acquisition.campaignsTruncated ? 1 : 0, 'boolean'])
+    for (const row of acquisition.sources) rows.push(['source', '', '', numeric(row.visitors), numeric(row.sessions), numeric(row.pageViews), numeric(row.activeMs) / 1000, '', '', row.source, row.medium, '', ''])
+    for (const row of acquisition.campaigns) rows.push(['campaign', '', '', numeric(row.visitors), numeric(row.sessions), numeric(row.pageViews), numeric(row.activeMs) / 1000, '', '', row.utmSource, row.utmMedium, row.utmCampaign, ''])
+    for (const row of acquisition.devices) rows.push(['device', '', '', numeric(row.visitors), numeric(row.sessions), numeric(row.pageViews), numeric(row.activeMs) / 1000, '', '', '', '', '', row.device])
+  }
+  return '\uFEFF' + rows.map(row => Array.from({ length: 13 }, (_, index) => csvCell(row[index] ?? '')).join(',')).join('\r\n') + '\r\n'
 }
