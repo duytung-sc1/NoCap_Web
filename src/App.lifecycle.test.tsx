@@ -1072,6 +1072,32 @@ describe('account and reader lifecycle', () => {
     expect(fixtures.adminRequest).not.toHaveBeenCalled()
   })
 
+  it('hides every administration entry for a Pro reader but exposes all entries for an approved admin', async () => {
+    saveSession(session); window.history.replaceState(null, '', '/account')
+    fixtures.entitlement.mockResolvedValue({ userId: session.user.id, plan: 'PRO', status: 'ACTIVE', expiresAt: Date.now() + 86400000 })
+    const view = render(<App />)
+    await waitFor(() => expect(fixtures.adminIdentity).toHaveBeenCalled())
+    expect(screen.queryByRole('button', { name: 'Quản trị' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Mở khu vực quản trị' })).toBeNull()
+    view.unmount()
+    fixtures.adminIdentity.mockResolvedValue({ id: session.user.id, email: session.user.email, photoUrl: null, adminExpiresAt: Date.now() + 3600000 })
+    render(<App />)
+    expect(await screen.findByRole('button', { name: 'Mở khu vực quản trị' })).toBeTruthy()
+    expect(screen.getAllByRole('button', { name: 'Quản trị' })).toHaveLength(2)
+  })
+
+  it('removes the workspace and admin menu while rechecking revoked privileges', async () => {
+    saveSession(session); window.history.replaceState(null, '', '/admin')
+    const recheck = deferred<import('./admin/api').AdminIdentity>()
+    fixtures.adminIdentity.mockResolvedValueOnce({ id: session.user.id, email: session.user.email, photoUrl: null, adminExpiresAt: Date.now() + 3600000 }).mockReturnValue(recheck.promise)
+    fixtures.adminRequest.mockRejectedValue(new ApiError(403, 'Revoked', 'ADMIN_REQUIRED'))
+    render(<App />)
+    await waitFor(() => expect(fixtures.adminIdentity).toHaveBeenCalledTimes(2))
+    expect(screen.queryByRole('heading', { name: 'Quản trị thư viện' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Quản trị' })).toBeNull()
+    expect(screen.getByText('Đang kiểm tra quyền quản trị…')).toBeTruthy()
+  })
+
   it('discards late administrator verification after another tab signs out', async () => {
     const pending = deferred<import('./admin/api').AdminIdentity>()
     fixtures.adminIdentity.mockReturnValue(pending.promise)

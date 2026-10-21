@@ -1,5 +1,22 @@
 # Web administration integration — 12 October 2026
 
+## Access policy update — 21 October 2026
+
+Reader Web administration now requires an explicit account grant in
+`admin_user_principals` for every `/api/v1/admin/*` request. Membership in
+`admin_principals` through Google only grants the original cookie-based dashboard;
+it no longer automatically exposes administration in the reader website. Login
+method, display name and Free/Pro membership do not confer administrator access.
+The original dashboard keeps its existing authorization rules and data.
+
+The Web verifies that the returned administrator identity matches the signed-in
+account. Switching accounts or restoring a previously signed-out token requires
+fresh verification. An authorization failure removes the admin workspace and all
+menu entries immediately while permissions are checked again. Both backend and
+Web changes must be released to apply this update to the live website.
+
+The implementation and validation notes below describe the original integration.
+
 ## User flow
 
 Sign in through the ordinary NoCap Web login (Google or an existing account

@@ -133,7 +133,7 @@ function App() {
   const [loadedProfile, setLoadedProfile] = useState<string | null>(null)
   const [session, setSession] = useState<Session | null>(() => readSession())
   const sessionToken = session?.token
-  const { access: adminAccess, reload: reloadAdminAccess } = useAdminAccess(sessionToken)
+  const { access: adminAccess, reload: reloadAdminAccess, invalidate: invalidateAdminAccess } = useAdminAccess(sessionToken, session?.user.id)
   const isAdmin = adminAccess?.status === 'allowed'
   const profile = profileFor(session)
   const [catalog, setCatalog] = useState<Book[]>([])
@@ -1939,7 +1939,7 @@ async function sha256Hex(file: Blob): Promise<string> {
             admin={adminAccess.admin}
             lang={lang}
             onSignIn={() => setAuthOpen(true)}
-            onAccessLost={reloadAdminAccess}
+            onAccessLost={invalidateAdminAccess}
             onCatalogChanged={() => {
               const token = session.token
               void getCatalog().then(result => { if (sessionRef.current?.token === token) { setCatalog(result.books); setCategories(result.categories) } }).catch(() => {})
