@@ -29,7 +29,7 @@ vi.mock('./Reader', () => ({ ReaderPane: (props: Parameters<typeof ReaderPane>[0
   return <div data-testid={`reader-${name}`}><p>Content {name}</p><button onClick={() => props.onLocation({ locatorJson: `moved:${name}`, progression: .6, chapterTitle: `Moved ${name}` })}>Scroll {name}</button><button onClick={() => props.onSelection(`Passage ${name}`, `selected:${name}`)}>Select {name}</button><output>{props.navigateLocator?.locatorJson || props.navigateTarget || ''}</output></div>
 } }))
 
-afterEach(() => { cleanup(); vi.restoreAllMocks() })
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 beforeEach(() => {
   localStorage.clear(); fixtures.readers.clear(); fixtures.pages.mockReset(); fixtures.searches.mockReset(); fixtures.mutate.mockReset().mockResolvedValue(undefined); fixtures.update.mockReset().mockResolvedValue(undefined); fixtures.remove.mockReset().mockResolvedValue(undefined); fixtures.publishInitialLocation = true
   fixtures.stored = []; fixtures.applied = []
@@ -60,12 +60,80 @@ async function loaded() {
   })
 }
 function deferred<T>() { let resolve!: (value: T) => void; let reject!: (error: unknown) => void; const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail }); return { promise, resolve, reject } }
+function compactViewport() {
+  const media = Object.assign(new EventTarget(), { matches: true, media: '(max-width:760px)' })
+  vi.stubGlobal('matchMedia', () => media)
+  return (compact: boolean) => act(() => { media.matches = compact; media.dispatchEvent(new Event('change')) })
+}
 function ManagedComparison({ handlers }: { handlers: ComparisonReaderProps }) {
   const [records, setRecords] = useState(handlers.records)
   return <ComparisonReader {...handlers} records={records} onChanged={async () => { setRecords([...fixtures.stored]); await handlers.onChanged() }} />
 }
 
 describe('interactive two-source comparison reader', () => {
+  it('runs only the selected mobile document, preserves notes and positions, and reuses downloaded bytes', async () => {
+    compactViewport()
+    const handlers = props()
+    render(<ComparisonReader {...handlers} />)
+    await screen.findByTestId('reader-left-position')
+    expect(handlers.loadBook).toHaveBeenCalledTimes(1)
+    expect(screen.getAllByTestId(/^reader-/)).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Scroll left-position' }))
+    fireEvent.click(within(pane(0)).getByRole('button', { name: 'Notes' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Your note' }), { target: { value: 'Retain this mobile draft' } })
+    fixtures.publishInitialLocation = false
+    fireEvent.click(within(screen.getByRole('group', { name: 'Active source' })).getAllByRole('button')[1])
+    await screen.findByTestId('reader-right-position')
+    expect(screen.queryByTestId('reader-left-position')).toBeNull()
+    expect(screen.getAllByTestId(/^reader-/)).toHaveLength(1)
+    fireEvent.click(within(screen.getByRole('group', { name: 'Active source' })).getAllByRole('button')[0])
+    await screen.findByTestId('reader-moved:left-position')
+    expect(fixtures.readers.get('moved:left-position')?.initial).toBe('moved:left-position')
+    expect(screen.getByRole('textbox', { name: 'Your note' })).toHaveProperty('value', 'Retain this mobile draft')
+    expect(handlers.loadBook).toHaveBeenCalledTimes(2)
+    expect(screen.queryByTestId('reader-right-position')).toBeNull()
+  })
+  it('does not replay a completed linked-note navigation over the resumed position on a phone', async () => {
+    compactViewport()
+    const original = JSON.stringify({ type: 'TEXT', scrollOffsetPx: 200 })
+    const resumed = JSON.stringify({ type: 'TEXT', scrollOffsetPx: 800 })
+    const handlers = props({ initialLocators: [original, 'right-position'] })
+    render(<ComparisonReader {...handlers} />)
+    await screen.findByTestId(`reader-${original}`)
+    expect(fixtures.readers.get(original)?.navigateLocator?.requestId).toBe(1)
+    act(() => fixtures.readers.get(original)!.onLocation({ locatorJson: resumed, progression: .6, chapterTitle: 'Resumed' }))
+    fixtures.publishInitialLocation = false
+    const tabs = within(screen.getByRole('group', { name: 'Active source' })).getAllByRole('button')
+    fireEvent.click(tabs[1]); await screen.findByTestId('reader-right-position')
+    fireEvent.click(tabs[0]); await screen.findByTestId(`reader-${resumed}`)
+    expect(fixtures.readers.get(resumed)).toMatchObject({ initial: resumed, navigateLocator: null })
+  })
+  it('cancels a hidden mobile source load and ignores its late result', async () => {
+    compactViewport()
+    const pending = deferred<ArrayBuffer>(), signals: AbortSignal[] = []
+    const loadBook = vi.fn(async (book: Book, signal: AbortSignal) => { signals.push(signal); return book.id === left.id ? pending.promise : new TextEncoder().encode('Other source').buffer })
+    render(<ComparisonReader {...props({ loadBook })} />)
+    await waitFor(() => expect(loadBook).toHaveBeenCalledTimes(1))
+    fireEvent.click(within(screen.getByRole('group', { name: 'Active source' })).getAllByRole('button')[1])
+    await screen.findByTestId('reader-right-position')
+    expect(signals[0].aborted).toBe(true)
+    await act(async () => { pending.resolve(new ArrayBuffer(10)); await pending.promise })
+    expect(screen.queryByTestId('reader-left-position')).toBeNull()
+    expect(screen.getAllByTestId(/^reader-/)).toHaveLength(1)
+  })
+  it('restores two renderers when widened, and retires the inactive renderer when narrowed', async () => {
+    const resize = compactViewport()
+    const handlers = props()
+    render(<ComparisonReader {...handlers} />)
+    await screen.findByTestId('reader-left-position')
+    resize(false)
+    await screen.findByTestId('reader-right-position')
+    expect(screen.getAllByTestId(/^reader-/)).toHaveLength(2)
+    resize(true)
+    expect(screen.getAllByTestId(/^reader-/)).toHaveLength(1)
+    expect(screen.getByTestId('reader-left-position')).toBeTruthy()
+    expect(handlers.loadBook).toHaveBeenCalledTimes(2)
+  })
   it('uses one shared tool column with independent drafts and opens an inactive source tool in one pointer click', async () => {
     const handlers = props()
     render(<ComparisonReader {...handlers} />)

@@ -31,7 +31,7 @@ export type ComparisonReaderProps = {
 type ToolPanel = 'notes' | 'search' | null
 type Actions = { page: (direction: number) => void; search: () => void; dismiss: () => boolean; closeTool: () => void }
 type PaneProps = Omit<ComparisonReaderProps, 'books' | 'initialLocators' | 'onClose'> & {
-  book: Book; initial?: string; index: number; active: boolean; onActivate: () => void
+  book: Book; initial?: string; index: number; active: boolean; renderDocument: boolean; onActivate: () => void
   register: (actions: Actions | null) => void
   onCommitted: (record: SyncRecord) => Promise<void>
   toolsHost: HTMLElement | null
@@ -43,6 +43,31 @@ type NoteFlight = { snapshot: ReaderNoteDraft; promise: Promise<SyncRecord> }
 // Keep a local commit single-flight even if the comparison is closed/reopened.
 const noteFlights = new Map<string, NoteFlight>()
 const bookmarkFlights = new Set<string>()
+
+function useCompactComparison() {
+  const [compact, setCompact] = useState(() => typeof window.matchMedia === 'function' ? window.matchMedia('(max-width:760px)').matches : window.innerWidth <= 760)
+  useEffect(() => {
+    if (typeof window.matchMedia === 'function') {
+      const media = window.matchMedia('(max-width:760px)')
+      const update = () => setCompact(media.matches)
+      media.addEventListener('change', update); update()
+      return () => media.removeEventListener('change', update)
+    }
+    const update = () => setCompact(window.innerWidth <= 760)
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return compact
+}
+
+// A compact viewport owns one renderer at a time. Freeze its resume anchor for
+// this mount so progress updates cannot repeatedly reinitialize the document.
+function ComparisonDocument({ resume, ...props }: Parameters<typeof ReaderPane>[0] & { resume?: { locator: string; requestId?: number; target?: string | null } }) {
+  const [entry] = useState(() => ({ initial: resume?.locator || props.initial, requestId: resume?.requestId, target: resume?.target }))
+  return <ReaderPane {...props} initial={entry.initial}
+    navigateLocator={props.navigateLocator?.requestId === entry.requestId ? null : props.navigateLocator}
+    navigateTarget={props.navigateTarget === entry.target ? null : props.navigateTarget} />
+}
 
 function initialNavigation(locatorJson?: string): { locatorJson: string; requestId: number } | null {
   if (!locatorJson) return null
@@ -74,7 +99,7 @@ function Contents({ items, onNavigate, depth = 0 }: { items: TocItem[]; onNaviga
   return <ul>{items.map((item, index) => <li key={`${item.id}:${index}`}><button type="button" style={{ paddingInlineStart: `${12 + depth * 12}px` }} onClick={() => onNavigate(item.href)}>{item.label}</button>{item.subitems?.length ? <Contents items={item.subitems} onNavigate={onNavigate} depth={depth + 1} /> : null}</li>)}</ul>
 }
 
-function ComparisonPane({ profile, lang, book, initial, records, loadBook, index, active, onActivate, register, onCommitted, onLocation, toolsHost, onPanelState }: PaneProps) {
+function ComparisonPane({ profile, lang, book, initial, records, loadBook, index, active, renderDocument, onActivate, register, onCommitted, onLocation, toolsHost, onPanelState }: PaneProps) {
   const vi = lang === 'vi'
   const text = (v: string, e: string) => vi ? v : e
   const id = useId().replaceAll(':', '')
@@ -103,6 +128,9 @@ function ComparisonPane({ profile, lang, book, initial, records, loadBook, index
   const [activeHit, setActiveHit] = useState<ReaderSearchHit | null>(null)
   const [target, setTarget] = useState<string | null>(null)
   const [navigate, setNavigate] = useState<{ locatorJson: string; requestId: number } | null>(() => initialNavigation(initial))
+  const requestedNavigation = useRef({ navigate, target })
+  requestedNavigation.current = { navigate, target }
+  const settledNavigation = useRef<{ requestId?: number; target?: string | null }>({})
   const requestId = useRef(1)
   const host = useRef<HTMLDivElement>(null)
   const noteButton = useRef<HTMLButtonElement>(null)
@@ -132,6 +160,7 @@ function ComparisonPane({ profile, lang, book, initial, records, loadBook, index
   }, [])
 
   useEffect(() => {
+    if (!renderDocument || load.bytes) return
     let current = true
     const controller = new AbortController()
     setLoad({})
@@ -140,12 +169,14 @@ function ComparisonPane({ profile, lang, book, initial, records, loadBook, index
       if (current && !controller.signal.aborted) setLoad({ bytes })
     }).catch(error => { if (current && !controller.signal.aborted) setLoad({ error: readableError(error, lang) }) })
     return () => { current = false; controller.abort() }
+    // Inactive compact sources defer loading; completed bytes survive tab switches.
     // Identity is keyed by the parent; callback and language changes do not reload bytes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [retry])
+  }, [retry, renderDocument])
 
   const reportLocation = useCallback((next: ReaderLocation) => {
     if (!alive.current) return
+    settledNavigation.current = { requestId: requestedNavigation.current.navigate?.requestId, target: requestedNavigation.current.target }
     locationRef.current = next; setLocation(next)
     if (activeRef.current) callbacks.current.onLocation?.(book, next)
   }, [book])
@@ -162,7 +193,7 @@ function ComparisonPane({ profile, lang, book, initial, records, loadBook, index
   useEffect(() => { onPanelState(index, ready ? panel : null) }, [index, ready, panel, onPanelState])
   useEffect(() => {
     const root = host.current
-    if (!root || !load.bytes) return
+    if (!root || !load.bytes || !renderDocument) return
     const documents = new Set<Document>()
     const frames = new Map<HTMLIFrameElement, () => void>()
     function bridge(event: KeyboardEvent) {
@@ -185,7 +216,7 @@ function ComparisonPane({ profile, lang, book, initial, records, loadBook, index
     observer.observe(root, { childList: true, subtree: true })
     scan()
     return () => { observer.disconnect(); for (const [frame, bind] of frames) frame.removeEventListener('load', bind); for (const doc of documents) doc.removeEventListener('keydown', bridge, true) }
-  }, [load.bytes])
+  }, [load.bytes, renderDocument])
   const move = useCallback((direction: number) => {
     if (controls.current) { if (direction < 0) controls.current.previous(); else controls.current.next(); return }
     const scroll = host.current?.querySelector<HTMLElement>('.text-host, .pdf-host, .archive-host, .epub-container')
@@ -305,7 +336,7 @@ function ComparisonPane({ profile, lang, book, initial, records, loadBook, index
     if (!(event.target instanceof Element) || !event.target.closest('.comparison-toolbar')) onActivate()
   }
 
-  return <section className={`comparison-source reader-shell ${comfort.theme}${active ? ' is-active' : ''}`} aria-label={text(`Nguồn ${index + 1}: ${book.title}`, `Source ${index + 1}: ${book.title}`)} onPointerDownCapture={activateContent} onFocusCapture={activateContent}>
+  return <section className={`comparison-source reader-shell ${comfort.theme}${active ? ' is-active' : ''}`} hidden={!renderDocument} aria-label={text(`Nguồn ${index + 1}: ${book.title}`, `Source ${index + 1}: ${book.title}`)} onPointerDownCapture={activateContent} onFocusCapture={activateContent}>
     <header className="comparison-source-heading"><div><span>{text('NGUỒN', 'SOURCE')} {String(index + 1).padStart(2, '0')}</span><h2 title={book.title}>{book.title}</h2><p>{book.author}</p></div><button type="button" className="comparison-active-label" aria-pressed={active} onClick={onActivate}>{active ? text('Đang đọc', 'Active') : text('Chọn nguồn', 'Activate')}</button></header>
     <div className="comparison-toolbar" role="toolbar" aria-label={text(`Công cụ nguồn ${index + 1}`, `Source ${index + 1} tools`)}>
       <button type="button" disabled={!ready} aria-expanded={tocOpen} onClick={() => { onActivate(); setTocOpen(value => !value); setSettings(false) }}><List size={15} />{text('Mục lục', 'Contents')}</button>
@@ -319,7 +350,7 @@ function ComparisonPane({ profile, lang, book, initial, records, loadBook, index
     <div className="comparison-document" ref={host}>
       {!ready && !load.error && <div className="comparison-loading" role="status">{text('Đang mở tài liệu…', 'Opening document…')}</div>}
       {load.error && <div className="comparison-load-error" role="alert"><p>{load.error}</p><button type="button" onClick={() => setRetry(value => value + 1)}><RefreshCw size={15} />{text('Thử lại', 'Try again')}</button></div>}
-      {load.bytes && <ReaderErrorBoundary key={retry} lang={lang} onClose={() => setRetry(value => value + 1)}><div className="reader-body"><ReaderPane lang={lang} book={book} bytes={load.bytes} initial={initialLocator} fontSize={comfort.fontSize} fontFamily={comfort.fontFamily} lineHeight={comfort.lineHeight} textAlignment={comfort.textAlignment} readerWidth={comfort.readerWidth} theme={comfort.theme} keyboardActive={active} onLocation={reportLocation} onSelection={selectPassage} onControls={receiveControls} onToc={setToc} navigateTarget={target} navigateLocator={navigate} annotations={annotations} onSearchReady={receiveSearch} onSearchRequest={openSearch} /></div></ReaderErrorBoundary>}
+      {renderDocument && load.bytes && <ReaderErrorBoundary key={retry} lang={lang} onClose={() => setRetry(value => value + 1)}><div className="reader-body"><ComparisonDocument lang={lang} book={book} bytes={load.bytes} initial={initialLocator} resume={locationRef.current ? { locator: locationRef.current.locatorJson, ...settledNavigation.current } : undefined} fontSize={comfort.fontSize} fontFamily={comfort.fontFamily} lineHeight={comfort.lineHeight} textAlignment={comfort.textAlignment} readerWidth={comfort.readerWidth} theme={comfort.theme} keyboardActive={active} onLocation={reportLocation} onSelection={selectPassage} onControls={receiveControls} onToc={setToc} navigateTarget={target} navigateLocator={navigate} annotations={annotations} onSearchReady={receiveSearch} onSearchRequest={openSearch} /></div></ReaderErrorBoundary>}
       {tocOpen && <nav className="comparison-contents" aria-label={text('Mục lục của nguồn', 'Source table of contents')}><div><h3>{text('Mục lục', 'Contents')}</h3><button type="button" aria-label={text('Đóng mục lục', 'Close contents')} onClick={() => setTocOpen(false)}><X size={17} /></button></div>{toc.length ? <Contents items={toc} onNavigate={href => { setNavigate(null); setTarget(null); requestAnimationFrame(() => { if (alive.current) setTarget(href) }); setTocOpen(false) }} /> : <p>{text('Tài liệu này không có mục lục.', 'This document has no table of contents.')}</p>}</nav>}
       {!active && ready && <button type="button" className="comparison-activate-surface" onClick={onActivate} aria-label={text(`Đọc nguồn ${index + 1}`, `Read source ${index + 1}`)}><span>{text('Nhấn để thao tác với nguồn này', 'Click to interact with this source')}</span></button>}
     </div>
@@ -335,6 +366,7 @@ function ComparisonSession(props: ComparisonReaderProps) {
   const { profile, lang, books, initialLocators, records, onChanged, onClose } = props
   const vi = lang === 'vi'
   const [active, setActive] = useState(0)
+  const compact = useCompactComparison()
   const [toolsHost, setToolsHost] = useState<HTMLDivElement | null>(null)
   const [panels, setPanels] = useState<ToolPanel[]>([null, null])
   const panelState = useCallback((index: number, panel: ToolPanel) => setPanels(previous => previous[index] === panel ? previous : previous.map((value, i) => i === index ? panel : value)), [])
@@ -395,7 +427,7 @@ function ComparisonSession(props: ComparisonReaderProps) {
     <div className="comparison-source-tabs" role="group" aria-label={vi ? 'Nguồn đang thao tác' : 'Active source'}>{books.map((book, index) => <button key={index} type="button" aria-pressed={active === index} onClick={() => setActive(index)}><span>{String(index + 1).padStart(2, '0')}</span>{book.title}</button>)}</div>
     {notice && <p className="comparison-shared-notice" role="status">{notice}</p>}
     <div className={`comparison-workspace${panels[active] ? ' has-tool-panel' : ''}`}>
-      <div className="comparison-columns">{books.map((book, index) => <ComparisonPane key={index} {...props} book={book} initial={initialLocators[index]} index={index} records={merged} active={active === index} onActivate={() => setActive(index)} register={index === 0 ? registerFirst : registerSecond} onCommitted={committed} toolsHost={toolsHost} onPanelState={panelState} />)}</div>
+      <div className="comparison-columns">{books.map((book, index) => <ComparisonPane key={index} {...props} book={book} initial={initialLocators[index]} index={index} records={merged} active={active === index} renderDocument={!compact || active === index} onActivate={() => setActive(index)} register={index === 0 ? registerFirst : registerSecond} onCommitted={committed} toolsHost={toolsHost} onPanelState={panelState} />)}</div>
       <div ref={setToolsHost} className="comparison-tools-host" hidden={!panels[active]}>
         <button type="button" className="comparison-tools-return" onClick={() => actions.current[active]?.closeTool()}><ChevronLeft size={17} />{vi ? 'Quay lại đọc hai nguồn' : 'Back to reading sources'}</button>
       </div>

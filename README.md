@@ -194,6 +194,12 @@ settings and restores full opacity without changing the saved reading position.
 
 ## Other behavior
 
+On phone-width Web (760 px and below), reading comparison shows the selected
+source and runs only that source's document renderer. Switching sources keeps
+separate reading positions, notes, searches and downloaded bytes. The inactive
+source is removed from layout so EPUB iframes cannot cover or intercept the
+selected source. Wider windows keep the two-document layout.
+
 - Email/password and Google sign-in; profile rename and account deletion.
   Google OAuth origins must include the domain used to access the web app.
 - Tags/collections, per-book reader preferences, original-file downloads.
