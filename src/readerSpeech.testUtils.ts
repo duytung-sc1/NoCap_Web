@@ -8,6 +8,7 @@ export class MockUtterance {
   voice: SpeechSynthesisVoice | null = null
   lang = ''
   rate = 1
+  pitch = 1
   onstart: SpeechSynthesisUtterance['onstart'] = null
   onend: SpeechSynthesisUtterance['onend'] = null
   onerror: SpeechSynthesisUtterance['onerror'] = null

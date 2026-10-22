@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createReaderSpeech, localSpeechVoices, MAX_SPEECH_TEXT, preferredSpeechVoice, speechScopeKey, splitSpeechText, type SpeechState } from './readerSpeech'
+import { createReaderSpeech, localSpeechVoices, MAX_SPEECH_TEXT, normalizeSpeechText, onlineVoiceProvider, preferredSpeechVoice, speechPassages, speechScopeKey, speechVoiceSample, speechVoices, splitSpeechText, vietnameseFemaleVoice, vietnameseVoiceGender, type SpeechState } from './readerSpeech'
 import { MockSynthesis, MockUtterance, speechVoice } from './readerSpeech.testUtils'
 
-afterEach(() => vi.useRealTimers())
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
 function setup() {
   const synthesis = new MockSynthesis(), states: SpeechState[] = []
   const engine = createReaderSpeech(synthesis.api(), text => new MockUtterance(text) as unknown as SpeechSynthesisUtterance, state => states.push(state))
@@ -16,6 +16,49 @@ describe('device speech', () => {
     expect(preferredSpeechVoice([enVoice, viVoice], 'vi')).toBe(viVoice)
     expect(preferredSpeechVoice([enVoice], 'vi')).toBe(enVoice)
   })
+  it('prefers identified local Vietnamese female voices without guessing gender or offering remote voices', () => {
+    const male = speechVoice('vi-VN', true, 'Microsoft An - Vietnamese (Vietnam)')
+    const female = speechVoice('vi-VN', true, 'Linh')
+    const remote = speechVoice('vi-VN', false, 'Microsoft HoaiMy Online (Natural) - Vietnamese (Vietnam)')
+    const unknown = speechVoice('vi_VN', true, 'Vietnamese')
+    expect(preferredSpeechVoice([male, female], 'vie')).toBe(female)
+    expect(preferredSpeechVoice([male, female], 'vi_VN')).toBe(female)
+    expect(vietnameseFemaleVoice([remote, male])).toBeUndefined()
+    expect(preferredSpeechVoice([remote], 'vi')).toBeUndefined()
+    expect(preferredSpeechVoice([remote, male], 'vi')).toBe(male)
+    expect(vietnameseVoiceGender(male)).toBe('male')
+    expect(vietnameseVoiceGender(unknown)).toBeNull()
+    expect(vietnameseVoiceGender(speechVoice('en-US', true, 'Linh'))).toBeNull()
+    expect(vietnameseFemaleVoice([unknown])).toBeUndefined()
+    for (const id of ['vic', 'vid', 'vif']) expect(vietnameseVoiceGender(speechVoice('vi-VN', true, `vi-vn-x-${id}-local`))).toBe('female')
+    for (const id of ['vie', 'gft']) expect(vietnameseVoiceGender(speechVoice('vi-VN', true, `vi-vn-x-${id}-local`))).toBe('male')
+    expect(speechVoiceSample('vi_VN')).toContain('Chào bạn')
+    expect(speechVoiceSample('en-US')).toContain('quiet moment')
+  })
+  it('adds gentle paragraph pauses without pitch shifting, and cancels paused or retired timers', () => {
+    vi.useFakeTimers()
+    const { synthesis, engine, states } = setup()
+    engine.configure({ voice: synthesis.voices[0], rate: 0.9, pauseMs: 220 })
+    engine.start(Array.from({ length: 5 }, () => 'Một đoạn văn tiếng Việt. '.repeat(10)).join('\n\n'))
+    expect(synthesis.spoken[0].rate).toBe(0.9)
+    expect(synthesis.spoken[0].pitch).toBe(1)
+    synthesis.spoken[0].end()
+    vi.advanceTimersByTime(219)
+    expect(synthesis.spoken).toHaveLength(1)
+    engine.pause(); vi.advanceTimersByTime(1000)
+    expect(synthesis.spoken).toHaveLength(1)
+    engine.resume()
+    expect(synthesis.spoken).toHaveLength(2)
+    synthesis.spoken[1].end()
+    vi.advanceTimersByTime(220)
+    expect(synthesis.spoken).toHaveLength(3)
+    synthesis.spoken[2].end(); engine.stop(); vi.advanceTimersByTime(1000)
+    expect(synthesis.spoken).toHaveLength(3)
+    expect(states.at(-1)!.status).toBe('idle')
+    engine.start('Another document.\n\nAnother paragraph.')
+    synthesis.spoken[3].end(); engine.dispose(); vi.advanceTimersByTime(1000)
+    expect(synthesis.spoken).toHaveLength(4)
+  })
   it('chunks long Unicode passages without breaking code points, and bounds invalid limits', () => {
     const text = ('Tiếng Việt 😀 rất rõ. Next sentence. ').repeat(1000)
     const chunks = splitSpeechText(text, 80)
@@ -26,9 +69,9 @@ describe('device speech', () => {
     expect(splitSpeechText('Hello world.', NaN)).toEqual(['Hello world.'])
     expect(splitSpeechText('   ')).toEqual([])
   })
-  it('queues one short passage at a time and applies new voice/speed at its next boundary', () => {
+  it('queues one passage at a time and applies new voice/speed at its next boundary', () => {
     const { synthesis, engine, states } = setup()
-    engine.start('A long passage. '.repeat(50))
+    engine.start('A long passage. '.repeat(150))
     expect(synthesis.spoken).toHaveLength(1)
     expect(synthesis.spoken[0].voice?.localService).toBe(true)
     engine.configure({ voice: synthesis.voices[1], rate: 1.5 })
@@ -78,6 +121,66 @@ describe('device speech', () => {
     expect(states.at(-1)!.error).toBe('voice-unavailable')
     engine.dispose()
   })
+  it('never switches an in-progress local book to a remote voice at the next passage', () => {
+    const { synthesis, engine, states } = setup()
+    engine.start('Keep this document local. '.repeat(50))
+    engine.configure({ voice: speechVoice('vi-VN', false, 'Remote female'), rate: 0.9 })
+    synthesis.spoken[0].end()
+    expect(synthesis.spoken).toHaveLength(1)
+    expect(states.at(-1)!.error).toBe('no-local-voice')
+    engine.dispose()
+  })
+  it('offers known browser online providers only after opt-in, preferring an identified Vietnamese natural female voice', () => {
+    const local = speechVoice('vi-VN', true, 'Linh')
+    const google = speechVoice('vi-VN', false, 'Google tiếng Việt')
+    const microsoft = speechVoice('vi-VN', false, 'Microsoft HoaiMy Online (Natural) - Vietnamese (Vietnam)')
+    const unknown = speechVoice('vi-VN', false, 'Unknown cloud female')
+    expect(speechVoices([local, google, microsoft, unknown])).toEqual([local])
+    expect(speechVoices([local, google, microsoft, unknown], true)).toEqual([local, google, microsoft])
+    expect(preferredSpeechVoice([google, local, microsoft], 'vi', true)).toBe(microsoft)
+    expect(vietnameseFemaleVoice([google, local, microsoft], true)).toBe(microsoft)
+    expect(onlineVoiceProvider(google)).toBe('Google')
+    expect(onlineVoiceProvider(microsoft)).toBe('Microsoft')
+    expect(onlineVoiceProvider(local)).toBeNull()
+    expect(onlineVoiceProvider(unknown)).toBeNull()
+  })
+  it('allows opted-in browser voices, and rejects the next remote passage when permission is removed', () => {
+    const { synthesis, engine, states } = setup()
+    const remote = speechVoice('vi-VN', false, 'Microsoft HoaiMy Online (Natural) - Vietnamese (Vietnam)')
+    engine.configure({ voice: remote, rate: 0.9 })
+    engine.start('Private text.')
+    expect(synthesis.spoken).toHaveLength(0)
+    engine.configure({ voice: remote, rate: 0.9, allowOnline: true })
+    engine.start('Đây là một đoạn dài. '.repeat(100))
+    expect(synthesis.spoken).toHaveLength(1)
+    expect(synthesis.spoken[0].voice).toBe(remote)
+    engine.configure({ voice: remote, rate: 0.9, allowOnline: false })
+    synthesis.spoken[0].end()
+    expect(synthesis.spoken).toHaveLength(1)
+    expect(states.at(-1)!.status).toBe('error')
+    engine.configure({ voice: speechVoice('vi-VN', false, 'Unknown cloud'), rate: 1, allowOnline: true })
+    engine.start('Private text.')
+    expect(synthesis.spoken).toHaveLength(1)
+    engine.dispose()
+  })
+  it('adds no delay between passages within a paragraph, then pauses only at its completed end', () => {
+    vi.useFakeTimers()
+    const { synthesis, engine } = setup()
+    engine.configure({ voice: synthesis.voices[0], rate: 0.9, pauseMs: 100 })
+    engine.start(`${'Đây là một câu hoàn chỉnh. '.repeat(60)}\n\nĐoạn tiếp theo.`)
+    const firstLength = synthesis.spoken[0].text.length
+    expect(firstLength).toBeGreaterThan(240)
+    synthesis.spoken[0].end()
+    expect(synthesis.spoken).toHaveLength(2)
+    synthesis.spoken[1].end()
+    expect(synthesis.spoken).toHaveLength(2)
+    vi.advanceTimersByTime(99)
+    expect(synthesis.spoken).toHaveLength(2)
+    vi.advanceTimersByTime(1)
+    expect(synthesis.spoken).toHaveLength(3)
+    expect(synthesis.spoken[2].text).toBe('Đoạn tiếp theo.')
+    engine.dispose()
+  })
   it('times out a voice that never starts, but not a paused or already started voice', () => {
     vi.useFakeTimers()
     const { synthesis, engine, states } = setup()
@@ -96,5 +199,40 @@ describe('device speech', () => {
     expect(speechScopeKey('{"href":"ch1.xhtml","locations":{"cfi":"a"}}')).toBe(speechScopeKey('{"href":"ch1.xhtml","locations":{"cfi":"b"}}'))
     expect(speechScopeKey('{"href":"ch2.xhtml"}')).not.toBe('section:ch1.xhtml')
     expect(speechScopeKey('malformed')).toBe('document')
+  })
+})
+
+describe('speech sentence continuity', () => {
+  it('joins soft wraps and unfinished imported blocks without restarting a sentence every visual line', () => {
+    const text = 'Đây là câu tiếng Việt dài để kiểm tra cách đọc liên tục '.repeat(6).trim() + '.'
+    const wrapped = text.split(' ').map((word, index) => `${word}${index % 5 === 4 ? '\n\n' : ' '}`).join('').trim()
+    expect(normalizeSpeechText(wrapped)).toBe(text)
+    expect(speechPassages(wrapped)).toEqual([{ text, paragraphEnd: true }])
+    expect(speechPassages('Đoạn một.\n\nĐoạn hai.')).toEqual([
+      { text: 'Đoạn một.', paragraphEnd: true }, { text: 'Đoạn hai.', paragraphEnd: true },
+    ])
+    expect(normalizeSpeechText('TS.\n\nAn đang trình bày ở TP.\n\nHCM.')).toBe('TS. An đang trình bày ở TP. HCM.')
+  })
+  it('removes discretionary hyphens across PDF wraps but retains meaningful hard hyphens', () => {
+    expect(normalizeSpeechText('under\u00ad\nstanding and front-\nend.')).toBe('understanding and front-end.')
+    expect(normalizeSpeechText('x -\ny = 1.')).toBe('x - y = 1.')
+  })
+  it('keeps abbreviations, decimals, URLs and quoted sentences intact when grouping', () => {
+    const sentence = 'TS. An ở TP. HCM xem https://nocap.rest và giá trị 3.14 trước khi kết luận.'
+    const text = `${sentence} “Một câu khác.”`
+    expect(speechPassages(text, 80).map(passage => passage.text)).toEqual([sentence, '“Một câu khác.”'])
+    // The fallback for older browsers must also preserve abbreviations.
+    vi.spyOn(Intl, 'Segmenter').mockImplementation(() => { throw new Error('Unavailable') })
+    expect(speechPassages(text, 80).map(passage => passage.text)).toEqual([sentence, '“Một câu khác.”'])
+  })
+  it('prefers clauses for an oversized sentence and preserves words, punctuation and Unicode', () => {
+    const first = 'Đây là một mệnh đề đủ dài để tách tại dấu phẩy,'
+    const last = 'sau đó là mệnh đề tiếp theo có ký tự 😀 và kết thúc câu.'
+    const passages = speechPassages(`${first} ${last}`, 80)
+    expect(passages[0]).toEqual({ text: first, paragraphEnd: false })
+    expect(passages.at(-1)!.paragraphEnd).toBe(true)
+    expect(passages.map(passage => passage.text).join(' ')).toBe(`${first} ${last}`)
+    const unspaced = '😀'.repeat(180)
+    expect(speechPassages(unspaced, 80).map(passage => passage.text).join('')).toBe(unspaced)
   })
 })

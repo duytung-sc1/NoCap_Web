@@ -25,9 +25,10 @@ export function readableSpeechText(root: Element, top?: number): ReaderSpeechTex
     const element = node as Element
     if (element.matches(ignored)) return
     const tag = element.tagName.toUpperCase(), block = blockTags.has(tag) || tag === 'BR'
-    if (block && reading && text && !/\s$/.test(text)) append('\n')
+    const boundary = tag === 'BR' ? '\n' : '\n\n'
+    if (block && reading && text && !text.endsWith(boundary)) append(boundary)
     for (const child of element.childNodes) { visit(child); if (done) break }
-    if (block && reading && text && !/\s$/.test(text)) append('\n')
+    if (block && reading && text && !text.endsWith(boundary)) append(boundary)
   }
   visit(root)
   if (/[\uD800-\uDBFF]$/.test(text)) text = text.slice(0, -1)
@@ -43,7 +44,7 @@ export function captureReaderSpeech(root: HTMLElement, format: ReaderFormat): Re
     if (!layer) throw new Error('no-text')
     // PDF spans represent separate positioned runs, so insert spaces between runs.
     const leaves = Array.from(layer.querySelectorAll('span')).filter(span => !span.querySelector('span') && !span.closest('[aria-hidden="true"]'))
-    const text = leaves.map(span => span.textContent || '').join(' ')
+    const text = leaves.map(span => `${span.textContent || ''}${span.nextElementSibling?.tagName === 'BR' ? '\n' : ' '}`).join('').trim()
     return { text: text.slice(0, MAX_SPEECH_TEXT).replace(/[\uD800-\uDBFF]$/u, '').trim(), label: `PDF · ${page.dataset.readAloudPage}`, truncated: text.length > MAX_SPEECH_TEXT }
   }
   if (format === 'epub') {
