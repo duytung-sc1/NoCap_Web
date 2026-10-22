@@ -19,6 +19,12 @@ Open http://127.0.0.1:5173. The default API is
 `https://nocap-ebook-api.buiminhhien001.workers.dev`. For a QA backend, set
 `VITE_API_BASE_URL` in an untracked `.env.local`.
 
+The initial HTML shows a loading screen before JavaScript or fonts arrive. If
+startup takes over 12 seconds or the application module fails, it offers a
+manual page reload. A root error boundary also handles application render
+failures. Recovery does not clear browser storage or reload automatically;
+it cannot repair an unavailable network connection.
+
 ```powershell
 npm test
 npm run lint

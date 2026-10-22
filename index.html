@@ -7,9 +7,51 @@
     <meta name="theme-color" content="#0b1630" />
     <meta name="description" content="NoCap — không gian đọc và lưu giữ kiến thức của bạn." />
     <title>NoCap — Không gian đọc của bạn</title>
+    <style>
+      html,body{margin:0;background:#f7f8f8}
+      .nocap-startup{min-height:100svh;display:grid;place-content:center;gap:16px;max-width:600px;margin:auto;padding:40px 24px;color:#153d40;background:#f7f8f8;font:15px/1.7 system-ui,sans-serif;text-align:center;box-sizing:border-box}
+      .nocap-startup h1,.nocap-startup p{margin:0}.nocap-startup h1{font-size:22px}.nocap-startup-brand{font:bold 30px Georgia,serif;letter-spacing:.08em}.nocap-startup p{color:#526b70}.nocap-startup a,.nocap-startup button{display:inline-block;border:1px solid #477c75;border-radius:8px;padding:10px 18px;background:#edf6f1;color:#17594f;font:inherit;text-decoration:none;cursor:pointer}.nocap-startup :focus-visible{outline:3px solid #168e7f;outline-offset:4px}.nocap-startup [hidden]{display:none}
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <section id="nocap-startup" class="nocap-startup" role="status" aria-live="polite">
+        <div class="nocap-startup-brand">NOCAP</div>
+        <h1 data-startup-title>Đang mở không gian đọc…</h1>
+        <p data-startup-description>Đang tải ứng dụng NoCap. Giao diện sẽ hiện khi tải xong.</p>
+        <div data-startup-recovery hidden><a href="">Thử tải lại trang</a><p>Tải lại trang không xóa sách và ghi chú đã lưu.</p></div>
+        <noscript><p>Bạn cần bật JavaScript trong trình duyệt để sử dụng NoCap.</p></noscript>
+      </section>
+    </div>
+    <script id="nocap-startup-watchdog">
+      (() => {
+        const screen = document.getElementById('nocap-startup');
+        if (!screen) return;
+        let timer;
+        const cleanup = () => {
+          window.clearTimeout(timer);
+          observer.disconnect();
+          window.removeEventListener('error', onError, true);
+          window.removeEventListener('unhandledrejection', onRejection);
+        };
+        const showRecovery = (failed) => {
+          if (!screen.isConnected) { cleanup(); return; }
+          window.clearTimeout(timer);
+          screen.querySelector('[data-startup-title]').textContent = failed ? 'NoCap chưa khởi động được' : 'Trang đang tải lâu hơn bình thường';
+          screen.querySelector('[data-startup-description]').textContent = failed ? 'Không tải hoặc khởi động được tệp ứng dụng. Bạn có thể thử tải lại trang.' : 'Ứng dụng chưa tải xong. Hãy kiểm tra kết nối mạng hoặc thử tải lại trang.';
+          screen.querySelector('[data-startup-recovery]').hidden = false;
+        };
+        const onError = (event) => {
+          if (event.error || (event.target && event.target.tagName === 'SCRIPT' && event.target.type === 'module')) showRecovery(true);
+        };
+        const onRejection = () => showRecovery(true);
+        const observer = new MutationObserver(() => { if (!screen.isConnected) cleanup(); });
+        observer.observe(document.getElementById('root'), {childList:true});
+        window.addEventListener('error', onError, true);
+        window.addEventListener('unhandledrejection', onRejection);
+        timer = window.setTimeout(() => showRecovery(false), 12000);
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
