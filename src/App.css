@@ -1980,6 +1980,11 @@ body, .main-area {
 .reader-notice button { flex-shrink: 0; min-width: 24px; min-height: 24px; }
 .overlay, .modal-shade { z-index: 140; grid-template-columns: minmax(0, 1fr); }
 .dialog, .loading-card { min-width: 0; max-width: 100%; }
+.comparison-sources-dialog { width: min(100%, 540px); max-height: calc(100dvh - 36px); overflow-y: auto; }
+.comparison-sources-dialog > p { font-size: 13px; line-height: 1.75; overflow-wrap: anywhere; }
+.comparison-sources-dialog > h2 { padding-right: 28px; }
+.comparison-sources-dialog > select { display: block; box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; min-height: 44px; padding: 10px 32px 10px 12px; border: 1px solid #cbd9d4; border-radius: 8px; background: #fff; color: #243c3b; font: inherit; font-size: 13px; text-overflow: ellipsis; }
+.comparison-sources-dialog > select:focus-visible { outline: 2px solid #167e70; outline-offset: 2px; }
 /* Keep the upgrade prompt above book details and reader settings. */
 .pro-required-shade { z-index: 150; }
 

@@ -1,3 +1,5 @@
+import type Rendition from 'epubjs/types/rendition'
+
 export type EpubScrollManager = {
   container: { scrollTop: number; scrollLeft: number }
   scrollTop: number
@@ -27,4 +29,26 @@ export function synchronizeEpubScroll(manager: EpubScrollManager) {
 export async function waitForEpubTargetFonts<T extends object>(contents: Array<{ sectionIndex: number; document: T }>, sectionIndex: number | undefined, readiness: WeakMap<T, Promise<void>>) {
   const content = contents.find(value => value.sectionIndex === sectionIndex)
   if (content) await readiness.get(content.document)
+}
+/** epub.js restores a resized CFI before custom fonts finish loading. Remeasure
+ * that same CFI after display, rather than retaining its old pixel offset. */
+export function restoreEpubAfterResize(view: Pick<Rendition, 'on' | 'off' | 'location' | 'book'>, restore: (target: string, isCurrent: () => boolean) => Promise<void>) {
+  let generation = 0
+  let disposed = false
+  let pending: { target: string; sectionIndex: number | undefined; generation: number } | null = null
+  function cancel() { generation++; pending = null }
+  function resized(_size: unknown, cfi?: string) {
+    cancel()
+    const target = cfi || view.location?.start?.cfi
+    if (target) pending = { target, sectionIndex: view.book.spine.get(target)?.index, generation }
+  }
+  function displayed(section: { index: number }) {
+    const request = pending
+    if (!request || (request.sectionIndex !== undefined && request.sectionIndex !== section.index)) return
+    pending = null
+    void restore(request.target, () => !disposed && generation === request.generation).catch(() => {})
+  }
+  view.on('resized', resized)
+  view.on('displayed', displayed)
+  return { cancel, dispose() { disposed = true; cancel(); view.off('resized', resized); view.off('displayed', displayed) } }
 }

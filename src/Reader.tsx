@@ -7,7 +7,7 @@ import epubFontFaces from './fonts.css?inline'
 import { readerTypeface } from './readerTypography'
 import type { Book, FontFamily, ReaderAnnotation, ReaderLocation, ReaderWidth, TextAlignment, TocItem } from './types'
 import { detectReaderFormat } from './readerFormat'
-import { synchronizeEpubScroll, waitForEpubTargetFonts, type EpubScrollManager } from './epubScroll'
+import { restoreEpubAfterResize, synchronizeEpubScroll, waitForEpubTargetFonts, type EpubScrollManager } from './epubScroll'
 import { archiveLocator, archivePageIndex, clampProgression, epubProgression, findSpineHref, normalizedPdfRects, pdfTextOffsets, rangeFromOffsets, rangeOffsets, sectionTextProgression, type PdfRect } from './readerPositions'
 import type Rendition from 'epubjs/types/rendition'
 import type Contents from 'epubjs/types/contents'
@@ -142,6 +142,10 @@ function applyEpubComfort(view: Rendition, comfort: Pick<Props, 'fontSize' | 'fo
 
 async function displayEpubLocation(view: Rendition, target: string | undefined, isCurrent: () => boolean, readiness: WeakMap<Document, Promise<void>>) {
   await view.display(target)
+  await alignEpubLocation(view, target, isCurrent, readiness)
+}
+
+async function alignEpubLocation(view: Rendition, target: string | undefined, isCurrent: () => boolean, readiness: WeakMap<Document, Promise<void>>) {
   if (!isCurrent()) return
   const section = target ? view.book.spine.get(target) : view.book.spine.first()
   const contents = view.getContents() as unknown as Contents[]
@@ -185,6 +189,7 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
   const requestedProgression = useRef<number | null>(null)
   const contentReadiness = useRef(new WeakMap<Document, Promise<void>>())
   const renditionReady = useRef(false)
+  const reflow = useRef<ReturnType<typeof restoreEpubAfterResize> | null>(null)
   const appliedLocatorRequest = useRef<string | null>(null)
   const comfortRef = useRef({ fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme, language })
   const [renditionVersion, setRenditionVersion] = useState(0)
@@ -202,6 +207,7 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
     const target = findSpineHref(bookRef.current?.spine, navigateTarget) || navigateTarget
     const current = rendition.current
     let active = true
+    reflow.current?.cancel()
     void displayEpubLocation(current, target, () => active, contentReadiness.current).catch(() => {})
     return () => { active = false }
   }, [navigateTarget, renditionVersion])
@@ -219,6 +225,7 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
     if (!cfi && !href) return
     appliedLocatorRequest.current = key
     let active = true
+    reflow.current?.cancel()
     void displayEpubLocation(view, cfi || href, () => active, contentReadiness.current).catch(() => {})
     return () => { active = false }
   }, [navigateLocator, renditionVersion])
@@ -229,6 +236,7 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
     const view = rendition.current
     if (!request || !book || !view || !renditionReady.current) return
     let active = true
+    reflow.current?.cancel()
     void (async () => {
       try {
         if (request.href) {
@@ -273,6 +281,7 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
     let book: import('epubjs/types/book').default | null = null
     let view: Rendition | null = null
     let resizeObserver: ResizeObserver | null = null
+    let resizeFrame = 0
     async function open() {
       try {
         const { default: ePub } = await import('epubjs')
@@ -448,24 +457,29 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
           publishSearch(createEpubSearchSource(book, () => alive))
           renditionReady.current = true
           setRenditionVersion(value => value + 1)
+          const currentView = view
+          reflow.current = restoreEpubAfterResize(currentView, (target, isCurrent) => alignEpubLocation(currentView, target, () => alive && isCurrent(), contentReadiness.current))
           // Opening the notes panel changes the host width without resizing the
           // window. epub.js restores its current CFI when explicitly resized.
           let width = host.current?.clientWidth || 0
           let height = host.current?.clientHeight || 0
           resizeObserver = new ResizeObserver(() => {
-            const nextWidth = host.current?.clientWidth || 0
-            const nextHeight = host.current?.clientHeight || 0
-            if (!alive || !nextWidth || !nextHeight || (width === nextWidth && height === nextHeight)) return
-            width = nextWidth
-            height = nextHeight
-            view?.resize(width, height)
+            cancelAnimationFrame(resizeFrame)
+            resizeFrame = requestAnimationFrame(() => {
+              const nextWidth = host.current?.clientWidth || 0
+              const nextHeight = host.current?.clientHeight || 0
+              if (!alive || !nextWidth || !nextHeight || (width === nextWidth && height === nextHeight)) return
+              width = nextWidth
+              height = nextHeight
+              view?.resize(width, height)
+            })
           })
           if (host.current) resizeObserver.observe(host.current)
         }
       } catch { if (alive) setError(translate("Không mở được EPUB này. Tệp có thể bị hỏng hoặc không đúng định dạng.", langRef.current)) }
     }
     void open()
-    return () => { alive = false; publishSearch(null); resizeObserver?.disconnect(); renditionReady.current = false; rendition.current = null; locationsReady.current = false; view?.destroy(); book?.destroy() }
+    return () => { alive = false; publishSearch(null); resizeObserver?.disconnect(); cancelAnimationFrame(resizeFrame); reflow.current?.dispose(); reflow.current = null; renditionReady.current = false; rendition.current = null; locationsReady.current = false; view?.destroy(); book?.destroy() }
   }, [bytes, initial, publishSearch])
 
   useEffect(() => {

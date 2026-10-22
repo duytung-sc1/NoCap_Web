@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Bookmark, BookOpen, ChevronLeft, ChevronRight, FilePenLine, List, RefreshCw, Search, Settings2, X } from 'lucide-react'
 import { ReaderPane } from './Reader'
 import { ReaderErrorBoundary } from './ReaderErrorBoundary'
@@ -27,11 +28,14 @@ export type ComparisonReaderProps = {
   onLocation?: (book: Book, location: ReaderLocation) => void
 }
 
-type Actions = { page: (direction: number) => void; search: () => void; dismiss: () => boolean }
+type ToolPanel = 'notes' | 'search' | null
+type Actions = { page: (direction: number) => void; search: () => void; dismiss: () => boolean; closeTool: () => void }
 type PaneProps = Omit<ComparisonReaderProps, 'books' | 'initialLocators' | 'onClose'> & {
   book: Book; initial?: string; index: number; active: boolean; onActivate: () => void
   register: (actions: Actions | null) => void
   onCommitted: (record: SyncRecord) => Promise<void>
+  toolsHost: HTMLElement | null
+  onPanelState: (index: number, panel: ToolPanel) => void
 }
 type Controls = { previous: () => void; next: () => void }
 type Comfort = { fontSize: number; fontFamily: FontFamily; theme: 'paper' | 'sepia' | 'night'; lineHeight: number; textAlignment: TextAlignment; readerWidth: ReaderWidth }
@@ -70,7 +74,7 @@ function Contents({ items, onNavigate, depth = 0 }: { items: TocItem[]; onNaviga
   return <ul>{items.map((item, index) => <li key={`${item.id}:${index}`}><button type="button" style={{ paddingInlineStart: `${12 + depth * 12}px` }} onClick={() => onNavigate(item.href)}>{item.label}</button>{item.subitems?.length ? <Contents items={item.subitems} onNavigate={onNavigate} depth={depth + 1} /> : null}</li>)}</ul>
 }
 
-function ComparisonPane({ profile, lang, book, initial, records, loadBook, index, active, onActivate, register, onCommitted, onLocation }: PaneProps) {
+function ComparisonPane({ profile, lang, book, initial, records, loadBook, index, active, onActivate, register, onCommitted, onLocation, toolsHost, onPanelState }: PaneProps) {
   const vi = lang === 'vi'
   const text = (v: string, e: string) => vi ? v : e
   const id = useId().replaceAll(':', '')
@@ -81,12 +85,13 @@ function ComparisonPane({ profile, lang, book, initial, records, loadBook, index
   const flightKey = JSON.stringify([profile, book.id, index])
   const [draft, setDraft] = useState<ReaderNoteDraft>(() => readReaderNoteDraft(draftProfile, book.id) || emptyReaderNoteDraft())
   const draftRef = useRef(draft)
-  const [panel, setPanel] = useState<'notes' | 'search' | null>(() => draft.note || draft.selection || hasDrawing(draft.drawing) ? 'notes' : null)
+  const [panel, setPanel] = useState<ToolPanel>(() => draft.note || draft.selection || hasDrawing(draft.drawing) ? 'notes' : null)
   const [comfort, setComfort] = useState<Comfort>(() => initialComfort(records, profile, book.id))
   const [settings, setSettings] = useState(false)
   const [tocOpen, setTocOpen] = useState(false)
   const [toc, setToc] = useState<TocItem[]>([])
   const [load, setLoad] = useState<{ bytes?: ArrayBuffer; error?: string }>({})
+  const ready = Boolean(load.bytes)
   const [retry, setRetry] = useState(0)
   const [notice, setNotice] = useState('')
   const [saving, setSaving] = useState(false)
@@ -147,6 +152,14 @@ function ComparisonPane({ profile, lang, book, initial, records, loadBook, index
   const receiveControls = useCallback((next: Controls | null) => { controls.current = next }, [])
   const receiveSearch = useCallback((next: ReaderSearchSource | null) => { setSource(() => next) }, [])
   const openSearch = useCallback(() => { setPanel('search'); setTocOpen(false); setSettings(false) }, [])
+  const panelRef = useRef(panel)
+  panelRef.current = panel
+  const closeTool = useCallback(() => {
+    const button = panelRef.current === 'search' ? searchButton : noteButton
+    setPanel(null); setActiveHit(null)
+    requestAnimationFrame(() => button.current?.focus({ preventScroll: true }))
+  }, [])
+  useEffect(() => { onPanelState(index, ready ? panel : null) }, [index, ready, panel, onPanelState])
   useEffect(() => {
     const root = host.current
     if (!root || !load.bytes) return
@@ -179,14 +192,14 @@ function ComparisonPane({ profile, lang, book, initial, records, loadBook, index
     if (scroll) scroll.scrollBy({ top: direction * Math.max(120, scroll.clientHeight * .85), behavior: 'smooth' })
   }, [])
   useEffect(() => {
-    register({ page: move, search: openSearch, dismiss: () => {
+    register({ page: move, search: openSearch, closeTool, dismiss: () => {
       if (tocOpen) { setTocOpen(false); return true }
       if (settings) { setSettings(false); return true }
-      if (panel) { setPanel(null); return true }
+      if (panel) { closeTool(); return true }
       return false
     } })
     return () => register(null)
-  }, [register, move, openSearch, panel, tocOpen, settings])
+  }, [register, move, openSearch, closeTool, panel, tocOpen, settings])
 
   function changeDraft(changes: Partial<ReaderNoteDraft>) {
     if (!alive.current || busy.current) return
@@ -284,17 +297,22 @@ function ComparisonPane({ profile, lang, book, initial, records, loadBook, index
   const notes = records.filter(record => record.profile === profile && record.kind === 'highlights' && !record.deleted && record.payload.book_id === book.id)
   const annotations: ReaderAnnotation[] = notes.map(record => ({ id: annotationId(record), locatorJson: String(record.payload.locator_json || ''), text: String(record.payload.text || ''), color: String(record.payload.color || 'YELLOW') }))
   if (activeHit) annotations.push({ id: `comparison-search-${index}`, locatorJson: activeHit.locatorJson, text: activeHit.text, color: 'BLUE' })
-  const ready = Boolean(load.bytes)
   const bookmarked = Boolean(location && records.some(record => record.profile === profile && record.kind === 'bookmarks' && !record.deleted && record.payload.book_id === book.id && record.payload.locator_json === location.locatorJson))
 
-  return <section className={`comparison-source reader-shell ${comfort.theme}${active ? ' is-active' : ''}`} aria-label={text(`Nguồn ${index + 1}: ${book.title}`, `Source ${index + 1}: ${book.title}`)} onPointerDownCapture={onActivate} onFocusCapture={onActivate}>
+  // Toolbar actions activate on click. Activating on pointerdown/focus first
+  // would make a previously hidden tool toggle closed on that same click.
+  function activateContent(event: { target: EventTarget | null }) {
+    if (!(event.target instanceof Element) || !event.target.closest('.comparison-toolbar')) onActivate()
+  }
+
+  return <section className={`comparison-source reader-shell ${comfort.theme}${active ? ' is-active' : ''}`} aria-label={text(`Nguồn ${index + 1}: ${book.title}`, `Source ${index + 1}: ${book.title}`)} onPointerDownCapture={activateContent} onFocusCapture={activateContent}>
     <header className="comparison-source-heading"><div><span>{text('NGUỒN', 'SOURCE')} {String(index + 1).padStart(2, '0')}</span><h2 title={book.title}>{book.title}</h2><p>{book.author}</p></div><button type="button" className="comparison-active-label" aria-pressed={active} onClick={onActivate}>{active ? text('Đang đọc', 'Active') : text('Chọn nguồn', 'Activate')}</button></header>
     <div className="comparison-toolbar" role="toolbar" aria-label={text(`Công cụ nguồn ${index + 1}`, `Source ${index + 1} tools`)}>
-      <button type="button" disabled={!ready} aria-expanded={tocOpen} onClick={() => { setTocOpen(value => !value); setSettings(false) }}><List size={15} />{text('Mục lục', 'Contents')}</button>
-      <button ref={searchButton} type="button" disabled={!ready} aria-expanded={panel === 'search'} aria-controls={`${prefix}-search-panel`} onClick={() => { setPanel(panel === 'search' ? null : 'search'); setTocOpen(false); setSettings(false) }}><Search size={15} />{text('Tìm', 'Search')}</button>
-      <button ref={noteButton} type="button" disabled={!ready} aria-expanded={panel === 'notes'} aria-controls={`${prefix}-notes-panel`} onClick={() => { setPanel(panel === 'notes' ? null : 'notes'); setTocOpen(false); setSettings(false) }}><FilePenLine size={15} />{text('Ghi chú', 'Notes')}</button>
-      <button type="button" disabled={!ready || !location || bookmarkSaving} aria-pressed={bookmarked} aria-busy={bookmarkSaving} aria-label={bookmarked ? text('Bỏ dấu trang', 'Remove bookmark') : text('Đánh dấu vị trí', 'Bookmark position')} onClick={() => { void toggleBookmark() }}><Bookmark size={15} fill={bookmarked ? 'currentColor' : 'none'} />{text('Dấu trang', 'Bookmark')}</button>
-      <button type="button" aria-expanded={settings} onClick={() => { setSettings(value => !value); setTocOpen(false) }}><Settings2 size={15} />{text('Giao diện', 'Appearance')}</button>
+      <button type="button" disabled={!ready} aria-expanded={tocOpen} onClick={() => { onActivate(); setTocOpen(value => !value); setSettings(false) }}><List size={15} />{text('Mục lục', 'Contents')}</button>
+      <button ref={searchButton} type="button" disabled={!ready} aria-expanded={active && panel === 'search'} aria-controls={`${prefix}-search-panel`} onClick={() => { onActivate(); setPanel(panel === 'search' && active ? null : 'search'); setTocOpen(false); setSettings(false) }}><Search size={15} />{text('Tìm', 'Search')}</button>
+      <button ref={noteButton} type="button" disabled={!ready} aria-expanded={active && panel === 'notes'} aria-controls={`${prefix}-notes-panel`} onClick={() => { onActivate(); setPanel(panel === 'notes' && active ? null : 'notes'); setTocOpen(false); setSettings(false) }}><FilePenLine size={15} />{text('Ghi chú', 'Notes')}</button>
+      <button type="button" disabled={!ready || !location || bookmarkSaving} aria-pressed={bookmarked} aria-busy={bookmarkSaving} aria-label={bookmarked ? text('Bỏ dấu trang', 'Remove bookmark') : text('Đánh dấu vị trí', 'Bookmark position')} onClick={() => { onActivate(); void toggleBookmark() }}><Bookmark size={15} fill={bookmarked ? 'currentColor' : 'none'} />{text('Dấu trang', 'Bookmark')}</button>
+      <button type="button" aria-expanded={settings} onClick={() => { onActivate(); setSettings(value => !value); setTocOpen(false) }}><Settings2 size={15} />{text('Giao diện', 'Appearance')}</button>
     </div>
     {settings && <div className="comparison-comfort"><label>{text('Cỡ chữ', 'Text size')}<select value={comfort.fontSize} onChange={event => setComfort(value => ({ ...value, fontSize: Number(event.target.value) }))}>{[...new Set([80, 90, 100, 110, 120, 140, 160, 170, 180, 200, comfort.fontSize])].sort((a, b) => a - b).map(size => <option key={size} value={size}>{size}%</option>)}</select></label><label>{text('Kiểu chữ', 'Typeface')}<select value={comfort.fontFamily} onChange={event => setComfort(value => ({ ...value, fontFamily: event.target.value as FontFamily }))}><option value="serif">Literata</option><option value="sans">Atkinson</option><option value="mono">{text('Đơn cách', 'Monospace')}</option></select></label><label>{text('Màu nền', 'Theme')}<select value={comfort.theme} onChange={event => setComfort(value => ({ ...value, theme: event.target.value as Comfort['theme'] }))}><option value="paper">{text('Giấy sáng', 'Paper')}</option><option value="sepia">{text('Vàng dịu', 'Sepia')}</option><option value="night">{text('Ban đêm', 'Night')}</option></select></label></div>}
     {notice && <div className="comparison-notice" role="status"><span>{notice}</span><button type="button" aria-label={text('Đóng thông báo', 'Dismiss message')} onClick={() => setNotice('')}><X size={14} /></button></div>}
@@ -306,8 +324,10 @@ function ComparisonPane({ profile, lang, book, initial, records, loadBook, index
       {!active && ready && <button type="button" className="comparison-activate-surface" onClick={onActivate} aria-label={text(`Đọc nguồn ${index + 1}`, `Read source ${index + 1}`)}><span>{text('Nhấn để thao tác với nguồn này', 'Click to interact with this source')}</span></button>}
     </div>
     {ready && <div className="comparison-pagination"><button type="button" onClick={() => move(-1)} aria-label={text('Trang trước', 'Previous page')}><ChevronLeft size={17} />{text('Trước', 'Previous')}</button><span>{Math.round((location?.progression || 0) * 100)}%{location?.chapterTitle ? ` · ${location.chapterTitle}` : ''}</span><button type="button" onClick={() => move(1)} aria-label={text('Trang sau', 'Next page')}>{text('Sau', 'Next')}<ChevronRight size={17} /></button></div>}
-    <ReaderNotesPanel idPrefix={prefix} open={ready && panel === 'notes'} lang={lang} bookTitle={book.title} records={notes} note={draft.note} color={draft.color} quote={draft.selection?.text || ''} drawing={draft.drawing} saving={saving} canSave={Boolean(draft.selection || draft.anchor || location) && Boolean(draft.note.trim() || draft.selection?.text || hasDrawing(draft.drawing))} onNoteChange={changeNote} onDrawingChange={changeDrawing} onColorChange={color => changeDraft({ color })} onClearQuote={() => changeDraft({ selection: null, anchor: locationRef.current })} onSave={() => { void saveNote() }} onNavigate={record => navigateTo(String(record.payload.locator_json || ''))} onUpdate={(record, changes) => changeAnnotation(record, changes)} onDelete={record => changeAnnotation(record)} onClose={() => { setPanel(null); noteButton.current?.focus() }} />
-    <ReaderSearchPanel idPrefix={prefix} open={ready && panel === 'search' && active} lang={lang} bookTitle={book.title} source={source} format={load.bytes ? detectReaderFormat(book, load.bytes) : 'text'} activeId={activeHit?.id} onNavigate={hit => { setActiveHit(hit); navigateTo(hit.locatorJson) }} onClearActive={() => setActiveHit(null)} onClose={() => { setPanel(null); setActiveHit(null); searchButton.current?.focus() }} />
+    {toolsHost && createPortal(<div className={`comparison-tools-source reader-shell ${comfort.theme}`} data-source-index={index} hidden={!active || !ready || !panel}>
+      <ReaderNotesPanel idPrefix={prefix} open={active && ready && panel === 'notes'} lang={lang} bookTitle={book.title} records={notes} note={draft.note} color={draft.color} quote={draft.selection?.text || ''} drawing={draft.drawing} saving={saving} canSave={Boolean(draft.selection || draft.anchor || location) && Boolean(draft.note.trim() || draft.selection?.text || hasDrawing(draft.drawing))} onNoteChange={changeNote} onDrawingChange={changeDrawing} onColorChange={color => changeDraft({ color })} onClearQuote={() => changeDraft({ selection: null, anchor: locationRef.current })} onSave={() => { void saveNote() }} onNavigate={record => navigateTo(String(record.payload.locator_json || ''))} onUpdate={(record, changes) => changeAnnotation(record, changes)} onDelete={record => changeAnnotation(record)} onClose={closeTool} />
+      <ReaderSearchPanel idPrefix={prefix} open={ready && panel === 'search' && active} lang={lang} bookTitle={book.title} source={source} format={load.bytes ? detectReaderFormat(book, load.bytes) : 'text'} activeId={activeHit?.id} onNavigate={hit => { setActiveHit(hit); navigateTo(hit.locatorJson) }} onClearActive={() => setActiveHit(null)} onClose={closeTool} />
+    </div>, toolsHost)}
   </section>
 }
 
@@ -315,6 +335,9 @@ function ComparisonSession(props: ComparisonReaderProps) {
   const { profile, lang, books, initialLocators, records, onChanged, onClose } = props
   const vi = lang === 'vi'
   const [active, setActive] = useState(0)
+  const [toolsHost, setToolsHost] = useState<HTMLDivElement | null>(null)
+  const [panels, setPanels] = useState<ToolPanel[]>([null, null])
+  const panelState = useCallback((index: number, panel: ToolPanel) => setPanels(previous => previous[index] === panel ? previous : previous.map((value, i) => i === index ? panel : value)), [])
   const [optimistic, setOptimistic] = useState<SyncRecord[]>([])
   const [notice, setNotice] = useState('')
   const scope = useRef(true)
@@ -371,7 +394,12 @@ function ComparisonSession(props: ComparisonReaderProps) {
     <header className="comparison-heading"><div><span><BookOpen size={16} />{vi ? 'KHÔNG GIAN NGHIÊN CỨU' : 'RESEARCH WORKSPACE'}</span><h1 id="comparison-reader-title">{vi ? 'Đọc đối chiếu hai nguồn' : 'Compare two sources'}</h1></div><button ref={closeButton} type="button" onClick={onClose} aria-label={vi ? 'Đóng đọc đối chiếu' : 'Close comparison'}><X size={20} /><span>{vi ? 'Đóng' : 'Close'}</span></button></header>
     <div className="comparison-source-tabs" role="group" aria-label={vi ? 'Nguồn đang thao tác' : 'Active source'}>{books.map((book, index) => <button key={index} type="button" aria-pressed={active === index} onClick={() => setActive(index)}><span>{String(index + 1).padStart(2, '0')}</span>{book.title}</button>)}</div>
     {notice && <p className="comparison-shared-notice" role="status">{notice}</p>}
-    <div className="comparison-columns">{books.map((book, index) => <ComparisonPane key={index} {...props} book={book} initial={initialLocators[index]} index={index} records={merged} active={active === index} onActivate={() => setActive(index)} register={index === 0 ? registerFirst : registerSecond} onCommitted={committed} />)}</div>
+    <div className={`comparison-workspace${panels[active] ? ' has-tool-panel' : ''}`}>
+      <div className="comparison-columns">{books.map((book, index) => <ComparisonPane key={index} {...props} book={book} initial={initialLocators[index]} index={index} records={merged} active={active === index} onActivate={() => setActive(index)} register={index === 0 ? registerFirst : registerSecond} onCommitted={committed} toolsHost={toolsHost} onPanelState={panelState} />)}</div>
+      <div ref={setToolsHost} className="comparison-tools-host" hidden={!panels[active]}>
+        <button type="button" className="comparison-tools-return" onClick={() => actions.current[active]?.closeTool()}><ChevronLeft size={17} />{vi ? 'Quay lại đọc hai nguồn' : 'Back to reading sources'}</button>
+      </div>
+    </div>
     <footer className="comparison-help">{vi ? 'Mỗi nguồn giữ vị trí riêng · Ctrl/Cmd + F: tìm trong nguồn đang chọn · Esc: đóng bảng hoặc trở về' : 'Independent reading positions · Ctrl/Cmd + F: search active source · Esc: close a panel or return'}</footer>
   </div>
 }
