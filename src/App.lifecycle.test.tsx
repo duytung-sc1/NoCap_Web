@@ -93,10 +93,10 @@ function file(id: string): LocalFile {
   return { key: `DEVICE_LOCAL:${id}`, profile: 'DEVICE_LOCAL', addedAt: 1,
     book: { id, title: id, author: 'QA', source: 'local', format: 'TXT' }, data: new Blob(['QA']) }
 }
-async function openLogin() {
+async function openLogin(identifier = session.user.email) {
   fireEvent.click(screen.getAllByRole('button', { name: 'Đăng nhập' })[0])
   const dialog = screen.getByRole('dialog', { name: 'Chào mừng quay lại.' })
-  fireEvent.change(within(dialog).getByLabelText('Email'), { target: { value: session.user.email } })
+  fireEvent.change(within(dialog).getByLabelText('Email hoặc tên đăng nhập'), { target: { value: identifier } })
   fireEvent.change(within(dialog).getByLabelText('Mật khẩu'), { target: { value: 'qa-password' } })
   fireEvent.submit(dialog.querySelector('form')!)
   return dialog
@@ -1117,6 +1117,28 @@ describe('account and reader lifecycle', () => {
     expect(await screen.findByRole('heading', { name: 'Quản trị thư viện' })).toBeTruthy()
     expect(window.location.pathname).toBe('/admin')
     expect(fixtures.adminRequest).toHaveBeenCalledWith(session.token, 'overview', expect.any(AbortSignal))
+  })
+
+  it('accepts the administrator login name while registration and recovery still require email', async () => {
+    window.history.replaceState(null, '', '/admin')
+    fixtures.login.mockResolvedValue(session)
+    fixtures.adminIdentity.mockResolvedValue({ id: session.user.id, email: session.user.email, name: 'administrator', photoUrl: null, adminExpiresAt: Date.now() + 3600000 })
+    render(<App />)
+    fireEvent.click(screen.getAllByRole('button', { name: 'Đăng nhập' })[0])
+    const dialog = screen.getByRole('dialog', { name: 'Chào mừng quay lại.' })
+    const identifier = within(dialog).getByLabelText('Email hoặc tên đăng nhập') as HTMLInputElement
+    expect(identifier.type).toBe('text'); expect(identifier.autocomplete).toBe('username')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Tạo tài khoản' }))
+    expect((within(dialog).getByLabelText('Email') as HTMLInputElement).type).toBe('email')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Đăng nhập' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Quên mật khẩu?' }))
+    expect((within(dialog).getByLabelText('Email') as HTMLInputElement).type).toBe('email')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Đăng nhập' }))
+    fireEvent.change(within(dialog).getByLabelText('Email hoặc tên đăng nhập'), { target: { value: 'administrator' } })
+    fireEvent.change(within(dialog).getByLabelText('Mật khẩu'), { target: { value: 'qa-password' } })
+    fireEvent.submit(dialog.querySelector('form')!)
+    expect(await screen.findByRole('heading', { name: 'Quản trị thư viện' })).toBeTruthy()
+    expect(fixtures.login).toHaveBeenCalledWith('administrator', 'qa-password')
   })
 
   it('denies ordinary accounts a directly entered /admin route', async () => {

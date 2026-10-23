@@ -2682,10 +2682,10 @@ function AuthDialog({ lang, onClose, onSuccess }: { lang: Lang; onClose: () => v
           </div>
         )}
         {(mode === 'login' || mode === 'register') && (
-          <div className="auth-divider"><span>{lang === 'vi' ? 'hoặc dùng email' : 'or use email'}</span></div>
+          <div className="auth-divider"><span>{mode === 'register' ? (lang === 'vi' ? 'hoặc đăng ký bằng email' : 'or register with email') : (lang === 'vi' ? 'hoặc đăng nhập bằng mật khẩu' : 'or sign in with a password')}</span></div>
         )}
         <form onSubmit={event => void submit(event)}>
-          <label>Email<input type="email" autoComplete="email" required value={email} onChange={event => setEmail(event.target.value)} placeholder="email@example.com" /></label>
+          <label>{mode === 'login' ? (lang === 'vi' ? 'Email hoặc tên đăng nhập' : 'Email or username') : 'Email'}<input type={mode === 'login' ? 'text' : 'email'} autoComplete={mode === 'login' ? 'username' : 'email'} autoCapitalize="none" spellCheck={false} required maxLength={254} value={email} onChange={event => setEmail(event.target.value)} placeholder={mode === 'login' ? (lang === 'vi' ? 'Email hoặc tên đăng nhập' : 'Email or username') : 'email@example.com'} /></label>
           {mode !== 'forgot' && <label>{copy.password}<input type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} minLength={mode === 'register' ? 8 : undefined} required value={password} onChange={event => setPassword(event.target.value)} placeholder={mode === 'register' ? copy.newPasswordPlaceholder : copy.passwordPlaceholder} /></label>}
           {message && <p className="form-message" role="status">{message}</p>}
           <button className="primary wide" type="submit" disabled={busy}>{busy ? copy.processing : mode === 'login' ? copy.login : mode === 'register' ? copy.register : copy.sendInstructions} <ArrowRight size={17} /></button>

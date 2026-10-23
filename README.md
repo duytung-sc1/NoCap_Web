@@ -51,6 +51,14 @@ data. The separate backend dashboard remains available for app administration.
 See [Web administration integration](docs/web-admin-integration-2026-10-12.md)
 for the authentication contract, available functions and validation.
 
+The sign-in form accepts an email address or an owner-provisioned administrator
+login name. Registration and password recovery still use email addresses.
+Administrator login names belong to the existing account; passwords, recovery
+email and reader data are preserved. The backend enforces a one-hour privileged
+session and a 15-minute cooldown after five failed password attempts shared
+across that administrator's name and email. Apply backend migration `0016` and
+deploy its authentication update before releasing this sign-in form.
+
 In **Administration → Users & Pro → Transaction history**, administrators can
 view a selected account's SePay payment orders, amounts, plan durations, effective
 statuses, payment/expiry times and transaction references. History is read-only,
