@@ -20,6 +20,34 @@ beforeEach(() => { vi.useFakeTimers() })
 afterEach(() => { cleanup(); vi.useRealTimers() })
 
 describe('book search panel', () => {
+  it('keeps document focus when a shared search panel opens without a new focus request', () => {
+    const handlers = props({ focusRequest: 0 })
+    const view = (open: boolean) => <><button>Reading document</button><ReaderSearchPanel {...handlers} open={open} /></>
+    const { rerender } = render(view(false))
+    const documentControl = screen.getByRole('button', { name: 'Reading document' })
+    documentControl.focus()
+    rerender(view(true))
+    expect(document.activeElement).toBe(documentControl)
+    rerender(view(false))
+    rerender(view(true))
+    expect(document.activeElement).toBe(documentControl)
+  })
+
+  it('focuses the active search field for an explicit request even when the panel is already open', () => {
+    const handlers = props({ focusRequest: 0 })
+    const view = (focusRequest: number) => <><button>Reading document</button><ReaderSearchPanel {...handlers} focusRequest={focusRequest} /></>
+    const { rerender } = render(view(0))
+    const documentControl = screen.getByRole('button', { name: 'Reading document' })
+    documentControl.focus()
+    rerender(view(1))
+    expect(document.activeElement).toBe(screen.getByLabelText('Search book text'))
+    documentControl.focus()
+    rerender(view(1))
+    expect(document.activeElement).toBe(documentControl)
+    rerender(view(2))
+    expect(document.activeElement).toBe(screen.getByLabelText('Search book text'))
+  })
+
   it('does not scan blank input, debounces typing and marks literal excerpts safely', async () => {
     const literal = { ...first, excerpt: '<script>quiet</script>', matchStart: 8, matchEnd: 13 }
     const handlers = props({ source: vi.fn(async () => ({ ...result, hits: [literal] })) })
@@ -109,6 +137,7 @@ describe('book search panel', () => {
     expect(resultButton.getAttribute('aria-current')).toBe('location')
     rerender(<ReaderSearchPanel {...handlers} open={false} />)
     rerender(<ReaderSearchPanel {...handlers} open />)
+    expect(document.activeElement).toBe(screen.getByLabelText('Search book text'))
     await scan()
     expect(handlers.source).toHaveBeenCalledTimes(1)
     expect(screen.getByRole('button', { name: /Page 1/ })).toBeTruthy()

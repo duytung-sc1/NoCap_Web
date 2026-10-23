@@ -1,0 +1,5 @@
+.comparison-sources-dialog{font-family:var(--font-ui);color:#203047}
+.comparison-sources-dialog:lang(vi)>h2{font-family:var(--font-ui);font-weight:700;line-height:1.5;letter-spacing:normal}
+.comparison-sources-dialog>p{color:#526773}
+.comparison-sources-dialog>label{color:#203047;font-family:var(--font-ui);font-size:13px;line-height:1.65}
+.dialog.comparison-sources-dialog>select{font-family:var(--font-ui);line-height:1.6}

@@ -209,6 +209,15 @@ settings and restores full opacity without changing the saved reading position.
 
 ## Other behavior
 
+Reading comparison uses one shared toolbar for contents, search, notes,
+bookmarks and appearance. Clicking, focusing or scrolling either document
+selects its context without intercepting the first interaction. The current
+tool stays open while switching sources; each document retains its own notes,
+drafts, search query, appearance and position. Explicit search/Ctrl+F focuses
+the search box; changing documents does not take focus away from reading.
+Comparison dialogs declare their UI language locally: Be Vietnam Pro for
+Vietnamese controls and Plus Jakarta Sans for English controls.
+
 On phone-width Web (760 px and below), reading comparison shows the selected
 source and runs only that source's document renderer. Switching sources keeps
 separate reading positions, notes, searches and downloaded bytes. The inactive

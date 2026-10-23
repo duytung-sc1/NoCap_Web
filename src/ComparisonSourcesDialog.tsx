@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import type { Book } from './types'
 import type { Lang } from './i18n'
+import './ComparisonSourcesDialog.css'
 
 export function ComparisonSourcesDialog({ books, initialBookId, lang, onClose, onCompare }: {
   books: Book[]; initialBookId?: string; lang: Lang; onClose: () => void; onCompare: (left: Book, right: Book) => void
@@ -16,7 +17,7 @@ export function ComparisonSourcesDialog({ books, initialBookId, lang, onClose, o
     dialog.current?.querySelector<HTMLElement>('select,button')?.focus()
     return () => previous?.focus()
   }, [])
-  return <div className="modal-shade"><form className="dialog comparison-sources-dialog" ref={dialog} role="dialog" aria-modal="true" aria-labelledby="comparison-sources-title" onKeyDown={event => {
+  return <div className="modal-shade" lang={lang}><form className="dialog comparison-sources-dialog" ref={dialog} role="dialog" aria-modal="true" aria-labelledby="comparison-sources-title" onKeyDown={event => {
     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose() }
     if (event.key === 'Tab') {
       const items = Array.from(dialog.current?.querySelectorAll<HTMLElement>('button, select') || []).filter(item => !(item as HTMLButtonElement).disabled)
@@ -31,7 +32,7 @@ export function ComparisonSourcesDialog({ books, initialBookId, lang, onClose, o
   }}>
     <button type="button" className="icon-button dialog-close" aria-label={vi ? 'Đóng chọn nguồn' : 'Close source selection'} onClick={onClose}><X size={19} /></button>
     <h2 id="comparison-sources-title">{vi ? 'Đọc đối chiếu hai nguồn' : 'Compare two sources'}</h2>
-    <p className="muted">{vi ? 'Mỗi nguồn có trang đọc, tìm kiếm và ghi chú riêng. Bạn cũng có thể mở cùng một sách ở hai vị trí.' : 'Each source has its own navigation, search and notes. You can also open one book at two positions.'}</p>
+    <p>{vi ? 'Mở hai tài liệu để đọc đối chiếu. Bạn cũng có thể mở cùng một sách ở hai vị trí.' : 'Open two documents to compare them. You can also open one book at two positions.'}</p>
     <label htmlFor={`${id}-left`}>{vi ? 'Nguồn bên trái' : 'Left source'}</label>
     <select id={`${id}-left`} value={left} onChange={event => setLeft(event.target.value)} required>{books.map(book => <option key={book.id} value={book.id}>{book.title}</option>)}</select>
     <label htmlFor={`${id}-right`}>{vi ? 'Nguồn bên phải' : 'Right source'}</label>

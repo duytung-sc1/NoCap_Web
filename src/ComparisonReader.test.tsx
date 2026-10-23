@@ -48,15 +48,17 @@ function props(overrides: Partial<ComparisonReaderProps> = {}): ComparisonReader
   return { profile: 'ACCOUNT:a', lang: 'en', books: [left, right], initialLocators: ['left-position', 'right-position'], records: [], loadBook: vi.fn(async () => new TextEncoder().encode('Book content').buffer), onClose: vi.fn(), onChanged: vi.fn(async () => {}), onLocation: vi.fn(), ...overrides }
 }
 function pane(index: number) { return screen.getByRole('region', { name: index === 0 ? 'Source 1: Source Alpha' : 'Source 2: Source Beta' }) }
+function activate(index: number) { fireEvent.click(within(screen.getByRole('group', { name: 'Active source' })).getAllByRole('button')[index]) }
+function toolbar() { return screen.getByRole('toolbar', { name: 'Comparison reading tools' }) }
+function sourceTool(index: number, name: string | RegExp) { activate(index); return within(toolbar()).getByRole('button', { name }) }
 function tools(index: number) { return document.querySelector<HTMLElement>(`.comparison-tools-source[data-source-index="${index}"]`)! }
 async function loaded() {
   await screen.findByTestId('reader-left-position'); await screen.findByTestId('reader-right-position')
   // Reader markup can appear before its initial location effect publishes.
   // Wait for the same enabled control a user needs, rather than a timer.
   await waitFor(() => {
-    const sources = screen.getAllByRole('region', { name: /^Source [12]:/ })
-    expect(sources).toHaveLength(2)
-    for (const source of sources) expect(within(source).getByRole('button', { name: /^(Bookmark position|Remove bookmark)$/ })).toHaveProperty('disabled', false)
+    expect(screen.getAllByRole('region', { name: /^Source [12]:/ })).toHaveLength(2)
+    expect(within(toolbar()).getByRole('button', { name: /^(Bookmark position|Remove bookmark)$/ })).toHaveProperty('disabled', false)
   })
 }
 function deferred<T>() { let resolve!: (value: T) => void; let reject!: (error: unknown) => void; const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail }); return { promise, resolve, reject } }
@@ -76,10 +78,14 @@ describe('interactive two-source comparison reader', () => {
     const handlers = props()
     render(<ComparisonReader {...handlers} />)
     await screen.findByTestId('reader-left-position')
+    // Markup can precede the mocked reader's initial location effect. Start the
+    // user scroll only after that publication, as a real ready reader would.
+    await waitFor(() => expect(handlers.onLocation).toHaveBeenCalledWith(left, { locatorJson: 'initial:left-position', progression: .1, chapterTitle: 'Chapter left-position' }))
     expect(handlers.loadBook).toHaveBeenCalledTimes(1)
     expect(screen.getAllByTestId(/^reader-/)).toHaveLength(1)
     fireEvent.click(screen.getByRole('button', { name: 'Scroll left-position' }))
-    fireEvent.click(within(pane(0)).getByRole('button', { name: 'Notes' }))
+    expect(handlers.onLocation).toHaveBeenLastCalledWith(left, { locatorJson: 'moved:left-position', progression: .6, chapterTitle: 'Moved left-position' })
+    fireEvent.click(sourceTool(0, 'Notes'))
     fireEvent.change(screen.getByRole('textbox', { name: 'Your note' }), { target: { value: 'Retain this mobile draft' } })
     fixtures.publishInitialLocation = false
     fireEvent.click(within(screen.getByRole('group', { name: 'Active source' })).getAllByRole('button')[1])
@@ -134,29 +140,34 @@ describe('interactive two-source comparison reader', () => {
     expect(screen.getByTestId('reader-left-position')).toBeTruthy()
     expect(handlers.loadBook).toHaveBeenCalledTimes(2)
   })
-  it('uses one shared tool column with independent drafts and opens an inactive source tool in one pointer click', async () => {
+  it('uses one toolbar and a continuous notes column while keeping independent source drafts', async () => {
     const handlers = props()
     render(<ComparisonReader {...handlers} />)
     await loaded()
     const firstReader = screen.getByTestId('reader-left-position')
     const secondReader = screen.getByTestId('reader-right-position')
-    function clickNotes(index: number) {
-      const button = within(pane(index)).getByRole('button', { name: 'Notes' })
-      // A real pointer focuses the button before click. That must not turn a
-      // hidden source's existing panel into a close action.
-      fireEvent.pointerDown(button); fireEvent.focus(button); fireEvent.click(button)
-    }
-    clickNotes(0)
+    const sharedToolbar = toolbar()
+    expect(screen.getAllByRole('toolbar')).toEqual([sharedToolbar])
+    expect(pane(0).contains(sharedToolbar)).toBe(false)
+    expect(pane(1).contains(sharedToolbar)).toBe(false)
+    fireEvent.click(within(sharedToolbar).getByRole('button', { name: 'Notes' }))
+    const sharedHost = tools(0).closest('.comparison-tools-host')!
+    expect(sharedHost.hasAttribute('hidden')).toBe(false)
     fireEvent.change(screen.getByRole('textbox', { name: 'Your note' }), { target: { value: 'First source draft' } })
-    clickNotes(1)
-    fireEvent.change(screen.getByRole('textbox', { name: 'Your note' }), { target: { value: 'Second source draft' } })
-    clickNotes(0)
+
+    activate(1)
+    expect(sharedHost.hasAttribute('hidden')).toBe(false)
+    expect(document.querySelector('.comparison-workspace')?.classList.contains('has-tool-panel')).toBe(true)
     expect(screen.getAllByRole('complementary', { name: 'Reading notes' })).toHaveLength(1)
+    expect(within(tools(1)).getByRole('textbox', { name: 'Your note' })).toHaveProperty('value', '')
+    fireEvent.change(screen.getByRole('textbox', { name: 'Your note' }), { target: { value: 'Second source draft' } })
+    activate(0)
     expect(screen.getByRole('textbox', { name: 'Your note' })).toHaveProperty('value', 'First source draft')
     expect(tools(0).closest('.comparison-source')).toBeNull()
-    expect(tools(0).closest('.comparison-tools-host')).not.toBeNull()
-    clickNotes(1)
+    expect(tools(0).closest('.comparison-tools-host')).toBe(sharedHost)
+    activate(1)
     expect(screen.getByRole('textbox', { name: 'Your note' })).toHaveProperty('value', 'Second source draft')
+    expect(tools(1).closest('.comparison-tools-host')).toBe(sharedHost)
     fireEvent.click(screen.getByRole('button', { name: 'Back to reading sources' }))
     expect(screen.queryByRole('complementary', { name: 'Reading notes' })).toBeNull()
     expect(screen.getByTestId('reader-left-position')).toBe(firstReader)
@@ -165,11 +176,32 @@ describe('interactive two-source comparison reader', () => {
     expect(handlers.onClose).not.toHaveBeenCalled()
   })
 
+  it('lets a first direct pointer selection use the other document without an activation overlay', async () => {
+    render(<ComparisonReader {...props()} />)
+    await loaded()
+    fireEvent.click(within(toolbar()).getByRole('button', { name: 'Notes' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Your note' }), { target: { value: 'Keep the first draft' } })
+    expect(screen.queryByRole('button', { name: /^Read source [12]$/ })).toBeNull()
+    const selection = screen.getByRole('button', { name: 'Select right-position' })
+    fireEvent.pointerDown(selection)
+    expect(fixtures.readers.get('right-position')?.keyboardActive).toBe(true)
+    expect(within(tools(1)).getByRole('textbox', { name: 'Your note' })).toHaveProperty('value', '')
+    fireEvent.click(selection)
+    expect(within(tools(1)).getByText('Passage right-position')).toBeTruthy()
+    expect(screen.getAllByRole('complementary', { name: 'Reading notes' })).toHaveLength(1)
+    fireEvent.wheel(screen.getByTestId('reader-left-position'))
+    expect(fixtures.readers.get('left-position')?.keyboardActive).toBe(true)
+    expect(screen.getByRole('textbox', { name: 'Your note' })).toHaveProperty('value', 'Keep the first draft')
+    fireEvent.focus(selection)
+    expect(fixtures.readers.get('right-position')?.keyboardActive).toBe(true)
+    expect(within(tools(1)).getByText('Passage right-position')).toBeTruthy()
+  })
+
   it('does not accept a bookmark click before the reader publishes its current position', async () => {
     fixtures.publishInitialLocation = false
     render(<ComparisonReader {...props()} />)
     await screen.findByTestId('reader-left-position')
-    const button = within(pane(0)).getByRole('button', { name: 'Bookmark position' })
+    const button = sourceTool(0, 'Bookmark position')
     expect(button).toHaveProperty('disabled', true)
     fireEvent.click(button)
     expect(fixtures.atomic).not.toHaveBeenCalled()
@@ -184,16 +216,16 @@ describe('interactive two-source comparison reader', () => {
     const handlers = props()
     render(<ManagedComparison handlers={handlers} />)
     await loaded()
-    fireEvent.click(within(pane(0)).getByRole('button', { name: 'Bookmark position' }))
-    await waitFor(() => expect(within(pane(0)).getByRole('button', { name: 'Remove bookmark' })).toHaveProperty('disabled', false))
+    fireEvent.click(sourceTool(0, 'Bookmark position'))
+    await waitFor(() => expect(sourceTool(0, 'Remove bookmark')).toHaveProperty('disabled', false))
     const first = fixtures.applied[0]
     expect(first.profile).toBe('ACCOUNT:a')
     expect(first.mutation).toMatchObject({ kind: 'bookmarks', deleted: false, localOnly: true, payload: { book_id: left.id, locator_json: 'initial:left-position', chapter_title: 'Chapter left-position', snippet: null, sync_version: 1, is_deleted: 0 } })
     expect(first.mutation.id).not.toBe(first.mutation.payload.id)
-    fireEvent.click(within(pane(1)).getByRole('button', { name: 'Bookmark position' }))
+    fireEvent.click(sourceTool(1, 'Bookmark position'))
     await waitFor(() => expect(fixtures.applied).toHaveLength(2))
     expect(fixtures.applied[1].mutation).toMatchObject({ localOnly: false, payload: { book_id: right.id, locator_json: 'initial:right-position' } })
-    fireEvent.click(within(pane(0)).getByRole('button', { name: 'Remove bookmark' }))
+    fireEvent.click(sourceTool(0, 'Remove bookmark'))
     await waitFor(() => expect(fixtures.applied).toHaveLength(3))
     expect(fixtures.applied[2].mutation).toMatchObject({ id: first.mutation.id, kind: 'bookmarks', deleted: true, localOnly: true })
     expect(fixtures.stored.filter(record => !record.deleted)).toHaveLength(1)
@@ -209,7 +241,7 @@ describe('interactive two-source comparison reader', () => {
     render(<ComparisonReader {...props({ records: [] })} />)
     await loaded()
     // The visible snapshot is stale; the live transaction is authoritative.
-    fireEvent.click(within(pane(0)).getByRole('button', { name: 'Bookmark position' }))
+    fireEvent.click(sourceTool(0, 'Bookmark position'))
     await waitFor(() => expect(fixtures.applied).toHaveLength(1))
     expect(fixtures.applied[0].mutation).toMatchObject({ id: matching.id, deleted: true, payload: matching.payload })
     expect(fixtures.stored.filter(record => !record.deleted).map(record => record.id).sort()).toEqual(['another-account', 'another-position', 'another-source'])
@@ -222,12 +254,10 @@ describe('interactive two-source comparison reader', () => {
     const handlers = props({ books: [left, left], initialLocators: ['same-position', 'same-position'] })
     render(<ManagedComparison handlers={handlers} />)
     await waitFor(() => expect(screen.getAllByTestId('reader-same-position')).toHaveLength(2))
-    const firstPane = screen.getByRole('region', { name: 'Source 1: Source Alpha' })
-    const secondPane = screen.getByRole('region', { name: 'Source 2: Source Alpha' })
-    const button = within(firstPane).getByRole('button', { name: 'Bookmark position' })
+    const button = sourceTool(0, 'Bookmark position')
     await waitFor(() => expect(button).toHaveProperty('disabled', false))
     fireEvent.click(button); fireEvent.click(button)
-    fireEvent.click(within(secondPane).getByRole('button', { name: 'Bookmark position' }))
+    fireEvent.click(sourceTool(1, 'Bookmark position'))
     expect(fixtures.atomic).toHaveBeenCalledTimes(1)
     expect(button).toHaveProperty('disabled', true)
     await act(async () => pending.resolve())
@@ -242,14 +272,14 @@ describe('interactive two-source comparison reader', () => {
     const handlers = props()
     const { rerender } = render(<ComparisonReader {...handlers} />)
     await loaded()
-    fireEvent.click(within(pane(0)).getByRole('button', { name: 'Bookmark position' }))
+    fireEvent.click(sourceTool(0, 'Bookmark position'))
     expect(fixtures.atomic).toHaveBeenCalledTimes(1)
     rerender(<ComparisonReader {...handlers} profile="ACCOUNT:b" />)
     await loaded()
     await act(async () => pending.resolve())
     expect(fixtures.applied).toHaveLength(0)
     expect(handlers.onChanged).not.toHaveBeenCalled()
-    expect(within(pane(0)).getByRole('button', { name: 'Bookmark position' })).toHaveProperty('disabled', false)
+    expect(sourceTool(0, 'Bookmark position')).toHaveProperty('disabled', false)
   })
 
   it('keeps two positions for the same book and gives only the active source keyboard navigation', async () => {
@@ -299,7 +329,7 @@ describe('interactive two-source comparison reader', () => {
     expect(fixtures.readers.get('left-position')?.navigateLocator?.locatorJson).toBe('found:left-position')
     expect(fixtures.readers.get('right-position')?.navigateLocator).toBeNull()
     fireEvent.click(within(b).getByRole('button', { name: 'Activate' }))
-    fireEvent.click(within(b).getByRole('button', { name: 'Search' }))
+    expect(within(toolbar()).getByRole('button', { name: 'Search' }).getAttribute('aria-expanded')).toBe('true')
     fireEvent.change(within(tools(1)).getByRole('searchbox', { name: 'Search book text' }), { target: { value: 'beta' } })
     await within(tools(1)).findByRole('button', { name: /Result right-position/ })
     expect(fixtures.searches.mock.calls).toEqual([['left-position', 'alpha'], ['right-position', 'beta']])
@@ -310,6 +340,30 @@ describe('interactive two-source comparison reader', () => {
     expect(pane(0).contains(tools(0))).toBe(false)
     const ids = [...document.querySelectorAll('[id]')].map(node => node.id)
     expect(new Set(ids).size).toBe(ids.length)
+  })
+
+  it('keeps reading focus during source interactions and focuses search only on an explicit request', async () => {
+    render(<ComparisonReader {...props()} />)
+    await loaded()
+    fireEvent.click(within(toolbar()).getByRole('button', { name: 'Search' }))
+    const firstSearch = within(tools(0)).getByRole('searchbox', { name: 'Search book text' })
+    expect(document.activeElement).toBe(firstSearch)
+
+    fireEvent.pointerDown(screen.getByTestId('reader-right-position'))
+    const secondSearch = within(tools(1)).getByRole('searchbox', { name: 'Search book text' })
+    expect(fixtures.readers.get('right-position')?.keyboardActive).toBe(true)
+    expect(document.activeElement).not.toBe(secondSearch)
+    const secondReadingControl = screen.getByRole('button', { name: 'Scroll right-position' })
+    act(() => secondReadingControl.focus())
+    expect(document.activeElement).toBe(secondReadingControl)
+    fireEvent.wheel(screen.getByTestId('reader-left-position'))
+    expect(fixtures.readers.get('left-position')?.keyboardActive).toBe(true)
+    expect(document.activeElement).toBe(secondReadingControl)
+    fireEvent.pointerDown(screen.getByTestId('reader-right-position'))
+    expect(document.activeElement).toBe(secondReadingControl)
+    expect(within(toolbar()).getByRole('button', { name: 'Search' }).getAttribute('aria-expanded')).toBe('true')
+    fireEvent.keyDown(document, { key: 'f', ctrlKey: true })
+    expect(document.activeElement).toBe(secondSearch)
   })
 
   it('routes EPUB iframe paging and Escape only from the active source and removes its bridge on close', async () => {
@@ -328,6 +382,36 @@ describe('interactive two-source comparison reader', () => {
     unmount()
     fireEvent.keyDown(a, { key: 'Escape' })
     expect(handlers.onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('activates same-origin EPUB iframe interactions immediately and keeps the shared notes panel open', async () => {
+    const handlers = props()
+    const { unmount } = render(<ComparisonReader {...handlers} />)
+    await loaded()
+    fireEvent.click(within(toolbar()).getByRole('button', { name: 'Notes' }))
+    const firstFrame = document.createElement('iframe'), secondFrame = document.createElement('iframe')
+    await act(async () => {
+      pane(0).querySelector('.comparison-document')!.appendChild(firstFrame)
+      pane(1).querySelector('.comparison-document')!.appendChild(secondFrame)
+    })
+    const a = firstFrame.contentDocument!, b = secondFrame.contentDocument!
+    fireEvent.pointerDown(b.body)
+    expect(fixtures.readers.get('right-position')?.keyboardActive).toBe(true)
+    expect(within(tools(1)).getByRole('textbox', { name: 'Your note' })).toBeTruthy()
+    fireEvent.keyDown(b, { key: 'PageDown' })
+    expect(fixtures.pages).toHaveBeenLastCalledWith('right-position', 'next')
+    fireEvent.wheel(a.body)
+    expect(fixtures.readers.get('left-position')?.keyboardActive).toBe(true)
+    expect(within(tools(0)).getByRole('textbox', { name: 'Your note' })).toBeTruthy()
+    fireEvent.focusIn(b.body)
+    expect(fixtures.readers.get('right-position')?.keyboardActive).toBe(true)
+    expect(screen.getAllByRole('complementary', { name: 'Reading notes' })).toHaveLength(1)
+    const sourceCallbacks = handlers.onLocation as ReturnType<typeof vi.fn>
+    const calls = sourceCallbacks.mock.calls.length
+    unmount()
+    fireEvent.pointerDown(a.body)
+    fireEvent.wheel(a.body)
+    expect(sourceCallbacks).toHaveBeenCalledTimes(calls)
   })
 
   it('saves notes with the normal Android-compatible annotation ID, source anchor and local-only flag', async () => {
@@ -368,7 +452,7 @@ describe('interactive two-source comparison reader', () => {
     expect((within(tools(1)).getByRole('textbox', { name: 'Your note' }) as HTMLTextAreaElement).value).toBe('Source B draft')
     next.rerender(<ComparisonReader {...handlers} profile="ACCOUNT:b" />)
     await loaded()
-    fireEvent.click(within(pane(0)).getByRole('button', { name: 'Notes' }))
+    fireEvent.click(sourceTool(0, 'Notes'))
     expect((within(tools(0)).getByRole('textbox', { name: 'Your note' }) as HTMLTextAreaElement).value).toBe('')
   })
 
@@ -388,7 +472,7 @@ describe('interactive two-source comparison reader', () => {
     const record: SyncRecord = { key: 'ACCOUNT:a:highlights:stored', profile: 'ACCOUNT:a', kind: 'highlights', id: 'stored', version: 1, deleted: false, payload: { id: 'stored-local', book_id: left.id, text: 'Stored quotation', note: 'A stored note', color: 'BLUE', locator_json: 'stored-location' } }
     render(<ComparisonReader {...props({ records: [record, { ...record, key: 'private', profile: 'ACCOUNT:b', payload: { ...record.payload, note: 'Another account private note' } }] })} />)
     await loaded()
-    fireEvent.click(within(pane(0)).getByRole('button', { name: 'Notes' }))
+    fireEvent.click(sourceTool(0, 'Notes'))
     expect(screen.queryByText('Another account private note')).toBeNull()
     fireEvent.click(within(tools(0)).getByRole('button', { name: 'Go to source' }))
     expect(fixtures.readers.get('left-position')?.navigateLocator?.locatorJson).toBe('stored-location')
@@ -472,13 +556,35 @@ describe('interactive two-source comparison reader', () => {
     expect(draft.value).toBe('Save once')
   })
 
+  it('keeps appearance and contents tools open across sources while each document retains its own comfort', async () => {
+    render(<ComparisonReader {...props()} />)
+    await loaded()
+    fireEvent.click(within(toolbar()).getByRole('button', { name: 'Appearance' }))
+    fireEvent.change(screen.getByRole('combobox', { name: 'Theme' }), { target: { value: 'night' } })
+    expect(fixtures.readers.get('left-position')?.theme).toBe('night')
+    activate(1)
+    expect(within(toolbar()).getByRole('button', { name: 'Appearance' }).getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByRole('combobox', { name: 'Theme' })).toHaveProperty('value', 'paper')
+    fireEvent.change(screen.getByRole('combobox', { name: 'Text size' }), { target: { value: '140' } })
+    activate(0)
+    expect(screen.getByRole('combobox', { name: 'Theme' })).toHaveProperty('value', 'night')
+    expect(screen.getByRole('combobox', { name: 'Text size' })).toHaveProperty('value', '100')
+    expect(fixtures.readers.get('right-position')).toMatchObject({ theme: 'paper', fontSize: 140 })
+    fireEvent.click(within(toolbar()).getByRole('button', { name: 'Contents' }))
+    expect(within(pane(0)).getByRole('navigation', { name: 'Source table of contents' })).toBeTruthy()
+    activate(1)
+    expect(within(toolbar()).getByRole('button', { name: 'Contents' }).getAttribute('aria-expanded')).toBe('true')
+    expect(within(pane(0)).queryByRole('navigation', { name: 'Source table of contents' })).toBeNull()
+    expect(within(pane(1)).getByRole('button', { name: 'Contents right-position' })).toBeTruthy()
+  })
+
   it('uses per-book Android comfort preferences and independently navigates the table of contents', async () => {
     const preference: SyncRecord = { key: 'pref', id: 'pref', profile: 'ACCOUNT:a', kind: 'per_book_preferences', deleted: false, version: 1, payload: { book_id: left.id, use_book_override: 1, font_size: 1.3, font_family: 'SANS_SERIF', theme: 'DARK', line_height: 1.9, text_alignment: 'JUSTIFY' } }
     render(<ComparisonReader {...props({ records: [preference] })} />)
     await loaded()
     expect(fixtures.readers.get('left-position')).toMatchObject({ fontSize: 130, fontFamily: 'sans', theme: 'night', lineHeight: 1.9, textAlignment: 'justify' })
     expect(fixtures.readers.get('right-position')).toMatchObject({ fontSize: 100, theme: 'paper' })
-    fireEvent.click(within(pane(0)).getByRole('button', { name: 'Contents' }))
+    fireEvent.click(sourceTool(0, 'Contents'))
     fireEvent.click(within(pane(0)).getByRole('button', { name: 'Contents left-position' }))
     await waitFor(() => expect(fixtures.readers.get('left-position')?.navigateTarget).toBe('#chapter'))
     expect(fixtures.readers.get('right-position')?.navigateTarget).toBeNull()
@@ -493,7 +599,7 @@ describe('interactive two-source comparison reader', () => {
     await loaded()
     expect(document.body.style.overflow).toBe('hidden')
     expect(document.documentElement.style.overflow).toBe('hidden')
-    fireEvent.click(within(pane(0)).getByRole('button', { name: 'Notes' }))
+    fireEvent.click(sourceTool(0, 'Notes'))
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(handlers.onClose).not.toHaveBeenCalled()
     expect(screen.queryByRole('complementary', { name: 'Reading notes' })).toBeNull()

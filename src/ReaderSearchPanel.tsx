@@ -14,6 +14,8 @@ export type ReaderSearchPanelProps = {
   source: ReaderSearchSource | null
   format: ReaderFormat
   activeId?: string
+  /** Controlled focus requests let a shared panel change sources without interrupting reading. */
+  focusRequest?: number
   onNavigate: (hit: ReaderSearchHit) => void
   onClearActive: () => void
   onClose: () => void
@@ -22,7 +24,7 @@ export type ReaderSearchPanelProps = {
 type CompletedSearch = { query: string; source: ReaderSearchSource; retry: number; result: ReaderSearchResult }
 
 /** Keep mounted while closed so a completed search and its query survive toggling. */
-export function ReaderSearchPanel({ open, lang, bookTitle, source, format, activeId, onNavigate, onClearActive, onClose, idPrefix }: ReaderSearchPanelProps) {
+export function ReaderSearchPanel({ open, lang, bookTitle, source, format, activeId, focusRequest, onNavigate, onClearActive, onClose, idPrefix }: ReaderSearchPanelProps) {
   const vi = lang === 'vi'
   const panelId = idPrefix ? `${idPrefix}-search-panel` : 'reader-search-panel'
   const queryId = idPrefix ? `${idPrefix}-search-query` : 'reader-search-query'
@@ -32,6 +34,7 @@ export function ReaderSearchPanel({ open, lang, bookTitle, source, format, activ
   const [failed, setFailed] = useState<{ query: string; source: ReaderSearchSource; retry: number } | null>(null)
   const [lastProgress, setProgress] = useState<{ query: string; source: ReaderSearchSource; retry: number; value: ReaderSearchProgress } | null>(null)
   const input = useRef<HTMLInputElement>(null)
+  const lastFocusRequest = useRef(focusRequest)
   const request = useRef<AbortController | null>(null)
   const generation = useRef(0)
   const cache = useRef<CompletedSearch | null>(null)
@@ -46,8 +49,10 @@ export function ReaderSearchPanel({ open, lang, bookTitle, source, format, activ
   const progress = lastProgress?.query === needle && lastProgress.source === source && lastProgress.retry === retry ? lastProgress.value : { scanned: 0, total: 0 }
 
   useEffect(() => {
-    if (open) input.current?.focus()
-  }, [open])
+    const requested = focusRequest !== lastFocusRequest.current
+    lastFocusRequest.current = focusRequest
+    if (open && (focusRequest === undefined || requested)) input.current?.focus()
+  }, [open, focusRequest])
 
   useEffect(() => {
     const version = ++generation.current
