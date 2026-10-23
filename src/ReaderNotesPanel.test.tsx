@@ -126,7 +126,18 @@ describe('reading beside a notes panel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Type' }))
     fireEvent.change(screen.getByLabelText('Edit note'), { target: { value: 'Updated caption' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
-    await waitFor(() => expect(handlers.onUpdate).toHaveBeenCalledWith(drawn, { note: 'Updated caption', color: 'BLUE', drawing }))
+    await waitFor(() => expect(handlers.onUpdate).toHaveBeenCalledWith(drawn, { note: 'Updated caption', color: 'BLUE' }))
+  })
+
+  it('leaves a drawing added by another tab intact when saving only a caption edit', async () => {
+    const handlers = props()
+    const { rerender } = render(<ReaderNotesPanel {...handlers} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    fireEvent.change(screen.getByLabelText('Edit note'), { target: { value: 'Caption edited here' } })
+    const changed = { ...record, payload: { ...record.payload, drawing } }
+    rerender(<ReaderNotesPanel {...handlers} records={[changed]} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(handlers.onUpdate).toHaveBeenCalledWith(changed, { note: 'Caption edited here', color: 'BLUE' }))
   })
 
   it('navigates to the original record without editing or deleting it', () => {

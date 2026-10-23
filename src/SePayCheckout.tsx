@@ -6,10 +6,17 @@ import type { Lang } from './i18n'
 import { readableError } from './sync'
 import { trackWebFeature } from './webAnalytics'
 
-export function SePayCheckout({ session, entitlement, lang, onSignIn, onPaid }: {
+type Props = {
   session: Session | null; entitlement: Entitlement | null; lang: Lang
   onSignIn: () => void; onPaid: (value: Entitlement) => void
-}) {
+}
+
+export function SePayCheckout(props: Props) {
+  // Orders, quote requests and in-flight locks belong to one authenticated session.
+  return <Checkout key={JSON.stringify([props.session?.token, props.session?.user.id])} {...props} />
+}
+
+function Checkout({ session, entitlement, lang, onSignIn, onPaid }: Props) {
   const vi = lang === 'vi'
   const [order, setOrder] = useState<SePayOrder | null>(null)
   const [creating, setCreating] = useState(false)
@@ -19,6 +26,7 @@ export function SePayCheckout({ session, entitlement, lang, onSignIn, onPaid }: 
   const [quote, setQuote] = useState<{ token: string; plans: SePayPlan[]; error: string } | null>(null)
   const [quoteRetry, setQuoteRetry] = useState(0)
   const [paidRetry, setPaidRetry] = useState(0)
+  const [expiredTransfer, setExpiredTransfer] = useState<{ id: string; expiresAt: number } | null>(null)
   const creatingRef = useRef(false)
   const orderRef = useRef<SePayOrder | null>(null)
   const checkRequestId = useRef(0)
@@ -33,6 +41,8 @@ export function SePayCheckout({ session, entitlement, lang, onSignIn, onPaid }: 
   }, [session])
   const orderId = order?.id
   const orderStatus = order?.status
+  const orderExpiresAt = order?.expiresAt
+  const transferExpired = orderStatus === 'PENDING' && expiredTransfer?.id === orderId && expiredTransfer?.expiresAt === orderExpiresAt
   const currentQuote = quote?.token === session?.token ? quote : null
   const selectedQuote = currentQuote?.plans.find(plan => plan.id === selectedPlan)
   const price = (amount: number) => new Intl.NumberFormat(vi ? 'vi-VN' : 'en-US', { style: 'currency', currency: 'VND' }).format(amount)
@@ -46,6 +56,18 @@ export function SePayCheckout({ session, entitlement, lang, onSignIn, onPaid }: 
     replaceOrder(null)
     setChecking(false); setMessage('')
   }
+
+  useEffect(() => {
+    if (!orderId || orderStatus !== 'PENDING' || typeof orderExpiresAt !== 'number' || !Number.isFinite(orderExpiresAt)) return
+    let timer: ReturnType<typeof setTimeout>
+    const updateDeadline = () => {
+      const remaining = orderExpiresAt - Date.now()
+      if (remaining <= 0) setExpiredTransfer({ id: orderId, expiresAt: orderExpiresAt })
+      else timer = setTimeout(updateDeadline, Math.min(remaining, 2_147_483_647))
+    }
+    updateDeadline()
+    return () => clearTimeout(timer)
+  }, [orderId, orderStatus, orderExpiresAt])
 
   useEffect(() => {
     if (!session) return
@@ -154,8 +176,8 @@ export function SePayCheckout({ session, entitlement, lang, onSignIn, onPaid }: 
       <div className="dialog payment-dialog" role="dialog" aria-modal="true" aria-label={vi ? 'Thanh toán NoCap Pro' : 'NoCap Pro payment'}>
         <button className="icon-button dialog-close" onClick={closeOrder} aria-label={vi ? 'Đóng thanh toán' : 'Close payment'}><X size={19} /></button>
         <h2>{vi ? 'Thanh toán NoCap Pro' : 'NoCap Pro payment'}</h2>
-        <p className="payment-status" role="status">{statuses[order.status]}</p>
-        {order.status === 'PAID' ? <p>{vi ? 'Giao dịch đã được máy chủ xác nhận. Gói Pro của bạn đang được cập nhật.' : 'The server confirmed your payment. Your Pro plan is being updated.'}</p> : order.status === 'EXPIRED' ? <p>{vi ? 'Không chuyển khoản theo đơn này. Đóng cửa sổ và tạo đơn mới.' : 'Do not pay this expired order. Close the dialog and create a new one.'}</p> : <>
+        <p className="payment-status" role="status">{statuses[transferExpired ? 'EXPIRED' : order.status]}</p>
+        {order.status === 'PAID' ? <p>{vi ? 'Giao dịch đã được máy chủ xác nhận. Gói Pro của bạn đang được cập nhật.' : 'The server confirmed your payment. Your Pro plan is being updated.'}</p> : order.status === 'PROCESSING' ? <p>{vi ? 'Máy chủ đang xác nhận giao dịch của bạn. Không chuyển khoản thêm cho đơn này.' : 'The server is confirming your transfer. Do not pay this order again.'}</p> : transferExpired ? <p>{vi ? 'Mã chuyển khoản đã hết hạn. Không chuyển khoản theo mã này. Kiểm tra trạng thái nếu bạn đã thanh toán.' : 'This transfer reference expired. Do not pay this reference. Check the status if you already paid.'}</p> : order.status === 'EXPIRED' ? <p>{vi ? 'Không chuyển khoản theo đơn này. Đóng cửa sổ và tạo đơn mới.' : 'Do not pay this expired order. Close the dialog and create a new one.'}</p> : <>
           <img className="payment-qr" src={order.qrUrl} alt={vi ? 'Mã QR chuyển khoản cho đơn NoCap Pro' : 'Bank-transfer QR for your NoCap Pro order'} />
           <dl className="payment-details">
             {order.planDays && <><dt>{vi ? 'Gói dịch vụ' : 'Plan'}</dt><dd>NoCap Pro · {order.planDays === 365 ? (vi ? '1 năm (365 ngày)' : '1 year (365 days)') : `${order.planDays} ${vi ? 'ngày' : 'days'}`}</dd></>}

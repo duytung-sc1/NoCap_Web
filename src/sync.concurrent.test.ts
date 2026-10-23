@@ -115,6 +115,34 @@ it('never regresses the cursor when a second tab receives an older pull', async 
   expect(await getSyncCursor(profile)).toBe(20)
 })
 
+it('keeps a delayed previous-account pull separate from the account that starts syncing next', async () => {
+  const first = context(), second = context()
+  first.session.token = 'first-account-token'
+  second.session.token = 'second-account-token'
+  await mutate(first.profile, 'highlights', first.id, { note: 'first account local' })
+  let release!: (value: Awaited<ReturnType<typeof getChanges>>) => void
+  let pulling!: () => void
+  const started = new Promise<void>(resolve => { pulling = resolve })
+  vi.mocked(getChanges).mockImplementation(token => {
+    if (token === first.session.token) { pulling(); return new Promise(resolve => { release = resolve }) }
+    return Promise.resolve({ changes: [], cursor: 12, hasMore: false })
+  })
+  const oldSync = syncNow(first.session)
+  await started
+  // Matching record identities are valid in different accounts.
+  await mutate(second.profile, 'highlights', first.id, { note: 'second account private' })
+  await syncNow(second.session)
+  release({ changes: [{ seq: 70, kind: 'highlights', id: first.id, version: 3, deleted: 0, payload: { note: 'first account cloud' } }], cursor: 70, hasMore: false })
+  await oldSync
+  expect((await getRecord(first.key))?.payload.note).toBe('first account cloud')
+  expect((await getRecord(`${second.profile}:highlights:${first.id}`))?.payload.note).toBe('second account private')
+  expect(await getSyncCursor(first.profile)).toBe(70)
+  expect(await getSyncCursor(second.profile)).toBe(12)
+  expect(vi.mocked(pushOperation).mock.calls.map(([token, operation]) => [token, operation.payload.note])).toEqual([
+    [first.session.token, 'first account local'], [second.session.token, 'second account private'],
+  ])
+})
+
 it('does not delete a newer queued edit when a duplicate receipt arrives from another tab', async () => {
   const { session, profile, id, key } = context()
   await mutate(profile, 'highlights', id, { note: 'original' })

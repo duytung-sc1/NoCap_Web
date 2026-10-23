@@ -205,3 +205,95 @@ describe('read aloud panel', () => {
     expect(props.onClose).toHaveBeenCalledOnce()
   })
 })
+
+describe('Achernar sample in the read aloud panel', () => {
+  beforeEach(() => {
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(function (this: HTMLMediaElement) {
+      this.dispatchEvent(new Event('play'))
+      this.dispatchEvent(new Event('playing'))
+      return Promise.resolve()
+    })
+    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(function (this: HTMLMediaElement) {
+      this.dispatchEvent(new Event('pause'))
+    })
+    vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {})
+  })
+  afterEach(() => { cleanup(); vi.restoreAllMocks() })
+
+  it('offers one fixed sample only after an explicit click, without reading the book', () => {
+    const { container } = render(<ReaderSpeechPanel {...props} />)
+    expect(container.querySelector('audio')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Try Achernar' }))
+    expect(container.querySelector('audio')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Read current section' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Play Achernar sample' }))
+    expect(container.querySelector('audio')?.getAttribute('src')).toBe('https://docs.cloud.google.com/static/text-to-speech/docs/audio/vi-VN-Chirp3-HD-Achernar.wav')
+    expect(container.querySelectorAll('audio')).toHaveLength(1)
+    expect(screen.queryByText(/Vindemiatrix|Leda/)).toBeNull()
+    expect(source).not.toHaveBeenCalled()
+    expect(synthesis.spoken).toHaveLength(0)
+  })
+
+  it('cancels pending book speech when switching to the sample and ignores its late result', async () => {
+    const pending = deferred<ReaderSpeechText>(); source.mockReturnValueOnce(pending.promise)
+    render(<ReaderSpeechPanel {...props} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Read current section' }))
+    const signal = source.mock.calls[0][0]
+    fireEvent.click(screen.getByRole('button', { name: 'Try Achernar' }))
+    expect(signal.aborted).toBe(true)
+    await act(async () => { pending.resolve({ text: 'Private book text.', label: '', truncated: false }); await pending.promise })
+    fireEvent.click(screen.getByRole('button', { name: 'Play Achernar sample' }))
+    expect(synthesis.spoken).toHaveLength(0)
+    expect(screen.getByRole('status').textContent).toContain('Playing sample')
+  })
+
+  it('stops current browser speech before auditioning the sample', async () => {
+    render(<ReaderSpeechPanel {...props} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Read selection' }))
+    await waitFor(() => expect(synthesis.spoken).toHaveLength(1))
+    const cancels = synthesis.cancel.mock.calls.length
+    fireEvent.click(screen.getByRole('button', { name: 'Try Achernar' }))
+    expect(synthesis.cancel.mock.calls.length).toBeGreaterThan(cancels)
+    fireEvent.click(screen.getByRole('button', { name: 'Play Achernar sample' }))
+    act(() => synthesis.spoken[0].end())
+    expect(synthesis.spoken).toHaveLength(1)
+    expect(screen.getByRole('status').textContent).toContain('Playing sample')
+  })
+
+  it('keeps sample playback available without Web Speech support', () => {
+    vi.stubGlobal('SpeechSynthesisUtterance', undefined)
+    render(<ReaderSpeechPanel {...props} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Try Achernar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Play Achernar sample' }))
+    expect(screen.getByRole('status').textContent).toContain('Playing sample')
+    expect(source).not.toHaveBeenCalled()
+  })
+
+  it('disposes the sample on a page change, mode change, panel close and unmount', () => {
+    const { container, rerender, unmount } = render(<ReaderSpeechPanel {...props} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Try Achernar' }))
+    const play = () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Play Achernar sample' }))
+      return container.querySelector('audio')!
+    }
+    const first = play()
+    rerender(<ReaderSpeechPanel {...props} scopeKey="section:two" />)
+    expect(first.getAttribute('src')).toBeNull()
+    expect(first.isConnected).toBe(false)
+    expect(container.querySelector('audio')).toBeNull()
+    const second = play()
+    fireEvent.click(screen.getByRole('button', { name: 'Browser voices' }))
+    expect(second.getAttribute('src')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Read current section' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Try Achernar' }))
+    const third = play()
+    fireEvent.click(screen.getByRole('button', { name: 'Close read aloud' }))
+    expect(third.getAttribute('src')).toBeNull()
+    expect(props.onClose).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: 'Try Achernar' }))
+    const fourth = play()
+    unmount()
+    expect(fourth.getAttribute('src')).toBeNull()
+    expect(fourth.isConnected).toBe(false)
+  })
+})

@@ -1590,10 +1590,17 @@ async function sha256Hex(file: Blob): Promise<string> {
     const owner = profile
     const activeSession = session
     if (profileRef.current !== owner) throw new Error(lang === 'vi' ? 'Tài khoản đã thay đổi.' : 'Account changed.')
-    const [stored, offlineCopy] = await Promise.all([getFile(owner, book.id), getOfflineBook(offlineProfileFor(book, owner), book.id)])
+    const [localResult, offlineResult] = await Promise.allSettled([getFile(owner, book.id), getOfflineBook(offlineProfileFor(book, owner), book.id)])
     signal.throwIfAborted()
     if (profileRef.current !== owner || sessionRef.current?.token !== activeSession?.token) throw new Error(lang === 'vi' ? 'Phiên đọc đã thay đổi.' : 'Reading session changed.')
+    const stored = localResult.status === 'fulfilled' ? localResult.value : undefined
     const local = currentLocalFile(book, stored)
+    const offlineCopy = (!stored || local) && offlineResult.status === 'fulfilled' ? offlineResult.value : undefined
+    if (!local && !offlineCopy && (book.source === 'local' || book.fileUrl?.startsWith('nocap-private:')) && localResult.status === 'rejected') {
+      throw new Error(lang === 'vi'
+        ? 'Bộ nhớ trình duyệt vừa bị đóng. Hãy tải lại trang rồi mở tài liệu riêng này.'
+        : 'Browser storage was closed. Reload the page, then open this private document again.')
+    }
     const bytes = local ? await local.data.arrayBuffer() : offlineCopy ? await offlineCopy.data.arrayBuffer() : await loadBookBytes(book, activeSession?.token, { signal })
     signal.throwIfAborted()
     if (profileRef.current !== owner || !bytes.byteLength) throw new Error(lang === 'vi' ? 'Không mở được nguồn này.' : 'Unable to open this source.')
@@ -1959,9 +1966,10 @@ async function sha256Hex(file: Blob): Promise<string> {
             <h2>{lang === 'vi' ? 'Khu vực quản trị' : 'Administration'}</h2>
             <p>{!session ? (lang === 'vi' ? 'Đăng nhập bằng tài khoản có quyền admin để tiếp tục.' : 'Sign in with an administrator account to continue.')
               : !adminAccess ? (lang === 'vi' ? 'Đang kiểm tra quyền quản trị…' : 'Checking administrator access…')
+              : adminAccess.status === 'reauth' ? (lang === 'vi' ? 'Phiên quản trị đã hết hạn. Hãy đăng nhập lại.' : 'Your administrator session expired. Sign in again.')
               : adminAccess.status === 'error' ? (lang === 'vi' ? 'Chưa kiểm tra được quyền quản trị. Hãy thử lại.' : 'Could not verify administrator access. Try again.')
               : (lang === 'vi' ? 'Tài khoản này không có quyền quản trị.' : 'This account does not have administrator access.')}</p>
-            <div className="admin-actions">{!session && <button className="primary" onClick={() => setAuthOpen(true)}>{curT.header.login}</button>}
+            <div className="admin-actions">{(!session || adminAccess?.status === 'reauth') && <button className="primary" onClick={() => setAuthOpen(true)}>{curT.header.login}</button>}
               {session && adminAccess?.status === 'error' && <button className="secondary" onClick={reloadAdminAccess}>{lang === 'vi' ? 'Thử lại' : 'Retry'}</button>}
               <button className="secondary" onClick={() => setPage('home')}>{curT.nav.home}</button>
             </div>

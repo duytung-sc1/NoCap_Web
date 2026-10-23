@@ -57,8 +57,10 @@ export async function syncNow(session: Session): Promise<{ conflicts: number; ch
     // before another device receives its catalog record. Failed uploads leave
     // the operation pending, so an offline restore can retry when back online.
     await uploadRestoredFile(profile, session.token, item.operation, item.needsBlobUpload)
+    // A restore can replace this operation while its old blob is uploading.
+    // Only the operation that still owns the outbox slot may be published.
+    if (!await updatePendingOperation(item, { needsBlobUpload: false })) continue
     item.needsBlobUpload = false
-    await updatePendingOperation(item, { needsBlobUpload: false })
     const result = await pushOperation(session.token, item.operation)
     const receipt = result.receipts[0]
     if (!receipt) throw new Error('Máy chủ chưa xác nhận thao tác đồng bộ.')
@@ -248,7 +250,7 @@ export async function resolveConflict(
     }
     const refreshed = await prepareLocalConflict(item, remote)
     await uploadRestoredFile(profile, session.token, refreshed.operation, refreshed.needsBlobUpload)
-    await updatePendingOperation(refreshed, { needsBlobUpload: false })
+    if (!await updatePendingOperation(refreshed, { needsBlobUpload: false })) throw new Error('Mục đồng bộ đã thay đổi. Vui lòng thử lại.')
     const pushRes = await pushOperation(session.token, refreshed.operation)
     const receipt = pushRes.receipts[0]
     if (receipt && receipt.status === 'APPLIED' && receipt.current) {

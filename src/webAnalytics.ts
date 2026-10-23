@@ -156,6 +156,9 @@ export function createWebAnalytics(options: Options = {}) {
       const response = await fetcher(endpoint, { method: 'POST', mode: 'cors', credentials: 'omit', cache: 'no-store',
         referrerPolicy: 'no-referrer', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(batch), keepalive, signal: controller.signal })
+      // Aborting cannot undo an already resolved fetch. Discard its completion
+      // before it rotates storage or changes a newly started collector's retry.
+      if (!allowed() || flight !== controller || controller.signal.aborted) return
       if (response.status === 409) {
         if (currentSession?.id === batch.sessionId) {
           queue = []; pendingActiveMs = 0; lastSample = now()
@@ -169,8 +172,7 @@ export function createWebAnalytics(options: Options = {}) {
       }
       accepted = response.ok
     } catch {
-      if (allowed() && flight === controller) queue.unshift(batch)
-      retryAt = now() + TICK_MS
+      if (allowed() && flight === controller) { queue.unshift(batch); retryAt = now() + TICK_MS }
     } finally {
       window.clearTimeout(timeout)
       if (flight === controller) {

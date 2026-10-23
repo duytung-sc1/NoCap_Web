@@ -253,6 +253,42 @@ describe('document reader restoration', () => {
     expect(screen.queryByText('Không hiển thị được trang PDF này.')).toBeNull()
   })
 
+  it('starts a newly selected PDF page at the top after scrolling the preceding page', async () => {
+    const { container } = render(<ReaderPane {...base} book={{ id: 'page-scroll-pdf', title: 'QA', author: 'QA', format: 'PDF' }} bytes={new ArrayBuffer(20)} />)
+    await screen.findByText('PDF page 1')
+    const host = container.querySelector<HTMLElement>('.pdf-host')!
+    host.scrollTop = 650
+    act(() => { base.onControls.mock.calls.at(-1)![0].next() })
+    await screen.findByText('PDF page 2')
+    expect(host.scrollTop).toBe(0)
+  })
+
+  it('can navigate past a PDF page that fails to render', async () => {
+    fixture.renderPage.mockImplementationOnce(() => ({ promise: Promise.reject(new Error('Damaged page')), cancel() {} }))
+    render(<ReaderPane {...base} book={{ id: 'page-error-pdf', title: 'QA', author: 'QA', format: 'PDF' }} bytes={new ArrayBuffer(20)} />)
+    await screen.findByText('Không hiển thị được trang PDF này.')
+    act(() => { base.onControls.mock.calls.at(-1)![0].next() })
+    expect(await screen.findByText('PDF page 2')).toBeTruthy()
+    expect(screen.queryByText('Không hiển thị được trang PDF này.')).toBeNull()
+  })
+
+  it('keeps a text reading position when the location callback changes', async () => {
+    const bytes = new TextEncoder().encode('Text with a saved reading position.').buffer as ArrayBuffer
+    const book = { id: 'callback-text', title: 'QA', author: 'QA', format: 'TXT' }
+    const initial = JSON.stringify({ type: 'TEXT', scrollOffsetPx: 120 })
+    const { container, rerender } = render(<ReaderPane {...base} book={book} bytes={bytes} initial={initial} />)
+    await screen.findByText('Text with a saved reading position.')
+    const host = container.querySelector<HTMLElement>('.text-host')!
+    await waitFor(() => expect(host.scrollTop).toBe(120))
+    host.scrollTop = 650
+    const nextLocation = vi.fn()
+    rerender(<ReaderPane {...base} book={book} bytes={bytes} initial={initial} onLocation={nextLocation} />)
+    await act(async () => { await new Promise(resolve => requestAnimationFrame(resolve)) })
+    expect(host.scrollTop).toBe(650)
+    fireEvent.scroll(host)
+    expect(JSON.parse(nextLocation.mock.calls.at(-1)![0].locatorJson).scrollOffsetPx).toBe(650)
+  })
+
   it('retains a chapter navigation request while DOCX content is still converting', async () => {
     const pending = deferred<{ value: string }>(); fixture.convert.mockReturnValue(pending.promise)
     const scroll = vi.fn()

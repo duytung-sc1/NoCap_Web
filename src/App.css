@@ -2004,3 +2004,4 @@ body, .main-area {
 /* Keep handwriting readable in both the memory list and review card. */
 .memory-item .drawing-preview{max-width:520px;margin-top:12px}
 .flashcard-back .drawing-preview{width:min(100%,360px);max-height:210px;margin:10px auto;overflow:auto}
+.epub-host{min-width:0;max-width:100%;overflow:hidden}.epub-host>.epub-container{max-width:100%;scrollbar-gutter:stable}

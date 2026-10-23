@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Pause, Play, Square, Volume2, X } from 'lucide-react'
 import type { Lang } from './i18n'
+import { GoogleVoiceSample } from './GoogleVoiceSample'
 import { createReaderSpeech, onlineVoiceProvider, preferredSpeechVoice, speechLanguage, speechVoiceSample, speechVoices, vietnameseFemaleVoice, vietnameseVoiceGender, voiceKey, type ReaderSpeechSource, type ReaderSpeechText, type SpeechState } from './readerSpeech'
 import './ReaderSpeechPanel.css'
 
@@ -16,6 +17,7 @@ export function ReaderSpeechPanel({ lang, language, source, selection, scopeKey,
   const [allowOnline, setAllowOnline] = useState(false)
   const voices = useMemo(() => speechVoices(discovered, allowOnline), [discovered, allowOnline])
   const [chosen, setChosen] = useState('')
+  const [mode, setMode] = useState<'browser' | 'sample'>('browser')
   const [delivery, setDelivery] = useState<'natural' | 'gentle'>(() => speechLanguage(targetLanguage) === 'vi' ? 'gentle' : 'natural')
   const [rate, setRate] = useState(() => speechLanguage(targetLanguage) === 'vi' ? 0.9 : 1)
   const [state, setState] = useState<SpeechState>(idle)
@@ -71,7 +73,12 @@ export function ReaderSpeechPanel({ lang, language, source, selection, scopeKey,
   }
   const languageAvailable = voices.some(voice => speechLanguage(voice.lang) === speechLanguage(targetLanguage))
   return <section id="reader-speech-panel" className="reader-speech-panel" aria-label={text('Đọc thành tiếng', 'Read aloud')}>
-    <div className="reader-speech-heading"><strong><Volume2 size={17} aria-hidden="true" />{text('Đọc thành tiếng', 'Read aloud')}<span>{text('Bản thử', 'Preview')}</span></strong><button type="button" className="icon-button" aria-label={text('Đóng bảng giọng đọc', 'Close read aloud')} onClick={onClose}><X size={18} /></button></div>
+    <div className="reader-speech-heading"><strong><Volume2 size={17} aria-hidden="true" />{text('Đọc thành tiếng', 'Read aloud')}<span>{text('Bản thử', 'Preview')}</span></strong><button type="button" className="icon-button" aria-label={text('Đóng bảng giọng đọc', 'Close read aloud')} onClick={() => { stop(); setMode('browser'); onClose() }}><X size={18} /></button></div>
+    <div className="reader-speech-modes" role="group" aria-label={text('Chế độ giọng đọc', 'Read aloud mode')}>
+      <button type="button" aria-pressed={mode === 'browser'} onClick={() => { if (mode !== 'browser') { stop(); setMode('browser') } }}>{text('Giọng trình duyệt', 'Browser voices')}</button>
+      <button type="button" aria-pressed={mode === 'sample'} onClick={() => { if (mode !== 'sample') { stop(); setMode('sample') } }}>{text('Nghe thử Achernar', 'Try Achernar')}</button>
+    </div>
+    {mode === 'sample' ? <GoogleVoiceSample key={scopeKey} lang={lang} onPlayStart={stop} /> : <>
     <p className="reader-speech-hint">{provider ? text(`Đang dùng giọng trực tuyến của ${provider}. Trình duyệt chuyển văn bản được đọc tới dịch vụ này để tạo âm thanh. NoCap không cấu hình API trả phí.`, `Using an online ${provider} voice. Your browser sends the text being read to this service to generate audio. NoCap does not configure a paid speech API.`)
       : text('Đang dùng giọng cục bộ trên thiết bị. Nội dung đọc không được gửi tới dịch vụ tạo giọng trực tuyến.', 'Using a local voice on this device. The text is not sent to an online speech service.')}</p>
     {!supported ? <p role="status">{text('Trình duyệt này chưa hỗ trợ đọc thành tiếng. Hãy thử trình duyệt khác trên máy tính.', 'This browser does not support read aloud. Try another desktop browser.')}</p> : <>
@@ -97,6 +104,7 @@ export function ReaderSpeechPanel({ lang, language, source, selection, scopeKey,
       {part?.truncated && <p className="reader-speech-hint">{text('Bản thử đọc tối đa 20.000 ký tự mỗi lượt. Bạn có thể cuộn đến phần tiếp theo rồi bấm nghe lại.', 'Preview reads up to 20,000 characters per run. Scroll to the next part and start reading again.')}</p>}
       <p className="reader-speech-hint">{text('Văn bản được gom theo câu và đoạn, không theo dòng hiển thị. Kiểu Nhẹ nhàng đặt tốc độ 0.9× và chỉ thêm nghỉ ngắn ở cuối đoạn hoàn chỉnh; kiểu Tự nhiên không thêm khoảng nghỉ.', 'Text is grouped by sentences and paragraphs, not visual lines. Gentle delivery sets 0.9× speed and adds a short pause only after completed paragraphs; Natural adds no extra pauses.')}</p>
       <p className="reader-speech-hint">{text('Đọc từ đoạn đang thấy đến hết phần hiện tại; không tự lật trang. Đổi trang PDF, đổi chương hoặc đóng bảng sẽ dừng giọng đọc. Giọng/tốc độ/kiểu đọc mới áp dụng từ đoạn tiếp theo.', 'Reads from the visible passage to the end of this section; pages do not turn automatically. Changing PDF pages, chapters or closing this panel stops speech. Voice/speed/delivery changes apply from the next passage.')}</p>
+    </>}
     </>}
   </section>
 }

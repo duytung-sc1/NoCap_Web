@@ -42,9 +42,11 @@ function useResearchMutation(onChanged: () => Promise<void>, lang: Lang) {
     try {
       const result = await action(signal)
       if (signal.aborted) return
-      await onChanged()
+      let refreshed = false
+      try { await onChanged(); refreshed = true } catch { /* The mutation already committed; retrying a new plan would create a duplicate. */ }
       if (signal.aborted) return
-      setNotice(vi ? 'Đã lưu thay đổi.' : 'Changes saved.'); success?.(result)
+      setNotice(refreshed ? (vi ? 'Đã lưu thay đổi.' : 'Changes saved.') : (vi ? 'Đã lưu thay đổi trên trình duyệt; chưa làm mới được danh sách. Bạn không cần lưu lại.' : 'Changes are saved in this browser; the list could not refresh. You do not need to save again.'))
+      success?.(result)
     } catch (cause) { if (!signal.aborted) setError(explain(cause)) }
     finally { if (!signal.aborted) { pending.current = false; setBusy(false) } }
   }

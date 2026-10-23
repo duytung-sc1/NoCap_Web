@@ -67,7 +67,9 @@ function ReadingNote({ record, lang, onNavigate, onUpdate, onDelete }: Pick<Read
     setError('')
     try {
       if (deleting) await onDelete(record)
-      else await onUpdate(record, { note: draft, color, ...(drawingChanged || hasDrawing(record.payload.drawing) ? { drawing: hasDrawing(drawing) ? drawing : null } : {}) })
+      // Omit untouched drawings so a caption edit preserves the latest saved
+      // drawing, including changes received from another tab while editing.
+      else await onUpdate(record, { note: draft, color, ...(drawingChanged ? { drawing: hasDrawing(drawing) ? drawing : null } : {}) })
       setEditing(false)
       setConfirmingDelete(false)
     } catch (cause) {

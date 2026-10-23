@@ -97,6 +97,39 @@ describe('persistent web login', () => {
     expect(readSession()).toBeNull()
   })
 
+  it.each(['login', 'logout'] as const)('keeps the latest %s when shared storage can be read but cannot be written', action => {
+    saveSession(session)
+    const next = action === 'login' ? { ...session, token: 'new-token', user: { ...session.user, id: 'other-user' } } : null
+    vi.spyOn(persistent, 'setItem').mockImplementation(() => { throw new DOMException('Full', 'QuotaExceededError') })
+    saveSession(next)
+    expect(readSession()).toEqual(next)
+    // A reload keeps sessionStorage while the old shared credentials remain.
+    expect(readSession()).toEqual(next)
+    expect(persistent.getItem(SESSION_STORAGE_KEY)).toContain(session.token)
+  })
+
+  it('replaces a tab fallback when another tab changes the shared account', () => {
+    saveSession(session)
+    const writing = vi.spyOn(persistent, 'setItem').mockImplementation(() => { throw new DOMException('Full', 'QuotaExceededError') })
+    saveSession(null)
+    expect(readSession()).toBeNull()
+    writing.mockRestore()
+    const next = { ...session, token: 'another-tab', user: { ...session.user, id: 'other-user' } }
+    persistent.setItem(SESSION_STORAGE_KEY, JSON.stringify(next))
+    expect(readSession()).toEqual(next)
+  })
+
+  it('promotes the tab fallback when shared storage becomes writable again', () => {
+    saveSession(session)
+    const writing = vi.spyOn(persistent, 'setItem').mockImplementation(() => { throw new DOMException('Full', 'QuotaExceededError') })
+    saveSession(null)
+    writing.mockRestore()
+    expect(readSession()).toBeNull()
+    expect(persistent.getItem(SESSION_STORAGE_KEY)).toBe('null')
+    vi.stubGlobal('sessionStorage', memoryStorage())
+    expect(readSession()).toBeNull()
+  })
+
   it('does not crash login or logout when all browser storage is blocked', () => {
     const blocked = {
       getItem: () => { throw new DOMException('Blocked', 'SecurityError') },

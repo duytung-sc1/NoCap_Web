@@ -8,6 +8,7 @@ import { readerTypeface } from './readerTypography'
 import type { Book, FontFamily, ReaderAnnotation, ReaderLocation, ReaderWidth, TextAlignment, TocItem } from './types'
 import { detectReaderFormat } from './readerFormat'
 import { restoreEpubAfterResize, synchronizeEpubScroll, waitForEpubTargetFonts, type EpubScrollManager } from './epubScroll'
+import { observeEpubViewport } from './epubViewport'
 import { archiveLocator, archivePageIndex, clampProgression, epubProgression, findSpineHref, normalizedPdfRects, pdfTextOffsets, rangeFromOffsets, rangeOffsets, sectionTextProgression, type PdfRect } from './readerPositions'
 import type Rendition from 'epubjs/types/rendition'
 import type Contents from 'epubjs/types/contents'
@@ -280,8 +281,7 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
     let alive = true
     let book: import('epubjs/types/book').default | null = null
     let view: Rendition | null = null
-    let resizeObserver: ResizeObserver | null = null
-    let resizeFrame = 0
+    let stopObservingViewport: (() => void) | undefined
     async function open() {
       try {
         const { default: ePub } = await import('epubjs')
@@ -305,7 +305,7 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
           }))
           onTocRef.current(formatToc(nav.toc as RawToc[]))
         }).catch(() => {})
-        view = book.renderTo(host.current, { width: '100%', height: '100%', flow: 'scrolled-doc', manager: 'continuous', allowScriptedContent: false })
+        view = book.renderTo(host.current, { width: '100%', height: '100%', flow: 'scrolled-doc', manager: 'continuous', overflow: 'scroll', allowScriptedContent: false })
         rendition.current = view
         // Keyboard events inside an EPUB iframe do not reach the app window.
         view.on('keydown', (event: KeyboardEvent) => {
@@ -459,27 +459,17 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
           setRenditionVersion(value => value + 1)
           const currentView = view
           reflow.current = restoreEpubAfterResize(currentView, (target, isCurrent) => alignEpubLocation(currentView, target, () => alive && isCurrent(), contentReadiness.current))
-          // Opening the notes panel changes the host width without resizing the
-          // window. epub.js restores its current CFI when explicitly resized.
-          let width = host.current?.clientWidth || 0
-          let height = host.current?.clientHeight || 0
-          resizeObserver = new ResizeObserver(() => {
-            cancelAnimationFrame(resizeFrame)
-            resizeFrame = requestAnimationFrame(() => {
-              const nextWidth = host.current?.clientWidth || 0
-              const nextHeight = host.current?.clientHeight || 0
-              if (!alive || !nextWidth || !nextHeight || (width === nextWidth && height === nextHeight)) return
-              width = nextWidth
-              height = nextHeight
-              view?.resize(width, height)
-            })
+          // Notes change the allocated space without a window resize. Keep the
+          // responsive stage and let epub.js measure its own scrollbar gutter;
+          // feeding the outer clientWidth back as pixels creates a resize loop.
+          if (host.current) stopObservingViewport = observeEpubViewport(host.current, () => {
+            if (alive) (currentView as unknown as { resize: () => void }).resize()
           })
-          if (host.current) resizeObserver.observe(host.current)
         }
       } catch { if (alive) setError(translate("Không mở được EPUB này. Tệp có thể bị hỏng hoặc không đúng định dạng.", langRef.current)) }
     }
     void open()
-    return () => { alive = false; publishSearch(null); resizeObserver?.disconnect(); cancelAnimationFrame(resizeFrame); reflow.current?.dispose(); reflow.current = null; renditionReady.current = false; rendition.current = null; locationsReady.current = false; view?.destroy(); book?.destroy() }
+    return () => { alive = false; publishSearch(null); stopObservingViewport?.(); reflow.current?.dispose(); reflow.current = null; renditionReady.current = false; rendition.current = null; locationsReady.current = false; view?.destroy(); book?.destroy() }
   }, [bytes, initial, publishSearch])
 
   useEffect(() => {
@@ -633,6 +623,11 @@ function PdfPane({ lang = 'vi', bytes, initial, onLocation, onSelection, onContr
     let active = true
     let render: RenderTask | null = null
     let textLayer: TextLayer | null = null
+    setError('')
+    if (pageMetrics.current.page !== page) {
+      if (host.current) host.current.scrollTop = 0
+      resizeAnchor.current = null
+    }
     renderedTextPage.current = 0
     setSpeechPage(null)
     textLayerDiv.current?.replaceChildren()
@@ -762,17 +757,19 @@ function PdfPane({ lang = 'vi', bytes, initial, onLocation, onSelection, onContr
 
   const highlightColors: Record<string, string> = { YELLOW: '#fde047', GREEN: '#86efac', BLUE: '#93c5fd', PINK: '#f9a8d4', PURPLE: '#c4b5fd', ORANGE: '#fdba74' }
 
-  return error ? (
+  return error && !document ? (
     <div className="reader-error">{error}</div>
   ) : (
     <div className="pdf-host" ref={host}>
+      {error && <div className="reader-error" role="alert">{error}</div>}
       <div
         className="pdf-page-container"
+        hidden={Boolean(error)}
         data-read-aloud-page={page}
         data-read-aloud-ready={speechPage === page}
         style={{
           position: 'relative',
-          display: 'inline-block',
+          display: error ? 'none' : 'inline-block',
           width: dimensions.width,
           minHeight: dimensions.height,
         }}
@@ -1041,6 +1038,8 @@ function TextPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
   const publishSearch = useSearchPublication(onSearchReady)
   const langRef = useRef(lang)
   useEffect(() => { langRef.current = lang }, [lang])
+  const locationRef = useRef(onLocation)
+  useEffect(() => { locationRef.current = onLocation }, [onLocation])
   const host = useRef<HTMLDivElement>(null)
   const [content, setContent] = useState('')
   const [decoded, setDecoded] = useState(false)
@@ -1118,10 +1117,10 @@ function TextPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
       const progression = element.scrollHeight > element.clientHeight
         ? element.scrollTop / (element.scrollHeight - element.clientHeight)
         : (stealthProgression ?? 0)
-      onLocation({ locatorJson: JSON.stringify({ type: 'TEXT', version: 1, blockIndex: 0, characterOffset: 0, scrollOffsetPx: Math.floor(element.scrollTop), progression }), progression, chapterTitle: '' })
+      locationRef.current({ locatorJson: JSON.stringify({ type: 'TEXT', version: 1, blockIndex: 0, characterOffset: 0, scrollOffsetPx: Math.floor(element.scrollTop), progression }), progression, chapterTitle: '' })
     })
     return () => cancelAnimationFrame(frame)
-  }, [content, initial, onLocation])
+  }, [content, initial])
   useEffect(() => {
     if (!content || !navigateTarget || !host.current) return
     // Apply chapter requests after decoding and after saved-position restoration.
@@ -1139,14 +1138,14 @@ function TextPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
       const requestedProgression = Math.min(1, Math.max(0, navigateProgression.progression))
       element.scrollTop = maxScroll * requestedProgression
       const progression = maxScroll > 0 ? element.scrollTop / maxScroll : requestedProgression
-      onLocation({
+      locationRef.current({
         locatorJson: JSON.stringify({ type: 'TEXT', version: 1, blockIndex: 0, characterOffset: 0, scrollOffsetPx: Math.floor(element.scrollTop), progression }),
         progression,
         chapterTitle: '',
       })
     })
     return () => cancelAnimationFrame(frame)
-  }, [content, navigateProgression, onLocation])
+  }, [content, navigateProgression])
   useEffect(() => {
     const saved = parseInitial(navigateLocator?.locatorJson)
     const element = host.current
@@ -1185,10 +1184,10 @@ function TextPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
       }
       const maxScroll = Math.max(0, element.scrollHeight - element.clientHeight)
       const progression = maxScroll > 0 ? clampProgression(element.scrollTop / maxScroll) : 0
-      onLocation({ locatorJson: JSON.stringify({ ...saved, scrollOffsetPx: Math.floor(element.scrollTop), progression }), progression, chapterTitle: '' })
+      locationRef.current({ locatorJson: JSON.stringify({ ...saved, scrollOffsetPx: Math.floor(element.scrollTop), progression }), progression, chapterTitle: '' })
     })
     return () => cancelAnimationFrame(frame)
-  }, [content, navigateLocator, onLocation])
+  }, [content, navigateLocator])
   useEffect(() => {
     const article = host.current?.querySelector('article')
     if (!article) return

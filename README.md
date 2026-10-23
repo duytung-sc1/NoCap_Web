@@ -114,6 +114,21 @@ Drawings use a bounded, validated data-only format (1,000 × 700 coordinates,
 annotation must fit the existing 32,768-character sync payload. Reaching a limit
 shows a message and preserves the previous drawing instead of truncating it.
 
+## Read aloud and voice samples (Web)
+
+Reading a current section or selected passage uses the browser's speech service.
+Local device voices are the default. Users can explicitly allow browser-provided
+Google/Microsoft online voices; those providers may receive the text being read.
+The option resets to off when the read-aloud panel is closed and reopened.
+Voice availability depends on the browser and operating system.
+
+The panel also offers a fixed official Google Cloud audio sample for the Vietnamese
+female voice **Achernar**. The sample is requested from Google only when the user
+presses its play button. It sends no book text, selection or notes to Google and
+requires no API key. It is separate from browser online voices and does not make
+Achernar available for reading the current book. No Google Cloud text-to-speech
+API integration is added.
+
 ## Reading Memory and plans
 
 | Feature | Free | Pro |

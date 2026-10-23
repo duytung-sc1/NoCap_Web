@@ -211,6 +211,31 @@ describe('first-party Web analytics', () => {
     expect(fetcher.mock.calls.length).toBeGreaterThan(count)
   })
 
+  it('does not replace stored identifiers when an aborted request returns a late conflict after stopping', async () => {
+    let resolve!: (value: Response) => void
+    const pending = new Promise<Response>(done => { resolve = done })
+    fetcher.mockReturnValueOnce(pending)
+    const client = start(); client.setPage('home')
+    const stored = sessionStorage.getItem('nocap-web-analytics-session-v1')
+    client.stop()
+    resolve(new Response('{}', { status: 409 })); await pending; await advance(1)
+    expect(sessionStorage.getItem('nocap-web-analytics-session-v1')).toBe(stored)
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not let an aborted request delay fresh collection after opting back in', async () => {
+    let reject!: (reason: Error) => void
+    const pending = new Promise<Response>((_resolve, fail) => { reject = fail })
+    fetcher.mockReturnValueOnce(pending)
+    const client = start(); client.setPage('home')
+    setAnalyticsOptOut(true); setAnalyticsOptOut(false); await advance(1)
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    reject(new Error('Aborted old request')); await advance(1)
+    client.setPage('library'); await advance(1)
+    expect(fetcher).toHaveBeenCalledTimes(3)
+    expect(batches.at(-1)?.events).toContainEqual(expect.objectContaining({ type: 'page_view', page: 'library' }))
+  })
+
   it('does not record admin views or background feature completions', async () => {
     const client = start(); client.setPage(null); client.feature('checkout_start'); await advance(30_000)
     expect(fetcher).not.toHaveBeenCalled()

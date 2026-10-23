@@ -142,6 +142,22 @@ describe('manual study workspace', () => {
     await screen.findByText('Changes saved.')
   })
 
+  it('retires a committed new plan form when refreshing records fails so saving cannot duplicate it', async () => {
+    const onChanged = vi.fn(async () => { throw new Error('Refresh failed') })
+    render(<ResearchWorkspace {...props([], { onChanged })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Exam prep' }))
+    fireEvent.click(screen.getByRole('button', { name: 'New exam plan' }))
+    fireEvent.change(screen.getByLabelText('Subject or exam name'), { target: { value: 'Committed exam plan' } })
+    fireEvent.change(screen.getByLabelText('Exam date'), { target: { value: '2026-12-20' } })
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Book Beta' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save plan' }))
+    await waitFor(() => expect(mutations.saveExamPlan).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Save plan' })).toBeNull())
+    expect(screen.getByRole('status').textContent).toContain('Changes are saved')
+    expect(screen.getByRole('status').textContent).toContain('do not need to save again')
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
   it('isolates profile changes and ignores an obsolete mutation result', async () => {
     const pending = deferred<string>(); mutations.createTopic.mockReturnValueOnce(pending.promise)
     const mounted = render(<ResearchWorkspace {...props([topic, a])} />)

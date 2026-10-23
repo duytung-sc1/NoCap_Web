@@ -13,7 +13,7 @@ import { DRAWING_COLORS, emptyDrawing } from './drawing'
 import { emptyReaderNoteDraft, readReaderNoteDraft, writeReaderNoteDraft } from './readerNoteDrafts'
 
 const fixtures = vi.hoisted(() => ({
-  login: vi.fn(), googleLogin: vi.fn(), getFiles: vi.fn(), getCatalog: vi.fn(), removeLocalDocument: vi.fn(), mutate: vi.fn(), loadBytes: vi.fn(), downloadHttps: vi.fn(), adminIdentity: vi.fn(), adminRequest: vi.fn(), localRecords: vi.fn(), entitlement: vi.fn(), preparePdf: vi.fn(), saveDownload: vi.fn(), conflicts: vi.fn(), resolveConflict: vi.fn(), updateProfile: vi.fn(), deleteAccount: vi.fn(), searchBook: vi.fn(), readerThrows: false, adminThrows: false,
+  login: vi.fn(), googleLogin: vi.fn(), getFiles: vi.fn(), getFile: vi.fn(), getOfflineBook: vi.fn(), getCatalog: vi.fn(), removeLocalDocument: vi.fn(), mutate: vi.fn(), loadBytes: vi.fn(), downloadHttps: vi.fn(), adminIdentity: vi.fn(), adminRequest: vi.fn(), localRecords: vi.fn(), entitlement: vi.fn(), preparePdf: vi.fn(), saveDownload: vi.fn(), conflicts: vi.fn(), resolveConflict: vi.fn(), updateProfile: vi.fn(), deleteAccount: vi.fn(), searchBook: vi.fn(), readerThrows: false, adminThrows: false,
 }))
 vi.mock('./httpsImport', async importOriginal => ({
   ...await importOriginal<typeof import('./httpsImport')>(), downloadHttpsPublication: fixtures.downloadHttps,
@@ -33,8 +33,8 @@ vi.mock('./api', async importOriginal => ({
 }))
 vi.mock('./store', async importOriginal => ({
   ...await importOriginal<typeof import('./store')>(),
-  getFiles: fixtures.getFiles, getFile: async () => undefined, removeLocalDocument: fixtures.removeLocalDocument,
-  getOfflineBooks: async () => [], getOfflineBook: async () => undefined,
+  getFiles: fixtures.getFiles, getFile: fixtures.getFile, removeLocalDocument: fixtures.removeLocalDocument,
+  getOfflineBooks: async () => [], getOfflineBook: fixtures.getOfflineBook,
   getPending: async () => [], getCachedCatalog: async () => undefined,
   saveCachedCatalog: async () => {},
 }))
@@ -103,6 +103,8 @@ beforeEach(() => {
   localStorage.clear(); sessionStorage.clear(); window.history.replaceState(null, '', '/')
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
   fixtures.getFiles.mockReset().mockResolvedValue([])
+  fixtures.getFile.mockReset().mockResolvedValue(undefined)
+  fixtures.getOfflineBook.mockReset().mockResolvedValue(undefined)
   fixtures.getCatalog.mockReset().mockResolvedValue({ books: [], categories: [] })
   fixtures.removeLocalDocument.mockReset().mockResolvedValue(undefined)
   fixtures.mutate.mockReset().mockResolvedValue(undefined)
@@ -138,23 +140,23 @@ describe('library write failures and concurrent actions', () => {
     const speech = new MockSynthesis()
     vi.stubGlobal('speechSynthesis', speech.api()); vi.stubGlobal('SpeechSynthesisUtterance', MockUtterance)
     try {
-      await reader()
-      fireEvent.click(screen.getByRole('button', { name: 'Đọc thành tiếng' }))
-      fireEvent.click(screen.getByRole('button', { name: 'Nghe phần hiện tại' }))
+      const readerView = within((await reader()).closest('.reader-shell') as HTMLElement)
+      fireEvent.click(readerView.getByRole('button', { name: 'Đọc thành tiếng' }))
+      fireEvent.click(readerView.getByRole('button', { name: 'Nghe phần hiện tại' }))
       await waitFor(() => expect(speech.spoken).toHaveLength(1))
       expect(speech.spoken[0].text).toBe('QA spoken book text')
-      fireEvent.click(screen.getByRole('button', { name: 'Bảng ghi chú' }))
-      expect(screen.getByRole('button', { name: 'Tạm dừng' })).toBeTruthy()
+      fireEvent.click(readerView.getByRole('button', { name: 'Bảng ghi chú' }))
+      expect(readerView.getByRole('button', { name: 'Tạm dừng' })).toBeTruthy()
       const before = speech.cancel.mock.calls.length
       fireEvent.keyDown(window, { key: 'Escape' })
-      expect(screen.queryByRole('button', { name: 'Nghe phần hiện tại' })).toBeNull()
+      expect(readerView.queryByRole('button', { name: 'Nghe phần hiện tại' })).toBeNull()
       expect(speech.cancel.mock.calls.length).toBeGreaterThan(before)
       expect(screen.getByText('QA reader content')).toBeTruthy()
-      fireEvent.click(screen.getByRole('button', { name: 'Đọc thành tiếng' }))
-      fireEvent.click(screen.getByRole('button', { name: 'Nghe phần hiện tại' }))
+      fireEvent.click(readerView.getByRole('button', { name: 'Đọc thành tiếng' }))
+      fireEvent.click(readerView.getByRole('button', { name: 'Nghe phần hiện tại' }))
       await waitFor(() => expect(speech.spoken).toHaveLength(2))
       const beforeExit = speech.cancel.mock.calls.length
-      fireEvent.click(screen.getByRole('button', { name: 'Trở về Trang chủ' }))
+      fireEvent.click(readerView.getByRole('button', { name: 'Trở về Trang chủ' }))
       expect(speech.cancel.mock.calls.length).toBeGreaterThan(beforeExit)
       expect(screen.queryByText('QA reader content')).toBeNull()
     } finally { cleanup(); vi.unstubAllGlobals() }
@@ -281,6 +283,43 @@ describe('library write failures and concurrent actions', () => {
     render(<App />)
     fireEvent.click(await screen.findByRole('button', { name: 'Lưu vào tủ sách: QA document' }))
     await waitFor(() => expect(fixtures.mutate.mock.calls.find(([, kind]) => kind === 'favorites')?.[5]).toBe(true))
+  })
+})
+
+describe('comparison document cache recovery', () => {
+  const books = [
+    { id: 'comparison-a', title: 'Comparison A', author: 'QA', source: 'public', fileUrl: 'https://books.example.test/a.txt', format: 'TXT' },
+    { id: 'comparison-b', title: 'Comparison B', author: 'QA', source: 'public', fileUrl: 'https://books.example.test/b.txt', format: 'TXT' },
+  ]
+
+  async function compare(sources = books) {
+    fixtures.getCatalog.mockResolvedValue({ books: sources, categories: [] })
+    window.history.replaceState(null, '', '/memory')
+    render(<App />)
+    await waitFor(() => expect(fixtures.getCatalog).toHaveBeenCalled())
+    fireEvent.click(await screen.findByRole('button', { name: 'Đọc đối chiếu hai nguồn' }))
+    const dialog = screen.getByRole('dialog', { name: 'Đọc đối chiếu hai nguồn' })
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Mở hai nguồn' }).hasAttribute('disabled')).toBe(false))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Mở hai nguồn' }))
+  }
+
+  it('opens public sources from the network when optional browser cache reads fail', async () => {
+    fixtures.getFile.mockRejectedValue(new Error('Browser database closed'))
+    fixtures.getOfflineBook.mockRejectedValue(new Error('Browser cache closed'))
+    await compare()
+    await waitFor(() => expect(screen.getAllByText('QA reader content')).toHaveLength(2))
+    expect(fixtures.loadBytes).toHaveBeenCalledTimes(2)
+  })
+
+  it('fetches the current private source instead of opening an obsolete offline copy', async () => {
+    saveSession(session)
+    const current = { ...books[0], source: 'cloud', fileUrl: 'nocap-private:new-content-hash' }
+    const stale = { key: 'ACCOUNT:qa-user:comparison-a', profile: 'ACCOUNT:qa-user', book: { ...current, fileUrl: 'nocap-private:old-content-hash' }, data: new Blob(['Obsolete document']), addedAt: 1 }
+    fixtures.getFile.mockImplementation(async (_owner, id) => id === current.id ? stale : undefined)
+    fixtures.getOfflineBook.mockImplementation(async (_owner, id) => id === current.id ? stale : undefined)
+    await compare([current, books[1]])
+    await waitFor(() => expect(screen.getAllByText('QA reader content')).toHaveLength(2))
+    expect(fixtures.loadBytes).toHaveBeenCalledWith(expect.objectContaining({ id: current.id, fileUrl: current.fileUrl }), session.token, expect.objectContaining({ signal: expect.any(AbortSignal) }))
   })
 })
 
@@ -927,6 +966,9 @@ describe('account and reader lifecycle', () => {
   })
 
   it('keeps navigation available after an administrator component fails', async () => {
+    // This exercises the render boundary, independently of the lazy bundle's
+    // initial transform/import time on a busy test worker.
+    await import('./admin/AdminWorkspace')
     vi.spyOn(console, 'error').mockImplementation(() => {})
     saveSession(session)
     window.history.replaceState(null, '', '/admin')
@@ -1070,6 +1112,17 @@ describe('account and reader lifecycle', () => {
     expect(screen.queryByRole('heading', { name: 'Quản trị thư viện' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Mở khu vực quản trị' })).toBeNull()
     expect(fixtures.adminRequest).not.toHaveBeenCalled()
+  })
+
+  it('offers administrator sign-in again after administrative access expires', async () => {
+    saveSession(session); window.history.replaceState(null, '', '/admin')
+    fixtures.adminIdentity.mockResolvedValue({ id: session.user.id, email: session.user.email, photoUrl: null, adminExpiresAt: Date.now() - 1 })
+    render(<App />)
+    expect(await screen.findByText('Phiên quản trị đã hết hạn. Hãy đăng nhập lại.')).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: 'Quản trị thư viện' })).toBeNull()
+    expect(fixtures.adminRequest).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Đăng nhập' }))
+    expect(screen.getByRole('dialog', { name: 'Chào mừng quay lại.' })).toBeTruthy()
   })
 
   it('hides every administration entry for a Pro reader but exposes all entries for an approved admin', async () => {
@@ -1250,6 +1303,9 @@ describe('account and reader lifecycle', () => {
     window.history.replaceState(null, '', '/read/QA%20document')
     render(<App />)
     await screen.findByText('QA reader content')
+    // The lazy reader may paint before its passive location effect publishes.
+    // Sign out only after the location being asserted is actually available.
+    await screen.findByText('60% · QA')
     const pending = deferred<void>()
     fixtures.mutate.mockReturnValue(pending.promise)
     saveSession(null)

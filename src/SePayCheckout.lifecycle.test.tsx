@@ -37,6 +37,79 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers() })
 
 describe('payment dialog lifecycle', () => {
+  it.each([null, { ...session, token: 'other-token', user: { ...session.user, id: 'other-account' } }])('clears the previous account payment dialog when the session changes to %j', async next => {
+    const onPaid = vi.fn()
+    const mounted = render(<SePayCheckout session={session} entitlement={null} lang="vi" onSignIn={vi.fn()} onPaid={onPaid} />)
+    const dialog = await openOrder()
+    const pending = deferred<SePayOrder>(); api.check.mockReturnValue(pending.promise)
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Kiểm tra thanh toán' }))
+    mounted.rerender(<SePayCheckout session={next} entitlement={null} lang="vi" onSignIn={vi.fn()} onPaid={onPaid} />)
+    expect(screen.queryByRole('dialog')).toBeNull()
+    await act(async () => { pending.resolve(order('first', 'PAID')); await pending.promise })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(onPaid).not.toHaveBeenCalled()
+    expect(api.entitlement).not.toHaveBeenCalled()
+  })
+
+  it('allows a new account to create an order while the previous account creation is still pending', async () => {
+    const pending = deferred<SePayOrder>(); api.create.mockReturnValueOnce(pending.promise)
+    const mounted = render(<SePayCheckout session={session} entitlement={null} lang="vi" onSignIn={vi.fn()} onPaid={vi.fn()} />)
+    const upgrade = screen.getByRole('button', { name: 'Nâng cấp qua SePay' })
+    await waitFor(() => expect(upgrade.hasAttribute('disabled')).toBe(false))
+    fireEvent.click(upgrade)
+    const next = { ...session, token: 'other-token', user: { ...session.user, id: 'other-account' } }
+    mounted.rerender(<SePayCheckout session={next} entitlement={null} lang="vi" onSignIn={vi.fn()} onPaid={vi.fn()} />)
+    api.create.mockResolvedValueOnce(order('second'))
+    const dialog = await openOrder()
+    expect(api.create).toHaveBeenLastCalledWith('other-token', 'MONTHLY')
+    expect(within(dialog).getByRole('img').getAttribute('src')).toContain('/second')
+    await act(async () => { pending.resolve(order('first')); await pending.promise })
+    expect(screen.getByRole('img').getAttribute('src')).toContain('/second')
+  })
+
+  it('does not deliver a previous account entitlement after account switching', async () => {
+    api.check.mockResolvedValue(order('first', 'PAID'))
+    const pending = deferred<Entitlement>(); api.entitlement.mockReturnValue(pending.promise)
+    const onPaid = vi.fn()
+    const mounted = render(<SePayCheckout session={session} entitlement={null} lang="vi" onSignIn={vi.fn()} onPaid={onPaid} />)
+    const dialog = await openOrder()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Kiểm tra thanh toán' }))
+    await waitFor(() => expect(api.entitlement).toHaveBeenCalledTimes(1))
+    const next = { ...session, token: 'other-token', user: { ...session.user, id: 'other-account' } }
+    mounted.rerender(<SePayCheckout session={next} entitlement={null} lang="vi" onSignIn={vi.fn()} onPaid={onPaid} />)
+    await act(async () => { pending.resolve(entitlement); await pending.promise })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(onPaid).not.toHaveBeenCalled()
+  })
+
+  it('hides an expired transfer QR while offline and can still confirm a payment made before expiry', async () => {
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+    const onPaid = vi.fn()
+    render(<SePayCheckout session={session} entitlement={null} lang="vi" onSignIn={vi.fn()} onPaid={onPaid} />)
+    const upgrade = screen.getByRole('button', { name: 'Nâng cấp qua SePay' })
+    await waitFor(() => expect(upgrade.hasAttribute('disabled')).toBe(false))
+    vi.useFakeTimers()
+    await act(async () => { fireEvent.click(upgrade) })
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByRole('img')).toBeTruthy()
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_001) })
+    expect(within(dialog).queryByRole('img')).toBeNull()
+    expect(within(dialog).getByText('Đơn đã hết hạn')).toBeTruthy()
+    expect(api.check).not.toHaveBeenCalled()
+    api.check.mockResolvedValue(order('first', 'PAID'))
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: 'Kiểm tra thanh toán' })) })
+    expect(within(dialog).getByText('Đã thanh toán')).toBeTruthy()
+    expect(onPaid).toHaveBeenCalledWith(entitlement)
+  })
+
+  it('does not invite a second transfer after the server has claimed the payment for processing', async () => {
+    api.create.mockResolvedValue(order('first', 'PROCESSING'))
+    render(<SePayCheckout session={session} entitlement={null} lang="vi" onSignIn={vi.fn()} onPaid={vi.fn()} />)
+    const dialog = await openOrder()
+    expect(within(dialog).getByText('Đang xác nhận thanh toán')).toBeTruthy()
+    expect(within(dialog).queryByRole('img')).toBeNull()
+  })
+
   it('does not reopen a closed checkout when a manual status request completes late', async () => {
     const pending = deferred<SePayOrder>(); api.check.mockReturnValue(pending.promise)
     render(<SePayCheckout session={session} entitlement={null} lang="vi" onSignIn={vi.fn()} onPaid={vi.fn()} />)

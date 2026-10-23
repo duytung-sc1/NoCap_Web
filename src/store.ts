@@ -197,10 +197,12 @@ export async function claimPendingOperation(key: string): Promise<PendingOperati
 }
 
 export async function updatePendingOperation(item: PendingOperation, patch: Pick<Partial<PendingOperation>, 'needsBlobUpload' | 'conflicted' | 'remoteDeleted'>) {
-  await withSyncTransaction(async transaction => {
+  return withSyncTransaction(async transaction => {
     const store = transaction.objectStore('pending')
     const current = await store.get(item.key)
-    if (current?.operation.opId === item.operation.opId) await store.put({ ...current, ...patch })
+    if (current?.operation.opId !== item.operation.opId) return false
+    await store.put({ ...current, ...patch })
+    return true
   })
 }
 
@@ -325,14 +327,15 @@ export async function applyLibraryRestore(
         await transaction.objectStore('records').put(value)
         if (!sync || !profile.startsWith('ACCOUNT:')) continue
         const pending = await transaction.objectStore('pending').get(record.key)
-        // Preserve an already-submitted operation's identity. syncNow will
-        // reconcile this newer local payload after the original receipt.
-        if (pending?.attempted) continue
+        // An operation awaiting its blob has not been pushed. Replace it when
+        // restoring new bytes, since its old hash no longer has a local file.
+        // Preserve submitted operations until their receipts can be reconciled.
+        if (pending?.attempted && !pending.needsBlobUpload) continue
         await transaction.objectStore('pending').put({
           key: record.key, profile, attempted: false,
           needsBlobUpload: record.kind === 'catalog_books' && !record.deleted && typeof record.payload.file_url === 'string' && record.payload.file_url.startsWith('nocap-private:'),
           operation: {
-            opId: pending?.operation.opId || crypto.randomUUID(),
+            opId: pending && !pending.attempted ? pending.operation.opId : crypto.randomUUID(),
             kind: record.kind, id: record.id, baseVersion: current?.version || 0,
             deleted: record.deleted, payload: record.payload,
             recreate: current?.deleted && !record.deleted ? true : undefined,
@@ -349,6 +352,7 @@ export async function applyLibraryRestore(
 }
 
 export const SESSION_STORAGE_KEY = 'nocap-session'
+const SESSION_FALLBACK_STORAGE_KEY = 'nocap-session-fallback'
 
 function parseSession(raw: string | null): Session | null {
   try {
@@ -365,16 +369,34 @@ function clearLegacySession() {
   try { sessionStorage.removeItem(SESSION_STORAGE_KEY) } catch { /* Browser storage may be disabled. */ }
 }
 
+function clearSessionFallback() {
+  try { sessionStorage.removeItem(SESSION_FALLBACK_STORAGE_KEY) } catch { /* Browser storage may be disabled. */ }
+}
+
 export function readSession(): Session | null {
+  let raw: string | null | undefined
+  try { raw = localStorage.getItem(SESSION_STORAGE_KEY) } catch { /* Persistent storage may be disabled. */ }
+
   try {
-    const raw = localStorage.getItem(SESSION_STORAGE_KEY)
-    if (raw !== null) {
-      clearLegacySession()
-      const value = parseSession(raw)
-      if (!value && raw !== 'null') saveSession(null)
-      return value
+    const fallback = JSON.parse(sessionStorage.getItem(SESSION_FALLBACK_STORAGE_KEY) || 'null')
+    if (fallback && typeof fallback.raw === 'string') {
+      // A failed shared write must override the old account in this tab. Stop
+      // using it as soon as another tab changes the shared credentials.
+      if (raw === undefined || fallback.sharedRaw === undefined || raw === fallback.sharedRaw) {
+        const value = parseSession(fallback.raw)
+        saveSession(value)
+        return value
+      }
+      clearSessionFallback()
     }
-  } catch { /* Fall back to the current tab when persistent storage is unavailable. */ }
+  } catch { /* Fall back to the shared or legacy session if tab storage is unavailable. */ }
+
+  if (raw !== undefined && raw !== null) {
+    clearLegacySession()
+    const value = parseSession(raw)
+    if (!value && raw !== 'null') saveSession(null)
+    return value
+  }
 
   let legacy: Session | null = null
   try { legacy = parseSession(sessionStorage.getItem(SESSION_STORAGE_KEY)) } catch { /* Browser storage may be disabled. */ }
@@ -384,14 +406,20 @@ export function readSession(): Session | null {
 }
 
 export function saveSession(value: Session | null) {
+  const raw = JSON.stringify(value)
   try {
     // Keep a null marker after logout so an older tab cannot restore its legacy session.
-    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(value))
+    localStorage.setItem(SESSION_STORAGE_KEY, raw)
     clearLegacySession()
+    clearSessionFallback()
   } catch {
+    let sharedRaw: string | null | undefined
+    try { sharedRaw = localStorage.getItem(SESSION_STORAGE_KEY) } catch { /* Persistent storage may be disabled. */ }
     try {
-      if (value) sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(value))
-      else clearLegacySession()
+      // Keep the null logout marker here too: clearing tab storage alone would
+      // allow a readable, stale localStorage session to sign the user back in.
+      sessionStorage.setItem(SESSION_FALLBACK_STORAGE_KEY, JSON.stringify({ raw, sharedRaw }))
+      clearLegacySession()
     } catch { /* Login in the current page still works without browser storage. */ }
   }
 }

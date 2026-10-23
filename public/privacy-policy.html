@@ -159,6 +159,7 @@
 
       <h2 id="read-aloud">Read aloud (Web only)</h2>
       <p>Read aloud uses your browser’s speech service. Only local device voices are allowed by default. You can explicitly enable Google/Microsoft online voices in the read-aloud panel, if your browser provides them. When you select an online voice and start playback or a voice preview, your browser may send the text being read to that provider to generate audio, under its own terms. A voice preview reads a fixed sample rather than your document. NoCap does not configure a paid speech API or require an API key. Turning the online option off stops playback and restricts future playback to local voices. Closing and reopening the panel resets this option to off.</p>
+      <p>The panel also offers a fixed official Google Cloud audio sample for the Vietnamese female voice Achernar, separate from the browser speech service. Only when you press the sample’s play button does your browser request its audio file from Google, which receives ordinary network request information such as your IP address. No book text, selected passage or notes are sent for this sample. It requires no API key and does not add a Google Cloud API for reading your current document.</p>
 
       <h2>1. Scope of this policy</h2>
       <p>This policy applies to the NoCap Android application, NoCap Web, and the connected NoCap API and cloud services. NoCap lets you import and read documents, save reading progress and annotations, organize knowledge, and optionally continue across devices.</p>
@@ -204,6 +205,7 @@
         <li><strong>Cloudflare</strong> provides the API, database, private object storage, and network infrastructure.</li>
         <li><strong>Google</strong> provides Google Sign-In and, when enabled by you, Android backup or device transfer. Google Play may process future in-app purchases.</li>
         <li><strong>Google or Microsoft browser speech services</strong> may process text for online read-aloud voices only when you enable this option and start playback, as described above.</li>
+        <li><strong>Google Cloud voice sample:</strong> Google receives ordinary network request information when you explicitly play the fixed Achernar sample, as described above; no document text is sent for this sample.</li>
         <li><strong>SePay and your bank</strong> process bank-transfer notifications and the underlying financial transaction.</li>
         <li><strong>Email service providers</strong> deliver verification, password-reset, and service messages.</li>
         <li><strong>External book and cover providers</strong> receive ordinary request information when their public files are loaded.</li>
@@ -253,6 +255,7 @@
 
         <h2>Đọc thành tiếng (chỉ áp dụng cho Web)</h2>
         <p>Đọc thành tiếng sử dụng dịch vụ giọng đọc của trình duyệt. Mặc định chỉ cho phép giọng cục bộ trên thiết bị. Bạn có thể chủ động bật giọng Google/Microsoft trực tuyến trong bảng giọng đọc nếu trình duyệt cung cấp. Khi chọn giọng trực tuyến rồi bấm phát hoặc nghe thử, trình duyệt có thể gửi văn bản được đọc tới nhà cung cấp đó để tạo âm thanh, theo điều khoản riêng của họ. Nghe thử giọng chỉ đọc một đoạn mẫu cố định, không đọc tài liệu của bạn. NoCap không cấu hình API giọng đọc trả phí và không yêu cầu API key. Tắt tùy chọn trực tuyến sẽ dừng phát và chỉ cho phép dùng giọng cục bộ về sau. Đóng rồi mở lại bảng sẽ đưa tùy chọn này về trạng thái tắt.</p>
+        <p>Bảng này còn có một tệp âm thanh mẫu cố định chính thức của Google Cloud cho giọng nữ tiếng Việt Achernar, tách biệt với dịch vụ giọng đọc của trình duyệt. Chỉ khi bạn bấm phát mẫu này, trình duyệt mới yêu cầu tệp âm thanh đó từ Google; Google nhận thông tin yêu cầu mạng thông thường như địa chỉ IP của bạn. Mẫu này không gửi nội dung sách, đoạn đã chọn hoặc ghi chú, không cần API key và không bổ sung API Google Cloud để đọc tài liệu hiện tại.</p>
 
         <h2>1. Phạm vi áp dụng</h2>
         <p>Chính sách này áp dụng cho ứng dụng NoCap trên Android, NoCap Web và API/dịch vụ cloud liên quan. NoCap hỗ trợ nhập và đọc tài liệu, lưu tiến độ và ghi chú, tổ chức kiến thức và tùy chọn tiếp tục trên nhiều thiết bị.</p>
@@ -292,6 +295,7 @@
           <li><strong>Cloudflare:</strong> API, cơ sở dữ liệu, lưu trữ đối tượng riêng và hạ tầng mạng.</li>
           <li><strong>Google:</strong> Google Sign-In, sao lưu/chuyển thiết bị Android nếu bạn bật và giao dịch Google Play trong tương lai nếu được cấu hình.</li>
           <li><strong>Dịch vụ giọng đọc Google hoặc Microsoft của trình duyệt:</strong> có thể xử lý văn bản cho giọng trực tuyến khi bạn chủ động bật tùy chọn này và bấm phát, như mô tả ở trên.</li>
+          <li><strong>Mẫu giọng Google Cloud:</strong> Google nhận thông tin yêu cầu mạng thông thường khi bạn chủ động bấm phát mẫu Achernar cố định, như mô tả ở trên; nội dung tài liệu không được gửi cho mẫu này.</li>
           <li><strong>SePay và ngân hàng:</strong> thông báo và xử lý giao dịch chuyển khoản.</li>
           <li><strong>Dịch vụ email:</strong> gửi thư xác minh, đặt lại mật khẩu và thông báo dịch vụ.</li>
           <li><strong>Nguồn sách/ảnh bìa bên ngoài:</strong> nhận thông tin yêu cầu mạng thông thường khi tải tệp công khai.</li>
