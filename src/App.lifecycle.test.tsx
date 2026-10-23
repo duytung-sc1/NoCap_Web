@@ -15,6 +15,7 @@ import { emptyReaderNoteDraft, readReaderNoteDraft, writeReaderNoteDraft } from 
 const fixtures = vi.hoisted(() => ({
   login: vi.fn(), googleLogin: vi.fn(), getFiles: vi.fn(), getFile: vi.fn(), getOfflineBook: vi.fn(), getCatalog: vi.fn(), removeLocalDocument: vi.fn(), mutate: vi.fn(), loadBytes: vi.fn(), downloadHttps: vi.fn(), adminIdentity: vi.fn(), adminRequest: vi.fn(), localRecords: vi.fn(), entitlement: vi.fn(), preparePdf: vi.fn(), saveDownload: vi.fn(), conflicts: vi.fn(), resolveConflict: vi.fn(), updateProfile: vi.fn(), deleteAccount: vi.fn(), searchBook: vi.fn(), readerThrows: false, adminThrows: false,
 }))
+const announcementFixtures = vi.hoisted(() => ({ get: vi.fn() }))
 vi.mock('./httpsImport', async importOriginal => ({
   ...await importOriginal<typeof import('./httpsImport')>(), downloadHttpsPublication: fixtures.downloadHttps,
 }))
@@ -24,6 +25,7 @@ vi.mock('./admin/api', async importOriginal => ({
 vi.mock('./api', async importOriginal => ({
   ...await importOriginal<typeof import('./api')>(),
   getCatalog: fixtures.getCatalog,
+  getAnnouncements: announcementFixtures.get,
   login: fixtures.login, loginWithGoogle: fixtures.googleLogin,
   getUser: async (token: string) => ({ user: readSession()?.token === token ? readSession()!.user : session.user }),
   getEntitlement: fixtures.entitlement,
@@ -106,6 +108,7 @@ beforeEach(() => {
   fixtures.getFile.mockReset().mockResolvedValue(undefined)
   fixtures.getOfflineBook.mockReset().mockResolvedValue(undefined)
   fixtures.getCatalog.mockReset().mockResolvedValue({ books: [], categories: [] })
+  announcementFixtures.get.mockReset().mockResolvedValue({ announcements: [] })
   fixtures.removeLocalDocument.mockReset().mockResolvedValue(undefined)
   fixtures.mutate.mockReset().mockResolvedValue(undefined)
   fixtures.login.mockReset(); fixtures.googleLogin.mockReset()
@@ -126,6 +129,17 @@ beforeEach(() => {
   fixtures.searchBook.mockReset().mockResolvedValue({ hits: [], truncated: false, scanned: 1, total: 1, textAvailable: true })
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks(); delete (window as unknown as { google?: unknown }).google })
+
+describe('system announcements integration', () => {
+  it.each([false, true])('shows active admin announcements on the public web (signed in: %s)', async signedIn => {
+    if (signedIn) saveSession(session)
+    announcementFixtures.get.mockResolvedValue({ announcements: [{ id: 'ABC123', title: 'Lời Chào', message: 'Chúc mọi người một ngày tốt lành!', type: 'info', active: true, startsAt: null, endsAt: null, updatedAt: '2026-10-23T11:20:00Z' }] })
+    render(<App />)
+    expect(await screen.findByRole('heading', { name: 'Lời Chào' })).toBeTruthy()
+    expect(screen.getByRole('region', { name: 'Thông báo từ NoCap' })).toBeTruthy()
+    expect(announcementFixtures.get).toHaveBeenCalledWith(expect.any(AbortSignal))
+  })
+})
 
 describe('library write failures and concurrent actions', () => {
   async function reader() {

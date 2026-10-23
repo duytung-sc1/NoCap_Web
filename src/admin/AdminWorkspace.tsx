@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { BarChart3, BookOpen, CreditCard, Database, History, LayoutDashboard, Megaphone, Plus, RefreshCw, Tags, Users } from 'lucide-react'
-import { ApiError } from '../api'
+import { ANNOUNCEMENTS_UPDATED_EVENT, ApiError } from '../api'
 import type { Lang } from '../i18n'
 import { adminRequest, type AdminCategory, type AdminIdentity, type AdminUser, type Announcement, type AuditEntry, type CatalogRow, type Conflict, type Overview, type PageResult, type StorageScan } from './api'
 import './AdminWorkspace.css'
@@ -73,6 +73,7 @@ export default function AdminWorkspace({ token, admin, lang, onSignIn, onCatalog
   const [conflicts, setConflicts] = useState<{ key: string; data?: PageResult<Conflict>; error?: string } | null>(null)
   const [categoryOptions, setCategoryOptions] = useState<AdminCategory[]>([])
   const [bookCategory, setBookCategory] = useState('')
+  const [announcementNow, setAnnouncementNow] = useState(Date.now)
   const key = JSON.stringify([view, page, search, revision, lang])
   const loaded = resource?.key === key ? resource : null
   const data = loaded?.data
@@ -105,7 +106,7 @@ export default function AdminWorkspace({ token, admin, lang, onSignIn, onCatalog
     const paths: Record<View, string> = { overview: 'overview', analytics: '', payments: '', catalog: `catalog?page=${page}&q=${encodeURIComponent(search)}`, categories: 'categories', users: `users?page=${page}&q=${encodeURIComponent(search)}`, announcements: 'announcements', storage: '', audit: `audit?page=${page}` }
     const path = paths[view]
     void (path ? adminRequest<unknown>(token, path, controller.signal) : Promise.resolve(null)).then(value => {
-      if (!controller.signal.aborted) setResource({ key, data: path ? { [view]: value } : {} })
+      if (!controller.signal.aborted) { setResource({ key, data: path ? { [view]: value } : {} }); setAnnouncementNow(Date.now()) }
     }).catch(error => {
       if (!controller.signal.aborted) setResource({ key, error: handleFailure(error) })
     })
@@ -113,6 +114,19 @@ export default function AdminWorkspace({ token, admin, lang, onSignIn, onCatalog
     // Request identity includes all filters; callbacks only report this request's failure.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, key])
+  useEffect(() => {
+    const now = Date.now()
+    const boundaries = data?.announcements?.items.flatMap(item => !item.active ? [] : [
+      item.startsAt ? Date.parse(item.startsAt) : NaN,
+      item.endsAt ? Date.parse(item.endsAt) + 1 : NaN,
+    ]).filter(time => Number.isFinite(time) && time > now) || []
+    if (!boundaries.length) return
+    const timer = window.setTimeout(() => setAnnouncementNow(Date.now()), Math.min(2_147_483_647, Math.min(...boundaries) - now))
+    return () => window.clearTimeout(timer)
+  }, [data?.announcements, announcementNow])
+  const announcementStatus = (item: Announcement) => !item.active ? text('Đã tắt', 'Disabled')
+    : item.startsAt && Date.parse(item.startsAt) > announcementNow ? text('Đã lên lịch', 'Scheduled')
+      : item.endsAt && Date.parse(item.endsAt) < announcementNow ? text('Đã hết hạn', 'Expired') : text('Đang hiển thị', 'Live')
   useEffect(() => {
     if (modal?.kind !== 'book') return
     const controller = new AbortController()
@@ -158,6 +172,7 @@ export default function AdminWorkspace({ token, admin, lang, onSignIn, onCatalog
       if (signal.aborted) return
       setModal(null); setNotice(text('Đã lưu thay đổi.', 'Changes saved.')); setRevision(n => n + 1)
       if (endpoint.startsWith('catalog/') || endpoint.startsWith('categories/')) onCatalogChanged()
+      if (endpoint.startsWith('announcements/')) window.dispatchEvent(new Event(ANNOUNCEMENTS_UPDATED_EVENT))
       if (endpoint === 'profile') onProfileChanged()
     } catch (error) { if (!signal.aborted) setFormError(handleFailure(error)) }
     finally { if (!signal.aborted) { busyRef.current = false; setBusy(false) } }
@@ -221,7 +236,7 @@ export default function AdminWorkspace({ token, admin, lang, onSignIn, onCatalog
         {button(text('Xem xung đột', 'View conflicts'), () => open({ kind: 'conflicts', user }))}
         {button(text('Lịch sử giao dịch', 'Transaction history'), () => open({ kind: 'transactions', user }))}
       </div>])} />}
-      {data?.announcements && <Table label={title} heads={[text('Tiêu đề', 'Title'), text('Nội dung', 'Message'), text('Lịch / Trạng thái', 'Schedule / Status'), text('Thao tác', 'Actions')]} rows={data.announcements.items.map(item => [<><strong>{item.title}</strong><small>{item.id} · {item.type}</small></>, item.message, <>{item.active ? text('Đã bật', 'Enabled') : text('Đã tắt', 'Disabled')}<small>{date(item.startsAt)} → {date(item.endsAt)}</small></>, <div key="actions" className="admin-actions">{button(text('Sửa', 'Edit'), () => open({ kind: 'announcement', item }))}{button(text('Xóa', 'Delete'), () => confirm(text('Xóa thông báo?', 'Delete announcement?'), item.title, 'announcements/delete', { id: item.id }))}</div>])} />}
+      {data?.announcements && <Table label={title} heads={[text('Tiêu đề', 'Title'), text('Nội dung', 'Message'), text('Lịch / Trạng thái', 'Schedule / Status'), text('Thao tác', 'Actions')]} rows={data.announcements.items.map(item => [<><strong>{item.title}</strong><small>{item.id} · {item.type}</small></>, item.message, <>{announcementStatus(item)}<small>{date(item.startsAt)} → {date(item.endsAt)}</small></>, <div key="actions" className="admin-actions">{button(text('Sửa', 'Edit'), () => open({ kind: 'announcement', item }))}{button(text('Xóa', 'Delete'), () => confirm(text('Xóa thông báo?', 'Delete announcement?'), item.title, 'announcements/delete', { id: item.id }))}</div>])} />}
       {view === 'storage' && !loading && !loaded?.error && <><p className="muted">{text('Quét tối đa 500 đối tượng mỗi lượt. Chỉ hiển thị số lượng và dung lượng tổng; không mở tệp riêng của người dùng.', 'Scan up to 500 objects per batch. Only totals are shown; private user files are not opened.')}</p><div key="actions" className="admin-actions">{button(storage ? text('Quét lại từ đầu', 'Restart scan') : text('Bắt đầu quét', 'Start scan'), () => void scanStorage(true))}{storage && !storage.complete && button(text('Quét lượt tiếp', 'Scan next batch'), () => void scanStorage(false))}</div>{storage && <><Table label={title} heads={[text('Phạm vi', 'Scope'), text('Đối tượng', 'Objects'), text('Dung lượng', 'Size')]} rows={Object.entries(storage.groups).map(([group, total]) => [group === 'public' ? text('Công khai', 'Public') : group === 'private' ? text('Riêng tư', 'Private') : text('Khác', 'Other'), total.objects, `${(total.bytes / 1024 / 1024).toLocaleString(lang, { maximumFractionDigits: 2 })} MB`])} /><p role="status">{storage.complete ? text('Quét hoàn tất', 'Scan complete') : text('Kết quả tạm tính; còn đối tượng chưa quét.', 'Partial results; more objects remain.')} · {date(storage.measuredAt)}</p></>}</>}
       {data?.audit && <Table label={title} heads={[text('Thời điểm', 'Time'), text('Người thực hiện', 'Actor'), text('Thao tác', 'Action'), text('Đối tượng', 'Target'), text('Lý do', 'Reason')]} rows={data.audit.items.map(item => [date(item.created_at), item.actor_id, item.action, item.target_id, item.reason])} />}
       {resultPage && <div className="admin-pagination">{button(text('Trước', 'Previous'), () => setPage(n => n - 1), page === 0)}<span>{text('Trang ', 'Page ')}{page + 1}</span>{button(text('Sau', 'Next'), () => setPage(n => n + 1), !resultPage.hasMore)}</div>}

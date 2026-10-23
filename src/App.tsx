@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlignJustify, AlignLeft, ArrowLeft, ArrowRight, Award, BarChart3, BookMarked, BookOpen, Bookmark, Briefcase, Check, CheckCircle2, ChevronLeft, ChevronRight, Cloud, CloudOff, Download, Edit3, FileDown, FileText, Flame, FolderPlus, Globe, Highlighter, Home, Layers, Library, List, LogIn, Menu, PanelRightOpen, Plus, RotateCcw, Search, Settings2, Sparkles, Tag, Trash2, Type, X } from 'lucide-react'
 import { ApiError, deleteAccount, forgotPassword, getCatalog, getEntitlement, getUser, loadBookBytes, login, loginWithGoogle, logout, register, updateProfile, type Entitlement } from './api'
+import SystemAnnouncements from './SystemAnnouncements'
 import type { StealthPosition } from './stealth/StealthReader'
 import { readStealthCheckpoint, stealthLocator } from './stealth/checkpoint'
 import { applyLibraryRestore, getCachedCatalog, getFile, getFiles, getOfflineBook, getOfflineBooks, getPending, keyFor, readSession, removeFile, removeLocalDocument, removeOfflineBook, saveCachedCatalog, saveSession, SESSION_STORAGE_KEY } from './store'
@@ -1785,6 +1786,8 @@ async function sha256Hex(file: Blob): Promise<string> {
           <button className="mobile-menu icon-button" onClick={() => setSidebarOpen(true)} aria-label={translate("Mở menu", lang)}><Menu size={22} /></button>
         </div>
       </header>
+
+      <SystemAnnouncements lang={lang} />
 
       {page === 'home' && <>
         <section className="swiss-hero">

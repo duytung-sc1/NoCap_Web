@@ -60,6 +60,16 @@ records. Admin trial grants are shown separately and are never counted as paid
 transactions. This view covers SePay orders, not Google Play purchase history or
 unmatched bank transfers; **Audit log** remains the record of admin actions.
 
+**Announcements** published by administrators appear below the Web navigation
+for guests and signed-in readers. Only enabled notices within their start/end
+schedule are displayed; the admin list distinguishes scheduled, live, expired
+and disabled notices. The browser refreshes visible notices every minute, on
+focus/return online, and immediately after a successful announcement save or
+delete in that tab. Each message is plain text and can be dismissed for the
+current tab session; an edited revision is shown again. Announcement failures
+do not block loading or reading books. This uses the existing public Worker
+endpoint and does not require a backend migration.
+
 ## Navigation and documents
 
 - `/`, `/explore`, `/library`, `/memory`, `/stats`, `/account`.

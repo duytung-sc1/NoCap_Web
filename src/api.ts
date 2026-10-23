@@ -69,6 +69,16 @@ export async function getCatalog() {
   return api<{ books: Book[]; categories: Category[] }>('/api/v1/catalog')
 }
 
+export type PublicAnnouncement = {
+  id: string; title: string; message: string; type: 'info' | 'warning' | 'maintenance'
+  startsAt: string | null; endsAt: string | null; active: boolean; updatedAt?: string
+}
+export const ANNOUNCEMENTS_UPDATED_EVENT = 'nocap-announcements-updated'
+
+export async function getAnnouncements(signal?: AbortSignal) {
+  return api<{ announcements: PublicAnnouncement[] }>('/api/v1/announcements', { signal, credentials: 'omit' })
+}
+
 export async function login(email: string, password: string): Promise<Session> {
   return api('/api/v1/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) })
 }

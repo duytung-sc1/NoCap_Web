@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import AdminWorkspace from './AdminWorkspace'
-import { ApiError } from '../api'
+import { ANNOUNCEMENTS_UPDATED_EVENT, ApiError } from '../api'
 import type { AdminIdentity, CatalogRow } from './api'
 
 const request = vi.hoisted(() => vi.fn())
@@ -32,6 +32,72 @@ beforeEach(() => {
 afterEach(() => cleanup())
 
 describe('administrator workspace', () => {
+  it('updates an announcement at its scheduled start and after its inclusive end without reloading', async () => {
+    vi.useFakeTimers()
+    const now = Date.parse('2026-10-23T12:00:00.000Z')
+    vi.setSystemTime(now)
+    const original = request.getMockImplementation()!
+    request.mockImplementation(async (token, path, signal, data) => path === 'announcements' ? { items: [{
+      id: 'timed', title: 'Timed notice', message: 'Notice', type: 'info', active: true,
+      startsAt: new Date(now + 1000).toISOString(), endsAt: new Date(now + 2000).toISOString(),
+    }] } : original(token, path, signal, data))
+    try {
+      await act(async () => { setup() })
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Thông báo' })) })
+      expect(screen.getByText('Đã lên lịch')).toBeTruthy()
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+      expect(screen.getByText('Đang hiển thị')).toBeTruthy()
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+      expect(screen.getByText('Đang hiển thị')).toBeTruthy()
+      await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+      expect(screen.getByText('Đã hết hạn')).toBeTruthy()
+    } finally { cleanup(); vi.useRealTimers() }
+  })
+  it('distinguishes live, scheduled, expired and disabled announcements using inclusive schedule bounds', async () => {
+    const now = Date.parse('2026-10-23T12:00:00.000Z')
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now)
+    const original = request.getMockImplementation()!
+    const base = { message: 'Notice', type: 'info', active: true, startsAt: null, endsAt: null }
+    request.mockImplementation(async (token, path, signal, data) => path === 'announcements' ? { items: [
+      { ...base, id: 'future', title: 'Future notice', startsAt: new Date(now + 60000).toISOString() },
+      { ...base, id: 'past', title: 'Past notice', endsAt: new Date(now - 1).toISOString() },
+      { ...base, id: 'disabled', title: 'Disabled notice', active: false },
+      { ...base, id: 'start', title: 'Starts now', startsAt: new Date(now).toISOString() },
+      { ...base, id: 'end', title: 'Ends now', endsAt: new Date(now).toISOString() },
+    ] } : original(token, path, signal, data))
+    try {
+      setup(); fireEvent.click(screen.getByRole('button', { name: 'Thông báo' }))
+      const future = (await screen.findByText('Future notice')).closest('tr')!
+      expect(within(future).getByText('Đã lên lịch')).toBeTruthy()
+      expect(within(screen.getByText('Past notice').closest('tr')!).getByText('Đã hết hạn')).toBeTruthy()
+      expect(within(screen.getByText('Disabled notice').closest('tr')!).getByText('Đã tắt')).toBeTruthy()
+      for (const title of ['Starts now', 'Ends now']) expect(within(screen.getByText(title).closest('tr')!).getByText('Đang hiển thị')).toBeTruthy()
+    } finally { clock.mockRestore() }
+  })
+  it('refreshes public announcements after a successful save and delete, but not a rejected change', async () => {
+    const updated = vi.fn()
+    window.addEventListener(ANNOUNCEMENTS_UPDATED_EVENT, updated)
+    const original = request.getMockImplementation()!
+    request.mockImplementation(async (token, path, signal, data) => path === 'announcements' ? { items: [{ id: 'notice', title: 'Site notice', message: 'Message', type: 'info', active: true, startsAt: null, endsAt: null }] } : original(token, path, signal, data))
+    try {
+      setup(); fireEvent.click(screen.getByRole('button', { name: 'Thông báo' }))
+      fireEvent.click(await screen.findByRole('button', { name: 'Sửa' }))
+      let dialog = screen.getByRole('dialog')
+      fireEvent.change(within(dialog).getByLabelText('Lý do thay đổi'), { target: { value: 'Correct notice' } })
+      request.mockRejectedValueOnce(new ApiError(409, 'Save failed', 'STALE_DATA'))
+      fireEvent.submit(dialog.querySelector('form')!)
+      await within(dialog).findByRole('alert')
+      expect(updated).not.toHaveBeenCalled()
+      fireEvent.submit(dialog.querySelector('form')!)
+      await waitFor(() => expect(updated).toHaveBeenCalledOnce())
+      fireEvent.click(await screen.findByRole('button', { name: 'Xóa' }))
+      dialog = screen.getByRole('dialog')
+      fireEvent.change(within(dialog).getByLabelText('Lý do thay đổi'), { target: { value: 'Remove notice' } })
+      fireEvent.submit(dialog.querySelector('form')!)
+      await waitFor(() => expect(updated).toHaveBeenCalledTimes(2))
+      expect(request).toHaveBeenCalledWith('qa-admin-token', 'announcements/delete', expect.any(AbortSignal), { id: 'notice', reason: 'Remove notice' })
+    } finally { window.removeEventListener(ANNOUNCEMENTS_UPDATED_EVENT, updated) }
+  })
   it('opens global payments separately from the per-user history and handles revoked access', async () => {
     setup(); await screen.findByText('Tài khoản được bật')
     fireEvent.click(screen.getByRole('button', { name: 'Giao dịch & Pro' }))

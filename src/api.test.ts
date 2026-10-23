@@ -1,9 +1,25 @@
 import { describe, expect, it, vi } from 'vitest'
-import { API_BASE, loadBookBytes, createSePayOrder, getSePayOrder, getSePayPlans } from './api'
+import { API_BASE, loadBookBytes, createSePayOrder, getSePayOrder, getSePayPlans, getAnnouncements } from './api'
 import { androidRecordId } from './sync'
 import type { Book } from './types'
 import { allowsPro, proAccessExpiresAt, verifyProAccess } from './entitlements'
 import { readSession, saveSession } from './store'
+
+it('loads public announcements without account credentials or caching and forwards cancellation', async () => {
+  const result = { announcements: [{ id: 'hello', title: 'Hello', message: 'Welcome', active: true }] }
+  const fetchMock = vi.fn().mockResolvedValue(Response.json(result))
+  vi.stubGlobal('fetch', fetchMock)
+  const controller = new AbortController()
+  try {
+    expect(await getAnnouncements(controller.signal)).toEqual(result)
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe(`${API_BASE}/api/v1/announcements`)
+    expect(init.cache).toBe('no-store')
+    expect(init.credentials).toBe('omit')
+    expect(new Headers(init.headers).has('Authorization')).toBe(false)
+    expect(init.signal).toBeInstanceOf(AbortSignal)
+  } finally { vi.unstubAllGlobals() }
+})
 
 it('preserves Pro access through login and session restore with backend timestamp units', async () => {
   const now = Date.parse('2026-10-08T09:00:00Z')
