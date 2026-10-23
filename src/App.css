@@ -555,8 +555,8 @@ body, .main-area {
 /* 8. Enhanced Tactile Book Card */
 .book-card {
   border-radius: 18px !important;
-  border: 1px solid rgba(41, 37, 36, 0.08) !important;
-  background: #ffffff !important;
+  border: 1px solid var(--site-line);
+  background: var(--site-panel);
   transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s !important;
 }
 .book-card:hover {
