@@ -13,6 +13,7 @@ import { reviewIsDue, type ReviewItemPayload } from './review'
 import type { Book, Category, FontFamily, LocalFile, PendingOperation, ReaderLocation, ReaderWidth, Session, SyncRecord, TextAlignment, TocItem } from './types'
 import { OceanWaves } from './OceanWaves'
 import { getStoredLang, setStoredLang, t, type Lang } from './i18n'
+import { readRememberLogin, saveRememberLogin } from './authPreferences'
 import './App.css'
 import './AppTheme.css'
 import { useSiteTheme } from './siteTheme'
@@ -846,12 +847,12 @@ function App() {
   const readingDayCount = activity.activeDays
   const readingStreak = activity.streak
 
-  async function authenticated(value: Session) {
+  async function authenticated(value: Session, remember: boolean) {
     closeReaderRef.current()
     if (preferenceTimer.current) clearTimeout(preferenceTimer.current)
     setRecords([]); setLocalFiles([]); setOfflineIds(new Set())
     sessionRef.current = value; profileRef.current = profileFor(value)
-    saveSession(value); setSession(value); setAuthOpen(false)
+    saveSession(value, remember); saveRememberLogin(remember); setSession(value); setAuthOpen(false)
     if (route.kind !== 'book' && route.kind !== 'read' && !(route.kind === 'page' && route.page === 'admin')) setPage('home')
     setNotice(curT.auth.signedIn(value.user.email))
   }
@@ -2404,7 +2405,7 @@ async function sha256Hex(file: Blob): Promise<string> {
       </section>)}</div>
     </div></div>}
 
-    {authOpen && <AuthDialog lang={lang} onClose={() => setAuthOpen(false)} onSuccess={value => void authenticated(value)} />}
+    {authOpen && <AuthDialog lang={lang} onClose={() => setAuthOpen(false)} onSuccess={(value, remember) => void authenticated(value, remember)} />}
     {selectedBook && <BookDetailsModal
       book={selectedBook}
       lang={lang}
@@ -2583,10 +2584,11 @@ function BookDetailsModal({
   )
 }
 
-function AuthDialog({ lang, onClose, onSuccess }: { lang: Lang; onClose: () => void; onSuccess: (session: Session) => void }) {
+function AuthDialog({ lang, onClose, onSuccess }: { lang: Lang; onClose: () => void; onSuccess: (session: Session, remember: boolean) => void }) {
   const [mode, setMode] = useState<AuthMode>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [rememberLogin, setRememberLogin] = useState(readRememberLogin)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const googleBtnRef = useRef<HTMLDivElement>(null)
@@ -2617,11 +2619,11 @@ function AuthDialog({ lang, onClose, onSuccess }: { lang: Lang; onClose: () => v
     try {
       const result = await action()
       if (!current()) return
-      if (result) onSuccess(result)
+      if (result) onSuccess(result, rememberLogin)
       else setMessage(successMessage)
     } catch (error) { if (current()) setMessage(readableError(error, lang)) }
     finally { if (current()) { request.current.busy = false; setBusy(false) } }
-  }, [lang, onSuccess])
+  }, [lang, onSuccess, rememberLogin])
 
   useEffect(() => {
     if (mode !== 'login' && mode !== 'register') return
@@ -2692,8 +2694,12 @@ function AuthDialog({ lang, onClose, onSuccess }: { lang: Lang; onClose: () => v
           <div className="auth-divider"><span>{mode === 'register' ? (lang === 'vi' ? 'hoặc đăng ký bằng email' : 'or register with email') : (lang === 'vi' ? 'hoặc đăng nhập bằng mật khẩu' : 'or sign in with a password')}</span></div>
         )}
         <form onSubmit={event => void submit(event)}>
-          <label>{mode === 'login' ? (lang === 'vi' ? 'Email hoặc tên đăng nhập' : 'Email or username') : 'Email'}<input type={mode === 'login' ? 'text' : 'email'} autoComplete={mode === 'login' ? 'username' : 'email'} autoCapitalize="none" spellCheck={false} required maxLength={254} value={email} onChange={event => setEmail(event.target.value)} placeholder={mode === 'login' ? (lang === 'vi' ? 'Email hoặc tên đăng nhập' : 'Email or username') : 'email@example.com'} /></label>
-          {mode !== 'forgot' && <label>{copy.password}<input type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} minLength={mode === 'register' ? 8 : undefined} required value={password} onChange={event => setPassword(event.target.value)} placeholder={mode === 'register' ? copy.newPasswordPlaceholder : copy.passwordPlaceholder} /></label>}
+          <label>{mode === 'login' ? (lang === 'vi' ? 'Email hoặc tên đăng nhập' : 'Email or username') : 'Email'}<input name={mode === 'login' ? 'username' : 'email'} type={mode === 'login' ? 'text' : 'email'} autoComplete={mode === 'login' ? 'username' : 'email'} autoCapitalize="none" spellCheck={false} required maxLength={254} value={email} onChange={event => setEmail(event.target.value)} placeholder={mode === 'login' ? (lang === 'vi' ? 'Email hoặc tên đăng nhập' : 'Email or username') : 'email@example.com'} /></label>
+          {mode !== 'forgot' && <label>{copy.password}<input name="password" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} minLength={mode === 'register' ? 8 : undefined} required value={password} onChange={event => setPassword(event.target.value)} placeholder={mode === 'register' ? copy.newPasswordPlaceholder : copy.passwordPlaceholder} /></label>}
+          {mode !== 'forgot' && <>
+            <label className="auth-remember"><input name="remember-login" type="checkbox" checked={rememberLogin} disabled={busy} onChange={event => setRememberLogin(event.target.checked)} aria-describedby="auth-remember-help" /><span>{copy.rememberLogin}</span></label>
+            <p id="auth-remember-help" className="auth-remember-help">{rememberLogin ? copy.rememberLoginOn : copy.rememberLoginOff}</p>
+          </>}
           {message && <p className="form-message" role="status">{message}</p>}
           <button className="primary wide" type="submit" disabled={busy}>{busy ? copy.processing : mode === 'login' ? copy.login : mode === 'register' ? copy.register : copy.sendInstructions} <ArrowRight size={17} /></button>
         </form>

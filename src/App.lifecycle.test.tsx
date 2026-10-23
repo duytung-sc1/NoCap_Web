@@ -6,6 +6,7 @@ import type { ReaderSearchResult, ReaderSearchSource } from './readerSearch'
 import type { ReaderSpeechSource } from './readerSpeech'
 import { MockSynthesis, MockUtterance } from './readerSpeech.testUtils'
 import { readSession, saveSession, SESSION_STORAGE_KEY } from './store'
+import { REMEMBER_LOGIN_KEY } from './authPreferences'
 import App from './App'
 import { ApiError } from './api'
 import { saveStealthCheckpoint } from './stealth/checkpoint'
@@ -892,6 +893,65 @@ describe('Reading Memory PDF export', () => {
 })
 
 describe('account and reader lifecycle', () => {
+  it.each([true, false])('honors the remember-login choice after sign-in and profile verification: %s', async remember => {
+    fixtures.login.mockResolvedValue(session)
+    render(<App />)
+    fireEvent.click(screen.getAllByRole('button', { name: 'Đăng nhập' })[0])
+    const dialog = screen.getByRole('dialog', { name: 'Chào mừng quay lại.' })
+    const checkbox = within(dialog).getByRole('checkbox', { name: 'Ghi nhớ đăng nhập' }) as HTMLInputElement
+    expect(checkbox.checked).toBe(true)
+    if (!remember) fireEvent.click(checkbox)
+    expect(within(dialog).getByText(remember ? 'Giữ đăng nhập trên thiết bị này khi mở lại trình duyệt.' : 'Chỉ giữ đăng nhập trong tab hiện tại.')).toBeTruthy()
+    fireEvent.change(within(dialog).getByLabelText('Email hoặc tên đăng nhập'), { target: { value: session.user.email } })
+    const password = within(dialog).getByLabelText('Mật khẩu') as HTMLInputElement
+    expect(password.autocomplete).toBe('current-password')
+    fireEvent.change(password, { target: { value: 'qa-password-do-not-persist' } })
+    fireEvent.submit(dialog.querySelector('form')!)
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Chào mừng quay lại.' })).toBeNull())
+    expect(readSession()?.token).toBe(session.token)
+    expect(localStorage.getItem(REMEMBER_LOGIN_KEY)).toBe(String(remember))
+    expect(localStorage.getItem(SESSION_STORAGE_KEY)).toBe(remember ? JSON.stringify(session) : 'null')
+    expect(JSON.stringify({ ...localStorage, ...sessionStorage })).not.toContain('qa-password-do-not-persist')
+    cleanup()
+    sessionStorage.clear()
+    expect(readSession()?.token ?? null).toBe(remember ? session.token : null)
+  })
+
+  it('remembers the previous checkbox choice but does not change it after a failed login', async () => {
+    localStorage.setItem(REMEMBER_LOGIN_KEY, 'false')
+    fixtures.login.mockRejectedValue(new ApiError(401, 'QA invalid credentials'))
+    render(<App />)
+    fireEvent.click(screen.getAllByRole('button', { name: 'Đăng nhập' })[0])
+    const dialog = screen.getByRole('dialog', { name: 'Chào mừng quay lại.' })
+    const checkbox = within(dialog).getByRole('checkbox', { name: 'Ghi nhớ đăng nhập' }) as HTMLInputElement
+    expect(checkbox.checked).toBe(false)
+    fireEvent.click(checkbox)
+    fireEvent.change(within(dialog).getByLabelText('Email hoặc tên đăng nhập'), { target: { value: session.user.email } })
+    fireEvent.change(within(dialog).getByLabelText('Mật khẩu'), { target: { value: 'qa-password' } })
+    fireEvent.submit(dialog.querySelector('form')!)
+    expect(await within(dialog).findByRole('status')).toBeTruthy()
+    expect(localStorage.getItem(REMEMBER_LOGIN_KEY)).toBe('false')
+    expect(readSession()).toBeNull()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Quên mật khẩu?' }))
+    expect(within(dialog).queryByRole('checkbox')).toBeNull()
+  })
+
+  it('applies the current remember-login choice to Google sign-in too', async () => {
+    let callback!: (value: { credential: string }) => Promise<void>
+    ;(window as unknown as { google: unknown }).google = { accounts: { id: {
+      initialize: (options: { callback: typeof callback }) => { callback = options.callback }, renderButton: () => {},
+    } } }
+    fixtures.googleLogin.mockResolvedValue(session)
+    render(<App />)
+    fireEvent.click(screen.getAllByRole('button', { name: 'Đăng nhập' })[0])
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('checkbox', { name: 'Ghi nhớ đăng nhập' }))
+    await act(async () => { await callback({ credential: 'qa-credential' }) })
+    expect(fixtures.googleLogin).toHaveBeenCalledWith('qa-credential')
+    expect(readSession()?.token).toBe(session.token)
+    expect(localStorage.getItem(SESSION_STORAGE_KEY)).toBe('null')
+    expect(localStorage.getItem(REMEMBER_LOGIN_KEY)).toBe('false')
+  })
+
   it('keeps the stealth row on pagehide even if the hidden normal reader publishes another location', async () => {
     saveSession(session)
     fixtures.getFiles.mockResolvedValue([file('QA document')])

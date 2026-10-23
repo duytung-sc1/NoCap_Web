@@ -59,6 +59,16 @@ session and a 15-minute cooldown after five failed password attempts shared
 across that administrator's name and email. Apply backend migration `0016` and
 deploy its authentication update before releasing this sign-in form.
 
+The sign-in and registration forms expose **Remember me** (on by default to
+preserve existing behavior). A remembered login stays in this browser until the
+server-issued session expires; turning it off keeps the token in tab storage
+only, including across reloads. Profile refreshes and edits preserve that choice.
+The preference itself is a boolean; passwords are never written to browser
+storage. Standard username/current-password autocomplete remains available to
+the browser's password manager. Administrator sessions still expire after one
+hour regardless of the choice. This is a Web-only change, with no backend or
+database migration.
+
 In **Administration → Users & Pro → Transaction history**, administrators can
 view a selected account's SePay payment orders, amounts, plan durations, effective
 statuses, payment/expiry times and transaction references. History is read-only,

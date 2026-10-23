@@ -143,3 +143,88 @@ describe('persistent web login', () => {
     expect(() => saveSession(null)).not.toThrow()
   })
 })
+
+describe('explicit tab-only login', () => {
+  it('survives reloads without promoting the token, then ends when tab storage is gone', () => {
+    saveSession(session, false)
+    expect(readSession()).toEqual(session)
+    expect(readSession()).toEqual(session)
+    expect(persistent.getItem(SESSION_STORAGE_KEY)).toBe('null')
+    vi.stubGlobal('sessionStorage', memoryStorage())
+    expect(readSession()).toBeNull()
+  })
+
+  it('clears a previously remembered account and prevents legacy credentials from restoring it', () => {
+    saveSession({ ...session, token: 'old-persistent-token' })
+    tab.setItem(SESSION_STORAGE_KEY, JSON.stringify({ ...session, token: 'legacy-token' }))
+    saveSession(session, false)
+    expect(readSession()).toEqual(session)
+    expect(tab.getItem(SESSION_STORAGE_KEY)).toBeNull()
+    expect(persistent.getItem(SESSION_STORAGE_KEY)).toBe('null')
+  })
+
+  it('preserves the choice when profile verification or a profile edit saves the session again', () => {
+    saveSession(session, false)
+    const updated = { ...readSession()!, user: { ...session.user, displayName: 'Updated reader' } }
+    saveSession(updated)
+    expect(readSession()).toEqual(updated)
+    expect(persistent.getItem(SESSION_STORAGE_KEY)).toBe('null')
+    vi.stubGlobal('sessionStorage', memoryStorage())
+    expect(readSession()).toBeNull()
+  })
+
+  it('can explicitly remember the same account after a tab-only login', () => {
+    saveSession(session, false)
+    saveSession(session, true)
+    tab.clear()
+    expect(readSession()).toEqual(session)
+    expect(persistent.getItem(SESSION_STORAGE_KEY)).toContain(session.token)
+  })
+
+  it('keeps logout effective after the tab-only session is gone', () => {
+    saveSession(session, false)
+    saveSession(null)
+    tab.setItem(SESSION_STORAGE_KEY, JSON.stringify(session))
+    expect(readSession()).toBeNull()
+    expect(tab.getItem(SESSION_STORAGE_KEY)).toBeNull()
+    tab.clear()
+    expect(readSession()).toBeNull()
+  })
+
+  it('expires an administrator session at its unchanged server-issued one-hour deadline', () => {
+    const admin = { ...session, expiresAt: now / 1000 + 3600 }
+    saveSession(admin, false)
+    expect(readSession()?.expiresAt).toBe(admin.expiresAt)
+    vi.setSystemTime(admin.expiresAt * 1000)
+    expect(readSession()).toBeNull()
+    expect(readSession()).toBeNull()
+    expect(persistent.getItem(SESSION_STORAGE_KEY)).toBe('null')
+  })
+
+  it('remains tab-only when persistent writes are blocked and later become available', () => {
+    saveSession({ ...session, token: 'old-persistent-token' })
+    const writing = vi.spyOn(persistent, 'setItem').mockImplementation(() => { throw new DOMException('Full', 'QuotaExceededError') })
+    saveSession(session, false)
+    expect(readSession()).toEqual(session)
+    writing.mockRestore()
+    expect(readSession()).toEqual(session)
+    expect(persistent.getItem(SESSION_STORAGE_KEY)).not.toContain(session.token)
+  })
+
+  it('adopts a new shared account instead of restoring a stale tab-only account', () => {
+    saveSession(session, false)
+    const next = { ...session, token: 'another-tab-token', user: { ...session.user, id: 'other-user' } }
+    persistent.setItem(SESSION_STORAGE_KEY, JSON.stringify(next))
+    expect(readSession()).toEqual(next)
+  })
+
+  it('does not fall back to persistent storage when tab storage refuses writes', () => {
+    vi.stubGlobal('sessionStorage', {
+      getItem: () => null,
+      removeItem: () => {},
+      setItem: () => { throw new DOMException('Blocked', 'SecurityError') },
+    })
+    expect(() => saveSession(session, false)).not.toThrow()
+    expect(persistent.getItem(SESSION_STORAGE_KEY)).toBe('null')
+  })
+})

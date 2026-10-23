@@ -384,6 +384,8 @@ export function readSession(): Session | null {
       // using it as soon as another tab changes the shared credentials.
       if (raw === undefined || fallback.sharedRaw === undefined || raw === fallback.sharedRaw) {
         const value = parseSession(fallback.raw)
+        // An explicit tab-only login must never be promoted to localStorage.
+        if (fallback.remember === false && value) return value
         saveSession(value)
         return value
       }
@@ -405,8 +407,28 @@ export function readSession(): Session | null {
   return legacy
 }
 
-export function saveSession(value: Session | null) {
+export function saveSession(value: Session | null, remember?: boolean) {
   const raw = JSON.stringify(value)
+  if (value && remember === undefined) {
+    try {
+      const fallback = JSON.parse(sessionStorage.getItem(SESSION_FALLBACK_STORAGE_KEY) || 'null')
+      if (fallback?.remember === false && parseSession(fallback.raw)?.token === value.token) remember = false
+    } catch { /* Keep the existing default for sessions without a tab-only choice. */ }
+  }
+  if (value && remember === false) {
+    let sharedRaw: string | null | undefined
+    try { sharedRaw = localStorage.getItem(SESSION_STORAGE_KEY) } catch { /* Storage may be disabled. */ }
+    try {
+      // Invalidate any old persistent login without writing this token to disk.
+      localStorage.setItem(SESSION_STORAGE_KEY, 'null')
+      sharedRaw = 'null'
+    } catch { /* The tab fallback still overrides readable old credentials. */ }
+    try {
+      sessionStorage.setItem(SESSION_FALLBACK_STORAGE_KEY, JSON.stringify({ raw, sharedRaw, remember: false }))
+    } catch { /* Do not turn a tab-only choice into a persistent login. */ }
+    clearLegacySession()
+    return
+  }
   try {
     // Keep a null marker after logout so an older tab cannot restore its legacy session.
     localStorage.setItem(SESSION_STORAGE_KEY, raw)
