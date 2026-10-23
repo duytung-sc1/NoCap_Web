@@ -36,6 +36,8 @@ export const SYNC_KINDS = [
   'annotation_links',
   'exam_plans',
   'review_attempts',
+  'library_folders',
+  'book_folder_locations',
 ] as const
 
 export type SyncKind = typeof SYNC_KINDS[number]

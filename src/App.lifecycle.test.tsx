@@ -9,6 +9,7 @@ import { readSession, saveSession, SESSION_STORAGE_KEY } from './store'
 import { REMEMBER_LOGIN_KEY } from './authPreferences'
 import App from './App'
 import { ApiError } from './api'
+import { androidRecordId } from './sync'
 import { saveStealthCheckpoint } from './stealth/checkpoint'
 import { DRAWING_COLORS, emptyDrawing } from './drawing'
 import { emptyReaderNoteDraft, readReaderNoteDraft, writeReaderNoteDraft } from './readerNoteDrafts'
@@ -139,6 +140,48 @@ describe('system announcements integration', () => {
     expect(await screen.findByRole('heading', { name: 'Lời Chào' })).toBeTruthy()
     expect(screen.getByRole('region', { name: 'Thông báo từ NoCap' })).toBeTruthy()
     expect(announcementFixtures.get).toHaveBeenCalledWith(expect.any(AbortSignal))
+  })
+})
+
+describe('nested library integration', () => {
+  function nestedLibrary() {
+    const profile = `ACCOUNT:${session.user.id}`, folderId = crypto.randomUUID(), childId = crypto.randomUUID()
+    const locationId = androidRecordId('book_folder_locations', 'nested-public-book')
+    const entry = (kind: SyncRecord['kind'], id: string, payload: Record<string, unknown>): SyncRecord => ({ key: `${profile}:${kind}:${id}`, profile, kind, id, version: 1, deleted: false, payload })
+    fixtures.localRecords.mockResolvedValue([
+      entry('library_folders', folderId, { id: folderId, name: 'An ninh mạng', parent_id: null, created_at: 1, updated_at: 1 }),
+      entry('library_folders', childId, { id: childId, name: 'Web Security', parent_id: folderId, created_at: 1, updated_at: 1 }),
+      entry('book_folder_locations', locationId, { id: locationId, book_id: 'nested-public-book', folder_id: childId, updated_at: 1 }),
+    ])
+    fixtures.getCatalog.mockResolvedValue({ books: [{ id: 'nested-public-book', title: 'Nested Research Book', author: 'Research Author', fileUrl: 'https://example.test/book.epub', format: 'EPUB' }], categories: [] })
+    saveSession(session)
+    window.history.replaceState(null, '', '/library')
+  }
+
+  it('keeps a folder-organized public book in the library and opens it through both view modes', async () => {
+    nestedLibrary()
+    render(<App />)
+    const folder = await screen.findByRole('button', { name: 'Mở thư mục An ninh mạng' })
+    expect(screen.queryByRole('button', { name: 'Nested Research Book' })).toBeNull()
+    fireEvent.click(folder)
+    fireEvent.click(screen.getByRole('button', { name: 'Mở thư mục Web Security' }))
+    expect(await screen.findByRole('button', { name: 'Nested Research Book' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Cây thư mục' }))
+    const workspace = within(screen.getByRole('region', { name: 'Thư mục tủ sách' }))
+    fireEvent.click(workspace.getByRole('button', { name: 'Mở rộng tất cả' }))
+    fireEvent.click(workspace.getByRole('button', { name: 'Mở Nested Research Book' }))
+    expect(await screen.findByText('QA reader content')).toBeTruthy()
+    expect(fixtures.loadBytes).toHaveBeenCalledWith(expect.objectContaining({ id: 'nested-public-book' }), session.token, expect.objectContaining({ signal: expect.any(AbortSignal) }))
+  })
+
+  it('finds nested books from the library root and reveals their full folder path', async () => {
+    nestedLibrary()
+    render(<App />)
+    await screen.findByRole('button', { name: 'Mở thư mục An ninh mạng' })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Tìm sách' }), { target: { value: 'Nested Research' } })
+    expect(await screen.findByRole('button', { name: 'Nested Research Book' })).toBeTruthy()
+    expect(screen.getByText('Tủ sách / An ninh mạng / Web Security')).toBeTruthy()
+    expect(screen.getByText('Đang hiển thị tài liệu phù hợp trong toàn bộ tủ sách.')).toBeTruthy()
   })
 })
 
@@ -1188,7 +1231,7 @@ describe('account and reader lifecycle', () => {
     await openLogin()
     expect(await screen.findByRole('heading', { name: 'Quản trị thư viện' })).toBeTruthy()
     expect(window.location.pathname).toBe('/admin')
-    expect(fixtures.adminRequest).toHaveBeenCalledWith(session.token, 'overview', expect.any(AbortSignal))
+    await waitFor(() => expect(fixtures.adminRequest).toHaveBeenCalledWith(session.token, 'overview', expect.any(AbortSignal)))
   })
 
   it('accepts the administrator login name while registration and recovery still require email', async () => {

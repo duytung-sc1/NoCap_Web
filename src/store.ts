@@ -71,9 +71,9 @@ async function withDatabase<T>(operation: (database: IDBPDatabase<NoCapDB>) => P
 
 const range = (profile: string) => IDBKeyRange.bound(`${profile}:`, `${profile}:\uffff`)
 export const keyFor = (profile: string, id: string) => `${profile}:${id}`
-// A legacy client can advance past Web-only rows. Replay once with the new
-// feed, using an independent cursor that an older open tab cannot overwrite.
-const syncCursorKey = (profile: string) => `sync-cursor:research-v1:${profile}`
+// Older clients advance past hidden Web-only records. Replay the folder-aware
+// feed once with an independent cursor so no folder/move can be skipped.
+const syncCursorKey = (profile: string) => `sync-cursor:library-v1:${profile}`
 
 export async function getFiles(profile: string) { return withDatabase(database => database.getAll('files', range(profile))) }
 export async function getFile(profile: string, id: string) { return withDatabase(database => database.get('files', keyFor(profile, id))) }
@@ -310,18 +310,23 @@ export async function acceptRemoteConflict(item: PendingOperation, remote: SyncV
 
 /** Apply a validated backup atomically, using target-account versions rather
  * than versions copied from a different account's snapshot. */
+export type LibraryRestoreEntry = { record: SyncRecord; sync: boolean }
 export async function applyLibraryRestore(
   profile: string,
-  records: Array<{ record: SyncRecord; sync: boolean }>,
+  records: LibraryRestoreEntry[],
   files: LocalFile[],
   offlineBooks: OfflineBook[],
+  prepare?: (entries: LibraryRestoreEntry[], current: SyncRecord[]) => LibraryRestoreEntry[],
 ) {
   await withDatabase(async database => {
     const transaction = database.transaction(['files', 'records', 'pending', 'offlineBooks'], 'readwrite')
     try {
+      // Reconcile folder identities against the same locked snapshot that will
+      // be restored; a deletion in another tab cannot race the remapping.
+      const entries = prepare ? prepare(records, await transaction.objectStore('records').getAll(range(profile))) : records
       for (const file of files) await transaction.objectStore('files').put(file)
       for (const file of offlineBooks) await transaction.objectStore('offlineBooks').put(file)
-      for (const { record, sync } of records) {
+      for (const { record, sync } of entries) {
         const current = await transaction.objectStore('records').get(record.key)
         const value = { ...record, version: current?.version || 0 }
         await transaction.objectStore('records').put(value)

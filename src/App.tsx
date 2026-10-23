@@ -18,6 +18,8 @@ import './App.css'
 import './AppTheme.css'
 import { useSiteTheme } from './siteTheme'
 import { SiteThemeQuickSwitch } from './SiteThemePicker'
+import { LibraryFoldersWorkspace } from './LibraryFoldersWorkspace'
+import { getLibraryFolderState, LibraryFolderError } from './libraryFolders'
 
 const ReaderPane = lazy(() => importWithChunkRecovery(() => import('./Reader')).then(module => ({ default: module.ReaderPane })))
 const StealthReader = lazy(() => importWithChunkRecovery(() => import('./stealth/StealthReader')).then(module => ({ default: module.StealthReader })))
@@ -750,7 +752,8 @@ function App() {
   }, [route, routeBook, profile, loadedProfile])
   const favorites = useMemo(() => new Set(records.filter(r => r.kind === 'favorites' && !r.deleted).map(r => toText(r.payload.book_id))), [records])
   const reading = useMemo(() => books.filter(book => !!progressFor(records, book.id)).sort((a, b) => Number(progressFor(records, b.id)?.payload.last_read_at || 0) - Number(progressFor(records, a.id)?.payload.last_read_at || 0)), [books, records])
-  const libraryBooks = useMemo(() => books.filter(book => book.source === 'local' || book.source === 'cloud' || offlineIds.has(book.id) || favorites.has(book.id) || !!progressFor(records, book.id)), [books, offlineIds, favorites, records])
+  const libraryFolderState = useMemo(() => getLibraryFolderState(records, profile), [records, profile])
+  const libraryBooks = useMemo(() => books.filter(book => book.source === 'local' || book.source === 'cloud' || offlineIds.has(book.id) || favorites.has(book.id) || libraryFolderState.bookFolders.has(book.id) || !!progressFor(records, book.id)), [books, offlineIds, favorites, records, libraryFolderState])
   const tags = useMemo(() => records.filter(record => record.kind === 'tags' && !record.deleted).map(record => ({ id: toText(record.payload.id), name: toText(record.payload.name) })).filter(item => item.id && item.name), [records])
   const collections = useMemo(() => records.filter(record => record.kind === 'collections' && !record.deleted).map(record => ({ id: toText(record.payload.id), name: toText(record.payload.name) })).filter(item => item.id && item.name), [records])
   const bookTags = useMemo(() => {
@@ -970,6 +973,40 @@ function App() {
         setOrganizationBusy(false)
       }
     }
+  }
+
+  async function changeLibraryFolders(action: () => Promise<unknown>): Promise<boolean> {
+    const targetProfile = profile, owner = session
+    const isCurrent = () => profileRef.current === targetProfile && sessionRef.current?.token === owner?.token && readSession()?.token === owner?.token
+    let committed = false
+    try {
+      await action()
+      committed = true
+      if (!isCurrent()) return true
+      await refreshLocal(targetProfile)
+      if (isCurrent() && owner) void synchronize(owner, true)
+      return true
+    } catch (error) {
+      if (isCurrent()) {
+        const messages: Record<string, [string, string]> = {
+          INVALID_NAME: ['Tên thư mục cần từ 1 đến 80 ký tự và không chứa ký tự điều khiển.', 'Folder names must contain 1–80 characters and no control characters.'],
+          INVALID_ID: ['Thư mục không hợp lệ. Hãy tải lại danh sách.', 'Invalid folder. Reload the library.'],
+          INVALID_BOOK_ID: ['Tài liệu không hợp lệ. Hãy chọn lại tài liệu.', 'Invalid document. Select the document again.'],
+          FOLDER_MISSING: ['Thư mục này đã bị xóa hoặc chưa đồng bộ. Hãy chọn lại nơi lưu.', 'This folder was deleted or has not synced. Select another destination.'],
+          CYCLE: ['Không thể chuyển thư mục vào chính nó hoặc vào thư mục con của nó.', 'A folder cannot be moved into itself or one of its descendants.'],
+          TOO_MANY: ['Mỗi lần có thể chuyển tối đa 1.000 tài liệu.', 'Move up to 1,000 documents at a time.'],
+        }
+        const message = error instanceof LibraryFolderError ? messages[error.code] : undefined
+        setNotice(message ? message[lang === 'vi' ? 0 : 1] : committed
+          ? (lang === 'vi' ? 'Đã lưu thay đổi nhưng chưa tải lại được Tủ sách. Mở lại trang để xem; không cần thực hiện lại thao tác.' : 'Changes were saved, but the library could not refresh. Reopen it to view them; do not repeat the action.')
+          : readableError(error, lang))
+      }
+      return committed
+    }
+  }
+
+  function libraryBookCard(book: Book) {
+    return <BookCard key={book.id} book={book} lang={lang} progress={Number(progressFor(records, book.id)?.payload.progression || 0)} onOpen={() => void openBook(book)} onStealth={() => void launchStealth(book)} onDetails={() => showBookDetails(book)} onFavorite={book.source === 'local' ? undefined : () => void toggleFavorite(book)} favorite={favorites.has(book.id)} onDelete={book.source === 'local' || book.source === 'cloud' ? () => void deleteBook(book) : undefined} offline={book.source === 'local' || offlineIds.has(book.id)} downloadBusy={downloadBusy === book.id} onDownload={(book.source === 'local' || book.fileUrl) ? () => void downloadBook(book) : undefined} />
   }
 
   async function handleCreateTag() {
@@ -2054,7 +2091,8 @@ async function sha256Hex(file: Blob): Promise<string> {
             </div>
           )}
           <div className="filter-bar"><label className="search-field"><Search size={18} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder={curT.filters.searchPlaceholder} aria-label={translate("Tìm sách", lang)} /></label><select value={category} onChange={event => setCategory(event.target.value)} aria-label={translate("Lọc thể loại", lang)}><option value="all">{curT.filters.allCategories}</option>{categories.map(item => <option key={item.id} value={item.id}>{translate(item.name, lang)}</option>)}</select><select value={sortOrder} onChange={e => setSortOrder(e.target.value as 'recent' | 'title' | 'progress')} aria-label={translate("Sắp xếp sách", lang)}><option value="recent">{curT.filters.recent}</option><option value="title">{curT.filters.title}</option><option value="progress">{curT.filters.progress}</option></select>{page === 'library' && (tags.length > 0 || collections.length > 0) && <select value={organizationFilter} onChange={event => setOrganizationFilter(event.target.value)} aria-label={translate("Lọc theo thẻ hoặc bộ sưu tập", lang)}><option value="all">{curT.filters.allTagsAndCollections}</option>{tags.length > 0 && <optgroup label={curT.filters.tagsGroup}>{tags.map(tag => <option key={`tag:${tag.id}`} value={`tag:${tag.id}`}>{tag.name}</option>)}</optgroup>}{collections.length > 0 && <optgroup label={curT.filters.collectionsGroup}>{collections.map(collection => <option key={`collection:${collection.id}`} value={`collection:${collection.id}`}>{collection.name}</option>)}</optgroup>}</select>}<span>{curT.filters.docCount(filteredBooks.length)}</span></div>
-          {filteredBooks.length ? <div className="book-grid">{filteredBooks.map(book => <BookCard key={book.id} book={book} lang={lang} progress={Number(progressFor(records, book.id)?.payload.progression || 0)} onOpen={() => void openBook(book)} onStealth={() => void launchStealth(book)} onDetails={() => showBookDetails(book)} onFavorite={book.source === 'local' ? undefined : () => void toggleFavorite(book)} favorite={favorites.has(book.id)} onDelete={book.source === 'local' || book.source === 'cloud' ? () => void deleteBook(book) : undefined} offline={book.source === 'local' || offlineIds.has(book.id)} downloadBusy={downloadBusy === book.id} onDownload={(book.source === 'local' || book.fileUrl) ? () => void downloadBook(book) : undefined} />)}</div> : <div className="empty-state"><Library size={30} /><h3>{curT.filters.emptyTitle}</h3><p>{curT.filters.emptyDesc}</p><button className="secondary" onClick={() => { setQuery(''); setCategory('all'); setShelfFilter('all'); setOrganizationFilter('all') }}>{curT.filters.clearFilter}</button></div>}
+          {page === 'library' ? <LibraryFoldersWorkspace key={profile} profile={profile} lang={lang} records={records} books={filteredBooks} allBooks={libraryBooks} filterActive={!!query.trim() || category !== 'all' || shelfFilter !== 'all' || organizationFilter !== 'all'} renderBook={libraryBookCard} onOpenBook={book => void openBook(book)} onDetailsBook={showBookDetails} onMutate={changeLibraryFolders} />
+            : filteredBooks.length ? <div className="book-grid">{filteredBooks.map(libraryBookCard)}</div> : <div className="empty-state"><Library size={30} /><h3>{curT.filters.emptyTitle}</h3><p>{curT.filters.emptyDesc}</p><button className="secondary" onClick={() => { setQuery(''); setCategory('all'); setShelfFilter('all'); setOrganizationFilter('all') }}>{curT.filters.clearFilter}</button></div>}
         </>}
 
         {page === 'memory' && <><div className="inner-page-banner">

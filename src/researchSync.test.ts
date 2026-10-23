@@ -40,23 +40,25 @@ describe('Web research sync compatibility', () => {
     const [input, options] = fetch.mock.calls[0] as unknown as [RequestInfo | URL, RequestInit]
     const url = new URL(String(input))
     expect(url.pathname).toBe('/api/v1/sync/changes')
-    expect([...url.searchParams.entries()]).toEqual([['cursor', '42'], ['limit', '100'], ['webResearch', '1']])
+    expect([...url.searchParams.entries()]).toEqual([['cursor', '42'], ['limit', '100'], ['webResearch', '1'], ['webLibrary', '1']])
     expect(url.toString()).not.toContain('private-test-session')
     expect(new Headers(options.headers).get('Authorization')).toBe('Bearer private-test-session')
     expect(options.cache).toBe('no-store')
   })
 
-  it('starts a new research cursor namespace without reusing or overwriting a legacy tab cursor', async () => {
+  it('starts a folder-capable cursor without reusing legacy or research-only tab cursors', async () => {
     const owner = profile(), other = profile()
     await getSyncCursor(owner)
     await metadata(`sync-cursor:${owner}`, 900)
+    await metadata(`sync-cursor:research-v1:${owner}`, 1200)
     expect(await getSyncCursor(owner)).toBe(0)
     await saveSyncCursor(owner, 40)
     await metadata(`sync-cursor:${owner}`, 9000)
     expect(await getSyncCursor(owner)).toBe(40)
     expect(await getSyncCursor(other)).toBe(0)
-    expect(await metadata(`sync-cursor:research-v1:${owner}`)).toEqual({ key: `sync-cursor:research-v1:${owner}`, cursor: 40 })
+    expect(await metadata(`sync-cursor:library-v1:${owner}`)).toEqual({ key: `sync-cursor:library-v1:${owner}`, cursor: 40 })
     expect(await metadata(`sync-cursor:${owner}`)).toEqual({ key: `sync-cursor:${owner}`, cursor: 9000 })
+    expect(await metadata(`sync-cursor:research-v1:${owner}`)).toEqual({ key: `sync-cursor:research-v1:${owner}`, cursor: 1200 })
     await applyRemoteChanges(owner, [], 8)
     expect(await getSyncCursor(owner)).toBe(40)
     await applyRemoteChanges(owner, [], 45)
@@ -68,7 +70,7 @@ describe('Web research sync compatibility', () => {
     const userId = owner.slice('ACCOUNT:'.length)
     const session: Session = { token: 'research-replay-token', expiresAt: Date.now() / 1000 + 3600,
       user: { id: userId, email: 'research@example.test', emailVerified: true } }
-    const kinds: SyncKind[] = ['knowledge_topics', 'topic_annotations', 'annotation_links', 'exam_plans', 'review_attempts', 'highlights']
+    const kinds: SyncKind[] = ['knowledge_topics', 'topic_annotations', 'annotation_links', 'exam_plans', 'review_attempts', 'highlights', 'library_folders', 'book_folder_locations']
     const changes = kinds.map((kind, index) => ({ seq: index + 1, kind, id: crypto.randomUUID(), version: 1, deleted: 0,
       payload: { id: crypto.randomUUID(), label: `Account-owned ${kind}` } }))
     const foreign = record(other, 'knowledge_topics', changes[0].id, { id: changes[0].id, name: 'Other account private topic' })
@@ -81,21 +83,22 @@ describe('Web research sync compatibility', () => {
       if (url.pathname === '/api/v1/auth/user') return Response.json({ user: session.user })
       if (url.pathname === '/api/v1/sync/changes') {
         expect(url.searchParams.get('webResearch')).toBe('1')
+        expect(url.searchParams.get('webLibrary')).toBe('1')
         const cursor = Number(url.searchParams.get('cursor'))
         requested.push(cursor)
         return Response.json({ changes: cursor === 0 ? changes : [], cursor: changes.length, hasMore: false })
       }
       throw new Error(`Unexpected test request: ${url.pathname}`)
     }))
-    expect(await syncNow(session)).toEqual({ changes: 6, conflicts: 0 })
+    expect(await syncNow(session)).toEqual({ changes: 8, conflicts: 0 })
     expect(new Set((await getRecords(owner)).map(item => item.kind))).toEqual(new Set(kinds))
     expect((await getRecords(owner)).every(item => item.profile === owner && item.key.startsWith(`${owner}:`))).toBe(true)
     expect(await getRecords(other)).toEqual([foreign])
     expect(await getPending(owner)).toHaveLength(0)
-    expect(await getSyncCursor(owner)).toBe(6)
+    expect(await getSyncCursor(owner)).toBe(8)
     expect((await metadata(`sync-cursor:${owner}`))?.cursor).toBe(500)
     expect(await syncNow(session)).toEqual({ changes: 0, conflicts: 0 })
-    expect(requested).toEqual([0, 6])
+    expect(requested).toEqual([0, 8])
   })
 
   it('commits topic removal, membership tombstone and exam cleanup together without touching another profile', async () => {

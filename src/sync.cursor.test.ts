@@ -16,8 +16,9 @@ vi.mock('./api', () => ({
       'tags', 'collections', 'book_tag_cross_ref', 'book_collection_cross_ref', 'review_items',
       'reading_sessions', 'per_book_preferences',
       'knowledge_topics', 'topic_annotations', 'annotation_links', 'exam_plans', 'review_attempts',
+      'library_folders', 'book_folder_locations',
     ].map((kind, index) => ({ seq: index + 1, kind, id: `${kind}-record`, version: 1, deleted: 0, payload: { id: `${kind}-local` } })) : [],
-    cursor: cursor === 0 ? 18 : cursor,
+    cursor: cursor === 0 ? 20 : cursor,
     hasMore: false,
   })),
 }))

@@ -1,4 +1,4 @@
-import { applyLibraryRestore, getCachedCatalog, getFiles, getOfflineBooks, getRecords, keyFor, type OfflineBook } from './store'
+import { applyLibraryRestore, getCachedCatalog, getFiles, getOfflineBooks, getRecords, keyFor, type LibraryRestoreEntry, type OfflineBook } from './store'
 import { androidRecordId } from './sync'
 import { SYNC_KINDS, type SyncRecord, type Book, type LocalFile } from './types'
 
@@ -71,6 +71,40 @@ export function downloadBackupFile(data: LibraryBackupData) {
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
+/** Folder identities are delete-wins. Restore their hierarchy under fresh
+ * identities only when the target account has already observed deletion.
+ * This runs inside the restore transaction, after all asynchronous decoding. */
+function remapDeletedLibraryFolders(profile: string, entries: LibraryRestoreEntry[], current: SyncRecord[]): LibraryRestoreEntry[] {
+  if (!profile.startsWith('ACCOUNT:')) return entries
+  const deleted = new Set(current.filter(record => record.profile === profile && record.kind === 'library_folders' && record.deleted).map(record => record.id))
+  const used = new Set([...current, ...entries.map(entry => entry.record)].filter(record => record.kind === 'library_folders').map(record => record.id))
+  const replacements = new Map<string, string>()
+  for (const { record } of entries) {
+    if (record.kind !== 'library_folders' || record.deleted || !deleted.has(record.id)) continue
+    let id = crypto.randomUUID()
+    while (used.has(id)) id = crypto.randomUUID()
+    replacements.set(record.id, id); used.add(id)
+  }
+  if (!replacements.size) return entries
+  return entries.map(entry => {
+    const record = entry.record
+    if (record.kind === 'library_folders') {
+      const id = !record.deleted ? replacements.get(record.id) || record.id : record.id
+      const parent = record.payload.parent_id
+      return { ...entry, record: { ...record, id, key: keyFor(profile, `library_folders:${id}`), payload: {
+        ...record.payload, id, parent_id: typeof parent === 'string' ? replacements.get(parent) || parent : parent,
+      } } }
+    }
+    if (record.kind === 'book_folder_locations') {
+      const folder = record.payload.folder_id
+      if (typeof folder === 'string' && replacements.has(folder)) return { ...entry, record: {
+        ...record, payload: { ...record.payload, folder_id: replacements.get(folder)! },
+      } }
+    }
+    return entry
+  })
+}
+
 export async function restoreLibraryBackup(profile: string, backupData: unknown): Promise<{ restoredRecords: number; restoredBooks: number; missingFiles: number }> {
   if (!object(backupData) || backupData.app !== 'NoCap-Web' || (backupData.version !== 1 && backupData.version !== 2) || !Array.isArray(backupData.records) || !Array.isArray(backupData.books)) throw invalid()
   if (backupData.version === 2 && (!Array.isArray(backupData.files) || !Array.isArray(backupData.offlineBooks))) throw invalid()
@@ -120,6 +154,6 @@ export async function restoreLibraryBackup(profile: string, backupData: unknown)
   })
   await applyLibraryRestore(profile, [...planned.values()].map(record => ({
     record, sync: account && !missing.has(String(record.payload.book_id || record.payload.id || '')),
-  })), files, offlineBooks)
+  })), files, offlineBooks, (entries, current) => remapDeletedLibraryFolders(profile, entries, current))
   return { restoredRecords: records.length, restoredBooks: files.length, missingFiles: missing.size }
 }

@@ -119,6 +119,28 @@ reading settings; those remain separate reading preferences.
   offline-mode toggle. Previously opened/imported content may remain in browser
   storage, but that storage can be cleared or evicted and is not a backup.
 
+## Library folders (Web)
+
+The personal Library offers **Normal** and **Tree** views over the same nested
+folders. Create, rename and move folders; move documents individually or in
+batches of up to 1,000, including back to the Library root. Breadcrumbs, an Up
+button and Expand/Collapse all support deep navigation. Search and existing
+filters find matching documents across folder paths. The view choice stays in
+this browser; folders and document locations sync per account across Web devices.
+
+Each document has one folder location. Tags and Collections remain independent
+and keep their existing many-to-many memberships. Deleting a folder moves its
+immediate documents and child folders to its parent, preserving files, reading
+positions and notes. Backups include the hierarchy; restoring a previously
+deleted folder uses a fresh identity to preserve server deletion semantics.
+Guest folders remain local. Existing Android clients retain ordinary books and
+collections but do not receive the new Web folder records.
+
+Deploy the Worker folder-sync update before this Web build. Both `webResearch=1`
+and `webLibrary=1` are requested by the new Web feed; a new local cursor namespace
+replays existing account records once so older clients cannot skip folder rows.
+No D1 migration is required. See [folder data and preservation](docs/library-folders.md).
+
 ## Account settings
 
 On desktop Web (above 900 px), `/account` uses a settings sidebar with Profile,

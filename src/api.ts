@@ -178,7 +178,7 @@ export async function getSePayOrder(token: string, id: string): Promise<SePayOrd
 }
 
 export async function getChanges(token: string, cursor: number) {
-  return api<{ changes: Array<{ seq: number; kind: string; id: string; version: number; deleted: number; payload: Record<string, unknown> }>; cursor: number; hasMore: boolean }>(`/api/v1/sync/changes?cursor=${cursor}&limit=100&webResearch=1`, {}, token)
+  return api<{ changes: Array<{ seq: number; kind: string; id: string; version: number; deleted: number; payload: Record<string, unknown> }>; cursor: number; hasMore: boolean }>(`/api/v1/sync/changes?cursor=${cursor}&limit=100&webResearch=1&webLibrary=1`, {}, token)
 }
 
 export async function pushOperation(token: string, operation: SyncOperation) {

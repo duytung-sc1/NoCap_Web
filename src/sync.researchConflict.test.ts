@@ -14,7 +14,7 @@ vi.mock('./api', () => ({
 
 beforeEach(() => vi.clearAllMocks())
 
-const researchKinds: SyncKind[] = ['knowledge_topics', 'topic_annotations', 'annotation_links', 'exam_plans', 'review_attempts']
+const researchKinds: SyncKind[] = ['knowledge_topics', 'topic_annotations', 'annotation_links', 'exam_plans', 'review_attempts', 'library_folders']
 async function fixture(kind: SyncKind = 'knowledge_topics', remoteDeleted?: boolean, deleted = false) {
   const session: Session = { token: 'research-conflict-session', expiresAt: Date.now() / 1000 + 600,
     user: { id: crypto.randomUUID(), email: 'research@example.test', emailVerified: true } }
