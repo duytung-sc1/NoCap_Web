@@ -1,4 +1,4 @@
-import { AlignJustify, AlignLeft, BookOpen, CheckCircle2, CreditCard, Edit3, LogOut, ShieldAlert, UserRound } from 'lucide-react'
+import { AlignJustify, AlignLeft, BookOpen, CheckCircle2, CreditCard, Edit3, LogOut, Palette, ShieldAlert, UserRound } from 'lucide-react'
 import type { Entitlement } from './api'
 import { allowsPro } from './entitlements'
 import { t, type Lang } from './i18n'
@@ -6,8 +6,10 @@ import { SePayCheckout } from './SePayCheckout'
 import type { FontFamily, Session, TextAlignment } from './types'
 import './AccountSettings.css'
 import { WebAnalyticsPreference } from './WebAnalyticsPreference'
+import { SiteThemePicker } from './SiteThemePicker'
+import type { SiteTheme } from './siteTheme'
 
-export type AccountSettingsSection = 'profile' | 'pro' | 'reading'
+export type AccountSettingsSection = 'profile' | 'pro' | 'reading' | 'appearance'
 type ComfortSettings = { fontSize: number; fontFamily: FontFamily; textAlignment: TextAlignment; theme: 'paper' | 'sepia' | 'night' }
 
 interface Props {
@@ -25,10 +27,12 @@ interface Props {
   onDeleteAccount: () => void
   onPaid: (entitlement: Entitlement) => void
   onAdmin?: () => void
+  siteTheme: SiteTheme
+  onSiteThemeChange: (theme: SiteTheme) => void
 }
 
 export function AccountSettings({ session, entitlement, lang, now, section, onSectionChange, comfort,
-  onComfortChange, onSignIn, onSignOut, onEditName, onDeleteAccount, onPaid, onAdmin }: Props) {
+  onComfortChange, onSignIn, onSignOut, onEditName, onDeleteAccount, onPaid, onAdmin, siteTheme, onSiteThemeChange }: Props) {
   const curT = t[lang]
   const labels = curT.accountPage
   const { fontSize, fontFamily, textAlignment, theme } = comfort
@@ -41,6 +45,7 @@ export function AccountSettings({ session, entitlement, lang, now, section, onSe
     { id: 'profile' as const, label: labels.accountHeading, icon: <UserRound size={17} /> },
     { id: 'pro' as const, label: 'NoCap Pro', icon: <CreditCard size={17} /> },
     { id: 'reading' as const, label: labels.readingSettingsNav, icon: <BookOpen size={17} /> },
+    { id: 'appearance' as const, label: lang === 'vi' ? 'Giao diện' : 'Appearance', icon: <Palette size={17} /> },
   ]
 
   return <>
@@ -129,6 +134,10 @@ export function AccountSettings({ session, entitlement, lang, now, section, onSe
             <div className="setting-group" style={{ margin: '14px 0 10px' }}><span className="setting-label">{labels.align}</span><div className="toggle-row"><button className={`choice-chip ${textAlignment === 'left' ? 'active' : ''}`} onClick={() => onComfortChange({ textAlignment: 'left' })}><AlignLeft size={14} />{labels.alignLeft}</button><button className={`choice-chip ${textAlignment === 'justify' ? 'active' : ''}`} onClick={() => onComfortChange({ textAlignment: 'justify' })}><AlignJustify size={14} />{labels.alignJustify}</button></div></div>
             <div className="setting-group" style={{ margin: '14px 0 10px' }}><span className="setting-label">{labels.theme}</span><div className="theme-row">{(['paper', 'sepia', 'night'] as const).map(value => <button key={value} className={`theme-chip ${value} ${theme === value ? 'chosen' : ''}`} onClick={() => onComfortChange({ theme: value })}>{value === 'paper' ? labels.themePaper : value === 'sepia' ? labels.themeSepia : labels.themeNight}</button>)}</div></div>
           </section>
+        </div>
+
+        <div id="account-panel-appearance" className={`account-settings-panel account-settings-appearance ${section === 'appearance' ? 'active' : ''}`}>
+          <SiteThemePicker value={siteTheme} onChange={onSiteThemeChange} lang={lang} />
         </div>
 
         {session && <section className="settings-card danger-zone-card">

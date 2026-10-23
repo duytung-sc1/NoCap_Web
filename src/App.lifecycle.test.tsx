@@ -1108,6 +1108,18 @@ describe('account and reader lifecycle', () => {
     expect(fixtures.mutate.mock.calls.find(call => call[1] === 'highlights')?.[0]).toBe('ACCOUNT:qa-user')
   })
 
+  it('opens website appearance for guests and shares its choice with the header', async () => {
+    window.history.replaceState(null, '', '/account')
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Giao diện' }))
+    expect(screen.getByRole('button', { name: 'Giao diện' }).getAttribute('aria-current')).toBe('page')
+    const picker = screen.getByRole('group', { name: 'Màu giao diện website' })
+    fireEvent.click(within(picker).getByRole('button', { name: /Xanh dịu Xanh lục/ }))
+    expect(document.documentElement.dataset.siteTheme).toBe('sage')
+    expect(screen.getByRole('button', { name: 'Giao diện Xanh dịu. Chuyển sang Sáng' })).toBeTruthy()
+    expect(fixtures.mutate).not.toHaveBeenCalled()
+  })
+
   it('keeps the /admin deep link after sign-in and opens the server-approved workspace', async () => {
     window.history.replaceState(null, '', '/admin')
     fixtures.login.mockResolvedValue(session)

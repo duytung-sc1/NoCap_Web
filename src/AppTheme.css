@@ -1,0 +1,191 @@
+/* Website appearance is independent of book-page and workplace-disguise colors. */
+:root {
+  --site-bg: #fdfcf8;
+  --site-panel: #fff;
+  --site-raised: #f5f7f3;
+  --site-text: #203047;
+  --site-muted: #657985;
+  --site-line: #d8e2dc;
+  --site-accent: #167e70;
+  --site-tint: #e4f3ef;
+  --site-button-text: #062b2c;
+  --site-button: #35b99e;
+  --site-danger: #a34f45;
+  --site-danger-line: #d8a89f;
+  --site-scheme: light;
+}
+
+:root[data-site-theme=dark] {
+  color-scheme: dark;
+  --site-bg: #111b19;
+  --site-panel: #1a2723;
+  --site-raised: #24362d;
+  --site-text: #e6eee8;
+  --site-muted: #afbeb3;
+  --site-line: #3d5147;
+  --site-accent: #8bd4b3;
+  --site-tint: #263e32;
+  --site-header: #15221eee;
+  --site-hero: #15221e;
+  --site-button-text: #11251c;
+  --site-button: #8bd4b3;
+  --site-danger: #ffb7a9;
+  --site-danger-line: #92584c;
+  --site-scheme: dark;
+  --site-echo-4: #23362d;
+  --site-echo-3: #2b4134;
+  --site-echo-2: #36503e;
+  --site-echo-1: #45664d;
+}
+
+:root[data-site-theme=sage] {
+  color-scheme: light;
+  --site-bg: #edf2e8;
+  --site-panel: #f9fbf5;
+  --site-raised: #e4ecde;
+  --site-text: #24372b;
+  --site-muted: #566b5a;
+  --site-line: #c6d4bf;
+  --site-accent: #2f7052;
+  --site-tint: #dce9d6;
+  --site-header: #edf2e8ee;
+  --site-hero: #e5eddd;
+  --site-button: #2f7052;
+  --site-button-text: #fff;
+  --site-echo-4: #d7e2cc;
+  --site-echo-3: #c8d7bd;
+  --site-echo-2: #b8cdae;
+  --site-echo-1: #a4ba9b;
+}
+
+.site-theme-quick { flex: 0 0 34px; width: 34px; height: 34px; border: 1px solid var(--site-line); border-radius: 50%; color: var(--site-text); }
+.site-theme-quick:hover { background: var(--site-tint); color: var(--site-accent); }
+.site-appearance-description, .site-appearance-hint { color: var(--site-muted); font-size: 13px; line-height: 1.8; max-width: 650px; }
+.site-appearance-hint { margin: 22px 0 0; font-size: 12px; }
+.site-theme-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 24px; }
+.site-theme-option { min-width: 0; overflow: hidden; border: 1px solid var(--site-line); border-radius: 12px; padding: 7px; background: var(--site-panel); color: var(--site-text); text-align: left; }
+.site-theme-option[aria-pressed=true] { border-color: var(--site-accent); box-shadow: 0 0 0 1px var(--site-accent); }
+.site-theme-option:hover { border-color: var(--site-accent); }
+.site-theme-option:focus-visible, .site-theme-quick:focus-visible { outline: 2px solid var(--site-accent); outline-offset: 4px; }
+.site-theme-preview { display: grid; height: 108px; overflow: hidden; border: 1px solid var(--preview-line); border-radius: 7px; background: var(--preview-bg); }
+.site-theme-preview-light { --preview-bg: #fdfcf8; --preview-panel: #fff; --preview-line: #e0e6df; }
+.site-theme-preview-dark { --preview-bg: #111b19; --preview-panel: #24362d; --preview-line: #3d5147; }
+.site-theme-preview-sage { --preview-bg: #edf2e8; --preview-panel: #f9fbf5; --preview-line: #c6d4bf; }
+.site-theme-preview-nav { height: 20px; border-bottom: 1px solid var(--preview-line); background: var(--preview-panel); }
+.site-theme-preview-body { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 6px 12px 14px; }
+.site-theme-preview-body > span { background: var(--preview-panel); border: 1px solid var(--preview-line); border-radius: 5px; }
+.site-theme-option-copy { display: grid; gap: 7px; padding: 15px 7px 10px; }
+.site-theme-option-copy > span { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.site-theme-option-copy > span > svg:last-child:not(:first-child) { margin-left: auto; color: var(--site-accent); }
+.site-theme-option-copy small { color: var(--site-muted); font-size: 11px; line-height: 1.7; }
+@media (max-width: 600px) {
+  .site-theme-options { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .site-theme-option { display: grid; grid-template-columns: 86px minmax(0, 1fr); gap: 9px; align-items: center; }
+  .site-theme-preview { height: 68px; }
+  .site-theme-preview-body { gap: 4px; padding: 6px; }
+  .site-theme-option-copy { padding: 10px 3px 5px; }
+  .site-theme-option-copy > span { gap: 7px; font-size: 13px; }
+  .site-theme-option-copy small { font-size: 11px; }
+}
+
+/* Semantic aliases also support components loaded after the main stylesheet. */
+:root[data-site-theme]:not([data-site-theme=light]) {
+  color: var(--site-text);
+  background: var(--site-bg);
+  --ink: var(--site-text);
+  --muted: var(--site-muted);
+  --line: var(--site-line);
+  --accent: var(--site-accent);
+  --accent-light: var(--site-tint);
+  --paper: var(--site-panel);
+  --surface: var(--site-raised);
+}
+:root[data-site-theme]:not([data-site-theme=light]) :is(body, .main-area) { background: var(--site-bg) !important; color: var(--site-text); }
+:root[data-site-theme]:not([data-site-theme=light]) .swiss-header { background: var(--site-header); border-color: var(--site-line); }
+:root[data-site-theme]:not([data-site-theme=light]) .swiss-hero { background: var(--site-hero); border-color: var(--site-line); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.swiss-header-logo, .swiss-nav-link, .swiss-nav-link.active, .swiss-philosophy-quote, .swiss-showcase-header h2, .swiss-bespoke-card h3, .swiss-bespoke-cta) { color: var(--site-text); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.swiss-header-logo span, .swiss-status-dot, .swiss-hero-sub, .swiss-philosophy-sub, .swiss-showcase-header p, .swiss-bespoke-card p) { color: var(--site-muted); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.swiss-nav-link.active::after, .swiss-hairline-v) { background: var(--site-text); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.swiss-philosophy-quote em, .swiss-lang-current, .swiss-bespoke-card:hover .swiss-bespoke-cta) { color: var(--site-accent); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.swiss-pill-btn, .swiss-lang-toggle, .pill-btn.invert-pill) { color: var(--site-text) !important; border-color: var(--site-line); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.swiss-pill-btn:hover, .swiss-lang-toggle:hover, .pill-btn.invert-pill:hover) { background: var(--site-raised); color: var(--site-accent) !important; }
+:root[data-site-theme]:not([data-site-theme=light]) .pill-btn.primary-pill { background: var(--site-text); color: var(--site-bg) !important; border-color: var(--site-text); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.swiss-bespoke-card, .swiss-showcase-header, .asym-card-pill-4, .asym-card-circle-5) { border-color: var(--site-line); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.swiss-bespoke-card:hover, .swiss-icon-box-64) { background: var(--site-raised); color: var(--site-text); }
+:root[data-site-theme]:not([data-site-theme=light]) .swiss-echo-4 { color: var(--site-echo-4); }
+:root[data-site-theme]:not([data-site-theme=light]) .swiss-echo-3 { color: var(--site-echo-3); }
+:root[data-site-theme]:not([data-site-theme=light]) .swiss-echo-2 { color: var(--site-echo-2); }
+:root[data-site-theme]:not([data-site-theme=light]) .swiss-echo-1 { color: var(--site-echo-1); }
+:root[data-site-theme]:not([data-site-theme=light]) .swiss-echo-fore { color: var(--site-text); }
+:root[data-site-theme=dark] .analog-grain-overlay { opacity: .06; }
+
+/* Surfaces, forms and dialogs share the same palette; document canvases do not. */
+:root[data-site-theme]:not([data-site-theme=light]) :is(.settings-card, .account-settings-grid .settings-card, .account-settings-profile.active, .book-card, .memory-item, .empty-state, .stat-widget, .stats-panel, .book-details-modal, .dialog, .loading-card, .flashcard-modal, .flashcard-header, .asym-card-8, .asym-card-wide-7, .admin-main, .search-field) { background: var(--site-panel); color: var(--site-text); border-color: var(--site-line); }
+:root[data-site-theme]:not([data-site-theme=light]) .dialog { color-scheme: var(--site-scheme); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.main-area, .modal-shade, .overlay) :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]), textarea, select) { background: var(--site-panel); color: var(--site-text); border-color: var(--site-line); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.main-area, .modal-shade, .overlay) :is(input, textarea)::placeholder { color: var(--site-muted); opacity: 1; }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.secondary, .choice-chip, .count-chip, .flip-card-btn, .review-stat-pill) { background: var(--site-raised); color: var(--site-text); border-color: var(--site-line); }
+:root[data-site-theme]:not([data-site-theme=light]) .primary:not(.danger-action) { background: var(--site-button); color: var(--site-button-text); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.choice-chip.active, .account-settings-navigation button.active, .admin-navigation button[aria-current=page]) { background: var(--site-tint); color: var(--site-accent); border-color: var(--site-accent); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.account-settings-navigation button:hover, .admin-navigation button:hover, .secondary:hover) { background: var(--site-tint); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.main-area .icon-button, .modal-shade .icon-button, .overlay .icon-button) { color: var(--site-muted); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.main-area .icon-button:hover, .modal-shade .icon-button:hover, .overlay .icon-button:hover) { background: var(--site-tint); color: var(--site-accent); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.settings-card h2, .account-settings-grid .settings-card h2, .account-settings-desktop-heading h1, .account-profile-identity strong, .page-heading h1, .section-header h2, .dialog h2, .loading-card h2, .book-title, .empty-state h3, .stats-panel h2, .stat-value, .active-reading-title, .book-details-title, .book-details-desc h3, .memory-item blockquote, .flashcard-count, .flashcard-mastered strong, .flashcard-quote, .flashcard-note) { color: var(--site-text); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.book-info p, .memory-item p, .empty-state p, .page-heading p:not(.eyebrow), .account-settings-desktop-heading p, .account-profile-identity-caption, .account-settings-grid .account-profile-description, .account-profile-membership > div, .account-profile-membership small, .stat-title, .active-reading-author, .book-details-author, .book-details-desc p, .book-details-group-label, .loading-card p, .flashcard-chapter, .flashcard-hint, .flashcard-mastered, .flashcard-note-title, .flashcard-header .eyebrow, .filter-bar > span) { color: var(--site-muted); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.muted, .account-settings-grid .settings-card .muted) { color: var(--site-muted) !important; }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.book-meta, .memory-book, .read-link, .text-button, .auth-links button, .account-email-verified, .account-profile-membership strong, .account-plan-badge.pro, .payment-status) { color: var(--site-accent); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.account-profile-avatar, .account-plan-badge, .memory-icon, .selection-preview, .pro-benefits, .pro-plan-option.selected, .notice, .admin-notice, .admin-badge, .admin-analytics-collection, .import-progress) { background: var(--site-tint); color: var(--site-accent); border-color: var(--site-line); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.account-profile-identity, .account-profile-membership, .account-settings-reading .setting-group, .book-details-desc, .book-details-tags-section) { border-color: var(--site-line); }
+:root[data-site-theme]:not([data-site-theme=light]) .account-profile-fields dd { background: var(--site-raised); border-color: var(--site-line); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.account-profile-fields dt, .account-settings-reading .setting-label, .account-settings-pro .pro-plan-options legend, .pro-benefits p) { color: var(--site-muted); }
+:root[data-site-theme]:not([data-site-theme=light]) .account-settings-profile.active ~ .danger-zone-card { border-color: var(--site-line) !important; }
+:root[data-site-theme]:not([data-site-theme=light]) .account-settings-grid .danger-zone-card::before { background: var(--site-line); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.danger-zone-card h2, .danger-zone-card button, .main-area .danger-action:not(.primary), .modal-shade .danger-action:not(.primary)) { color: var(--site-danger) !important; }
+:root[data-site-theme]:not([data-site-theme=light]) .danger-zone-card button { background: var(--site-panel); border-color: var(--site-danger-line) !important; }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.pro-plan-option, .import-source-option, .flashcard-inner) { background: var(--site-raised); color: var(--site-text); border-color: var(--site-line); }
+:root[data-site-theme]:not([data-site-theme=light]) .pro-plan-option.selected { background: var(--site-tint); border-color: var(--site-accent); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.tag-badge, .tag-chip, .collection-chip) { background: var(--site-raised) !important; color: var(--site-text); border-color: var(--site-line) !important; }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.tag-chip.active, .collection-chip.active) { color: var(--site-accent); background: var(--site-tint) !important; }
+
+/* Research and administration keep readable tables and states after lazy loading. */
+:root[data-site-theme]:not([data-site-theme=light]) .research-workspace { --research-ink: var(--site-text); --research-muted: var(--site-muted); --research-line: var(--site-line); --research-accent: var(--site-accent); --research-tint: var(--site-tint); background: var(--site-panel); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.research-heading nav, .research-note, .research-form, .research-empty, .research-metrics > div, .research-source-choice) { background: var(--site-raised); color: var(--site-text); border-color: var(--site-line); }
+:root[data-site-theme]:not([data-site-theme=light]) .research-workspace .research-primary { background: var(--site-button); color: var(--site-button-text); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.research-notice, .research-source-actions .research-pair-picker) { background: var(--site-tint); color: var(--site-accent); border-color: var(--site-line); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.admin-analytics, .admin-transactions, .conflict-card-header) { color: var(--site-text); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.admin-identity span, .admin-table-wrap small, .admin-metric span, .admin-analytics-method, .admin-analytics-metric h3, .admin-analytics-metric p, .admin-analytics-chart figcaption, .admin-payments-table small) { color: var(--site-muted); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.admin-table-wrap th, .admin-analytics-table th, .admin-analytics-empty, .admin-payments-status, .admin-workspace input:read-only) { color: var(--site-muted); background: var(--site-raised); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.admin-table-wrap, .admin-table-wrap td, .admin-table-wrap th, .admin-analytics-table td, .admin-analytics-table th, .admin-metric, .admin-analytics-metric, .admin-analytics-panel, .admin-payments-filters) { border-color: var(--site-line); }
+:root[data-site-theme]:not([data-site-theme=light]) .admin-payments-status-paid { background: var(--site-tint); color: var(--site-accent); }
+:root[data-site-theme]:not([data-site-theme=light]) .system-announcement { color: var(--site-accent); background: var(--site-tint); border-color: var(--site-line); }
+:root[data-site-theme=dark] :is(.form-message, .admin-analytics-error, .research-error, .research-delete-confirm) { color: #ffd5c7; background: #402b26; border-color: #92584c; }
+:root[data-site-theme=dark] :is(.system-announcement-warning, .admin-payments-status-pending, .admin-payments-status-processing) { background: #3c3423; color: #efdaa9; border-color: #756642; }
+:root[data-site-theme=dark] .system-announcement-maintenance { background: #243641; color: #c1dce8; }
+
+/* Independent reading previews and native document colors remain intentional. */
+.reader-shell.paper, .reader-shell.sepia { color-scheme: light; }
+.reader-shell.night { color-scheme: dark; }
+
+:root[data-site-theme]:not([data-site-theme=light]) .asym-card-wide-7 h4 { color: var(--site-text) !important; }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.asym-card-8 p, .asym-card-wide-7 p, .habit-description) { color: var(--site-muted) !important; }
+:root[data-site-theme]:not([data-site-theme=light]) .habit-value { color: var(--site-text); }
+:root[data-site-theme]:not([data-site-theme=light]) .account-settings-navigation button { color: var(--site-muted); }
+:root[data-site-theme]:not([data-site-theme=light]) .account-settings-navigation button.active { color: var(--site-accent); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.admin-transactions-table-wrap, .admin-transactions-table td, .admin-transactions-table th, .admin-transactions > .admin-form-actions) { border-color: var(--site-line); }
+:root[data-site-theme]:not([data-site-theme=light]) .admin-transactions > .admin-form-actions { background: var(--site-panel); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.admin-transactions-table th, .admin-transactions-empty, .admin-transactions-status) { color: var(--site-muted); background: var(--site-raised); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.admin-transactions-description, .admin-transactions-detail, .admin-transactions-account > span, .admin-transactions-timestamps dt, .import-help, .import-source-option small, .pro-plan-price del) { color: var(--site-muted); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.admin-transactions-grant, .admin-transactions-status.is-paid) { color: var(--site-accent); background: var(--site-tint); }
+:root[data-site-theme]:not([data-site-theme=light]) .admin-analytics-chart svg text { fill: var(--site-muted); }
+:root[data-site-theme=dark] :is(.admin-transactions-status.is-pending, .admin-transactions-status.is-processing) { color: #efdaa9; background: #3c3423; }
+:root[data-site-theme=dark] :is(.admin-transactions-status.is-cancelled, .admin-transactions-error) { color: #ffd5c7; background: #402b26; border-color: #92584c; }
+:root[data-site-theme=sage] .system-announcement-warning { color: #665025; background: #fff5df; border-color: #d8c698; }
+:root[data-site-theme=sage] .system-announcement-maintenance { color: #354f68; background: #edf3f7; border-color: #c2d2dd; }
+
+:root[data-site-theme]:not([data-site-theme=light]) .sidebar { background: var(--site-panel); color: var(--site-text); border-color: var(--site-line); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.sidebar .brand strong, .sidebar .sync-summary strong) { color: var(--site-text); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.sidebar .main-nav button, .sidebar-caption, .sidebar .brand span, .sidebar .sync-summary small) { color: var(--site-muted); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.sidebar .main-nav button:hover, .sidebar .main-nav button.active) { background: var(--site-tint); color: var(--site-accent); }
+:root[data-site-theme]:not([data-site-theme=light]) :is(.conflict-card, .conflict-side) { background: var(--site-raised); border-color: var(--site-line); }
+:root[data-site-theme]:not([data-site-theme=light]) .conflict-side h4 { color: var(--site-muted); }
+:root[data-site-theme=dark] .conflict-banner { color: #ffd5c7; background: #402b26; border-color: #92584c; }

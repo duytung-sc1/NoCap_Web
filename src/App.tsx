@@ -14,6 +14,9 @@ import type { Book, Category, FontFamily, LocalFile, PendingOperation, ReaderLoc
 import { OceanWaves } from './OceanWaves'
 import { getStoredLang, setStoredLang, t, type Lang } from './i18n'
 import './App.css'
+import './AppTheme.css'
+import { useSiteTheme } from './siteTheme'
+import { SiteThemeQuickSwitch } from './SiteThemePicker'
 
 const ReaderPane = lazy(() => importWithChunkRecovery(() => import('./Reader')).then(module => ({ default: module.ReaderPane })))
 const StealthReader = lazy(() => importWithChunkRecovery(() => import('./stealth/StealthReader')).then(module => ({ default: module.StealthReader })))
@@ -133,6 +136,7 @@ function App() {
   const [catalogReady, setCatalogReady] = useState(false)
   const [loadedProfile, setLoadedProfile] = useState<string | null>(null)
   const [session, setSession] = useState<Session | null>(() => readSession())
+  const { siteTheme, setSiteTheme } = useSiteTheme()
   const sessionToken = session?.token
   const { access: adminAccess, reload: reloadAdminAccess, invalidate: invalidateAdminAccess } = useAdminAccess(sessionToken, session?.user.id)
   const isAdmin = adminAccess?.status === 'allowed'
@@ -1763,6 +1767,7 @@ async function sha256Hex(file: Blob): Promise<string> {
           {isAdmin && <button className={`swiss-nav-link ${page === 'admin' ? 'active' : ''}`} onClick={() => setPage('admin')}>{lang === 'vi' ? 'Quản trị' : 'Admin'}</button>}
         </nav>
         <div className="swiss-header-actions">
+          <SiteThemeQuickSwitch value={siteTheme} onChange={setSiteTheme} lang={lang} />
           <button
             className="swiss-lang-toggle"
             onClick={toggleLang}
@@ -2122,6 +2127,8 @@ async function sha256Hex(file: Blob): Promise<string> {
           onDeleteAccount={() => setDeleteAccountOpen(true)}
           onPaid={setEntitlement}
           onAdmin={isAdmin ? () => setPage('admin') : undefined}
+          siteTheme={siteTheme}
+          onSiteThemeChange={setSiteTheme}
         />}
       </div>
 

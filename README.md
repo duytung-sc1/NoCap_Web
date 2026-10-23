@@ -80,6 +80,13 @@ endpoint and does not require a backend migration.
 
 ## Navigation and documents
 
+**Account → Appearance** provides Light, Dark and Soft green website themes,
+including a compact switch in the header. The preference stays in this browser,
+works for guests, follows changes in other tabs, and is applied before the app
+loads to avoid a bright startup flash. Storage failures leave it usable for the
+current visit. Site appearance does not overwrite book-page colors or Android
+reading settings; those remain separate reading preferences.
+
 - `/`, `/explore`, `/library`, `/memory`, `/stats`, `/account`.
 - `/books/:id` opens book details; `/read/:id` opens the reader. Browser history
   and direct links use the same routes.
