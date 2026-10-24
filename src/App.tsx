@@ -1782,7 +1782,7 @@ async function sha256Hex(file: Blob): Promise<string> {
       <div className="brand"><div className="brand-mark"><BookOpen size={24} /></div><div><strong>NoCap</strong><span>Quiet Knowledge Workspace</span></div><button className="mobile-close icon-button" onClick={() => setSidebarOpen(false)} aria-label={translate("Đóng menu", lang)}><X size={20} /></button></div>
       <div className="sidebar-caption">{curT.nav.mySpace}</div>
       <nav className="main-nav" aria-label={translate("Điều hướng", lang)}>
-        {nav.map(item => <button key={item.id} className={page === item.id ? 'active' : ''} onClick={() => { setPage(item.id); setSidebarOpen(false); setQuery(''); setCategory('all') }}><item.icon size={19} /><span>{item.label}</span></button>)}
+        {nav.map(item => <button key={item.id} className={page === item.id || (page === 'libraryMap' && item.id === 'library') ? 'active' : ''} onClick={() => { setPage(item.id); setSidebarOpen(false); setQuery(''); setCategory('all') }}><item.icon size={19} /><span>{item.label}</span></button>)}
       </nav>
       <div className="sidebar-bottom"><div className="sync-summary">{online ? <Cloud size={17} /> : <CloudOff size={17} />}<div><strong>{!session ? curT.nav.guestMode : syncing ? curT.nav.syncing : pendingCount ? curT.nav.pendingShort : curT.nav.autoSyncOn}</strong><small>{session ? (pendingCount ? `${pendingCount} ${curT.nav.pending}` : session.user.email) : curT.nav.loginPrompt}</small></div></div>{!session && <button className="primary wide" onClick={() => setAuthOpen(true)}><LogIn size={16} /> {curT.nav.login}</button>}</div>
     </aside>
@@ -1798,7 +1798,7 @@ async function sha256Hex(file: Blob): Promise<string> {
         <nav className="swiss-header-nav" aria-label={translate("Menu chính", lang)}>
           <button className={`swiss-nav-link ${page === 'home' ? 'active' : ''}`} onClick={() => { setPage('home'); setQuery(''); setCategory('all') }}>{curT.nav.home}</button>
           <button className={`swiss-nav-link ${page === 'catalog' ? 'active' : ''}`} onClick={() => { setPage('catalog'); setQuery(''); setCategory('all') }}>{curT.nav.catalog}</button>
-          <button className={`swiss-nav-link ${page === 'library' ? 'active' : ''}`} onClick={() => { setPage('library'); setQuery(''); setCategory('all') }}>{curT.nav.library}</button>
+          <button className={`swiss-nav-link ${page === 'library' || page === 'libraryMap' ? 'active' : ''}`} onClick={() => { setPage('library'); setQuery(''); setCategory('all') }}>{curT.nav.library}</button>
           <button className={`swiss-nav-link ${page === 'memory' ? 'active' : ''}`} onClick={() => { setPage('memory'); setQuery(''); setCategory('all') }}>{curT.nav.memory}</button>
           <button className={`swiss-nav-link ${page === 'stats' ? 'active' : ''}`} onClick={() => { setPage('stats'); setQuery(''); setCategory('all') }}>{curT.nav.stats}</button>
           <button className={`swiss-nav-link ${page === 'account' ? 'active' : ''}`} onClick={() => { setPage('account'); setQuery(''); setCategory('all') }}>{curT.nav.account}</button>
@@ -2041,7 +2041,8 @@ async function sha256Hex(file: Blob): Promise<string> {
           <div className="book-grid">{catalog.filter(book => book.fileUrl).slice(0, 4).map(book => <BookCard key={book.id} book={book} lang={lang} onOpen={() => void openBook(book)} onStealth={() => void launchStealth(book)} onDetails={() => showBookDetails(book)} onFavorite={() => void toggleFavorite(book)} favorite={favorites.has(book.id)} offline={offlineIds.has(book.id)} downloadBusy={downloadBusy === book.id} onDownload={() => void downloadBook(book)} />)}</div>
         </>}
 
-        {(page === 'catalog' || page === 'library') && <>
+        {(page === 'catalog' || page === 'library' || page === 'libraryMap') && <>
+          {page !== 'libraryMap' && <>
           <div className="inner-page-banner">
             <div className="banner-text">
               <div className="banner-eyebrow">{page === 'catalog' ? curT.banners.catalog.eyebrow : curT.banners.library.eyebrow}</div>
@@ -2091,7 +2092,11 @@ async function sha256Hex(file: Blob): Promise<string> {
             </div>
           )}
           <div className="filter-bar"><label className="search-field"><Search size={18} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder={curT.filters.searchPlaceholder} aria-label={translate("Tìm sách", lang)} /></label><select value={category} onChange={event => setCategory(event.target.value)} aria-label={translate("Lọc thể loại", lang)}><option value="all">{curT.filters.allCategories}</option>{categories.map(item => <option key={item.id} value={item.id}>{translate(item.name, lang)}</option>)}</select><select value={sortOrder} onChange={e => setSortOrder(e.target.value as 'recent' | 'title' | 'progress')} aria-label={translate("Sắp xếp sách", lang)}><option value="recent">{curT.filters.recent}</option><option value="title">{curT.filters.title}</option><option value="progress">{curT.filters.progress}</option></select>{page === 'library' && (tags.length > 0 || collections.length > 0) && <select value={organizationFilter} onChange={event => setOrganizationFilter(event.target.value)} aria-label={translate("Lọc theo thẻ hoặc bộ sưu tập", lang)}><option value="all">{curT.filters.allTagsAndCollections}</option>{tags.length > 0 && <optgroup label={curT.filters.tagsGroup}>{tags.map(tag => <option key={`tag:${tag.id}`} value={`tag:${tag.id}`}>{tag.name}</option>)}</optgroup>}{collections.length > 0 && <optgroup label={curT.filters.collectionsGroup}>{collections.map(collection => <option key={`collection:${collection.id}`} value={`collection:${collection.id}`}>{collection.name}</option>)}</optgroup>}</select>}<span>{curT.filters.docCount(filteredBooks.length)}</span></div>
-          {page === 'library' ? <LibraryFoldersWorkspace key={profile} profile={profile} lang={lang} records={records} books={filteredBooks} allBooks={libraryBooks} filterActive={!!query.trim() || category !== 'all' || shelfFilter !== 'all' || organizationFilter !== 'all'} renderBook={libraryBookCard} onOpenBook={book => void openBook(book)} onDetailsBook={showBookDetails} onMutate={changeLibraryFolders} />
+          </>}
+          {page !== 'catalog' ? loadedProfile !== profile ? <p role="status">{lang === 'vi' ? 'Đang mở tủ sách…' : 'Opening your library…'}</p> : <LibraryFoldersWorkspace key={profile} profile={profile} lang={lang} records={records} books={page === 'libraryMap' ? libraryBooks : filteredBooks} allBooks={libraryBooks} filterActive={page !== 'libraryMap' && (!!query.trim() || category !== 'all' || shelfFilter !== 'all' || organizationFilter !== 'all')} renderBook={libraryBookCard} onOpenBook={book => void openBook(book)} onDetailsBook={showBookDetails} onMutate={changeLibraryFolders} mapPage={page === 'libraryMap'} onOpenMap={() => setPage('libraryMap')} onBackFromMap={openedFolder => {
+            if (openedFolder !== undefined) { setQuery(''); setCategory('all'); setShelfFilter('all'); setOrganizationFilter('all') }
+            setPage('library')
+          }} />
             : filteredBooks.length ? <div className="book-grid">{filteredBooks.map(libraryBookCard)}</div> : <div className="empty-state"><Library size={30} /><h3>{curT.filters.emptyTitle}</h3><p>{curT.filters.emptyDesc}</p><button className="secondary" onClick={() => { setQuery(''); setCategory('all'); setShelfFilter('all'); setOrganizationFilter('all') }}>{curT.filters.clearFilter}</button></div>}
         </>}
 

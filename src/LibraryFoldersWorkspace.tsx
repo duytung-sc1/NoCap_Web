@@ -1,8 +1,9 @@
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
-import { ArrowUp, BookOpen, ChevronDown, ChevronRight, Folder, FolderOpen, FolderPlus, LayoutGrid, ListTree, MoreHorizontal, MoveRight, Pencil, Trash2, X } from 'lucide-react'
+import { ArrowUp, BookOpen, ChevronDown, ChevronRight, Folder, FolderOpen, FolderPlus, LayoutGrid, ListTree, MoreHorizontal, MoveRight, Network, Pencil, Trash2, X } from 'lucide-react'
 import type { Lang } from './i18n'
 import type { Book, SyncRecord } from './types'
 import { createLibraryFolder, deleteLibraryFolder, folderPath, getLibraryFolderState, isDescendant, moveLibraryBooks, moveLibraryFolder, renameLibraryFolder, type LibraryFolder } from './libraryFolders'
+import { LibraryFolderMap } from './LibraryFolderMap'
 import './LibraryFoldersWorkspace.css'
 
 export type LibraryFoldersWorkspaceProps = {
@@ -16,6 +17,9 @@ export type LibraryFoldersWorkspaceProps = {
   onOpenBook: (book: Book) => void
   onDetailsBook: (book: Book) => void
   onMutate: (action: () => Promise<unknown>) => Promise<boolean>
+  mapPage?: boolean
+  onOpenMap?: () => void
+  onBackFromMap?: (openedFolderId?: string | null) => void
 }
 
 type View = 'normal' | 'tree'
@@ -31,11 +35,13 @@ export function LibraryFoldersWorkspace(props: LibraryFoldersWorkspaceProps) {
   return <Workspace key={props.profile} {...props} />
 }
 
-function Workspace({ lang, profile, records, books, allBooks, filterActive, renderBook, onOpenBook, onDetailsBook, onMutate }: LibraryFoldersWorkspaceProps) {
+function Workspace({ lang, profile, records, books, allBooks, filterActive, renderBook, onOpenBook, onDetailsBook, onMutate, mapPage, onOpenMap, onBackFromMap }: LibraryFoldersWorkspaceProps) {
   const text = (vi: string, en: string) => lang === 'vi' ? vi : en
   const rootLabel = text('Tủ sách', 'Library')
   const state = useMemo(() => getLibraryFolderState(records, profile), [records, profile])
   const [view, setView] = useState<View>(initialView)
+  const [localMap, setLocalMap] = useState(false)
+  const showingMap = mapPage || localMap
   const [currentId, setCurrentId] = useState<string | null>(null)
   const currentFolder = currentId ? state.folderById.get(currentId) : undefined
   const current = currentFolder?.id ?? null
@@ -53,7 +59,7 @@ function Workspace({ lang, profile, records, books, allBooks, filterActive, rend
   const [saveFailed, setSaveFailed] = useState(false)
   const [notice, setNotice] = useState('')
   const pending = useRef(false), mounted = useRef(false)
-  const dialogReturn = useRef<HTMLElement | null>(null), newFolderButton = useRef<HTMLButtonElement>(null)
+  const dialogReturn = useRef<HTMLElement | null>(null), newFolderButton = useRef<HTMLButtonElement>(null), workspaceElement = useRef<HTMLElement>(null)
   const dialogId = useId()
   const [filterClosed, setFilterClosed] = useState<{ key: string; ids: Set<string> }>({ key: '', ids: new Set() })
   if (selectionScope !== matchKey) {
@@ -161,8 +167,14 @@ function Workspace({ lang, profile, records, books, allBooks, filterActive, rend
   }
   function closeDialog() { if (!pending.current) setDialog(null) }
   function restoreFocus() {
-    const target = dialogReturn.current?.isConnected ? dialogReturn.current : newFolderButton.current
+    const target = dialogReturn.current?.isConnected ? dialogReturn.current : newFolderButton.current ?? workspaceElement.current
     if (target?.isConnected) target.focus()
+  }
+  function leaveMap(openedFolderId?: string | null) {
+    if (pending.current) return
+    if (openedFolderId !== undefined) { setView('normal'); navigate(openedFolderId) }
+    setLocalMap(false)
+    onBackFromMap?.(openedFolderId)
   }
 
   const dialogFolder = dialog && 'folderId' in dialog ? state.folderById.get(dialog.folderId) : undefined
@@ -229,7 +241,7 @@ function Workspace({ lang, profile, records, books, allBooks, filterActive, rend
   const normalBooks = filterActive ? books : booksByFolder.get(current) ?? []
   const immediateFolders = filterActive ? [] : children.get(current) ?? []
   const treeRows: TreeRow[] = []
-  if (view === 'tree') {
+  if (view === 'tree' && !showingMap) {
     const stack: TreeRow[] = []
     const append = (parentId: string | null, depth: number) => {
       const documents = booksByFolder.get(parentId) ?? [], folders = children.get(parentId) ?? []
@@ -251,17 +263,27 @@ function Workspace({ lang, profile, records, books, allBooks, filterActive, rend
   const dialogTitle = !dialog ? '' : dialog.kind === 'create' ? text('Tạo thư mục', 'New folder') : dialog.kind === 'rename' ? text('Đổi tên thư mục', 'Rename folder') :
     dialog.kind === 'moveFolder' ? text('Di chuyển thư mục', 'Move folder') : dialog.kind === 'delete' ? text('Xóa thư mục', 'Delete folder') : text('Chuyển tài liệu', 'Move documents')
   const breadcrumbs = path.length > 3 ? path.slice(-2) : path
-  return <section className="library-folders-workspace" lang={lang} aria-label={text('Thư mục tủ sách', 'Library folders')} aria-busy={busy}>
+  return <section ref={workspaceElement} tabIndex={-1} className={`library-folders-workspace${showingMap ? ' is-map-page' : ''}`} lang={lang} aria-label={text('Thư mục tủ sách', 'Library folders')} aria-busy={busy}>
+    {notice && <div className="library-folders-notice" role="status"><span>{notice}</span><button type="button" className="library-folder-notice-close" aria-label={text('Đóng thông báo', 'Dismiss notice')} onClick={() => setNotice('')}><X size={15} aria-hidden="true" /></button></div>}
+    {showingMap ? <LibraryFolderMap lang={lang} state={state} books={allBooks} busy={busy} initialFolderId={current} renderBook={renderBook}
+      onBack={() => leaveMap()}
+      onOpenFolder={id => leaveMap(id)}
+      onCreateFolder={(parentId, trigger) => openDialog({ kind: 'create', parentId }, trigger)}
+      onRenameFolder={(folder, trigger) => openDialog({ kind: 'rename', folderId: folder.id }, trigger)}
+      onMoveFolder={(folder, trigger) => openDialog({ kind: 'moveFolder', folderId: folder.id }, trigger)}
+      onDeleteFolder={(folder, trigger) => openDialog({ kind: 'delete', folderId: folder.id }, trigger)}
+      onMoveBooks={(bookIds, trigger) => openDialog({ kind: 'moveBooks', bookIds }, trigger)}
+      onOpenBook={onOpenBook} onDetailsBook={onDetailsBook} /> : <>
     <div className="library-folders-toolbar">
       <nav className="library-folder-breadcrumbs" aria-label={text('Đường dẫn thư mục', 'Folder path')} title={fullPath(current)}>
         <button type="button" disabled={busy} aria-current={current === null ? 'location' : undefined} onClick={() => navigate(null)}><BookOpen size={16} aria-hidden="true" />{rootLabel}</button>
         {path.length > 3 && <span aria-hidden="true">/ …</span>}
         {breadcrumbs.map(folder => <span className="library-folder-crumb" key={folder.id}><ChevronRight size={13} aria-hidden="true" /><button type="button" disabled={busy} aria-current={current === folder.id ? 'location' : undefined} title={folder.name} onClick={() => navigate(folder.id)}>{folder.name}</button></span>)}
       </nav>
-      <div className="library-folders-view" role="group" aria-label={text('Cách hiển thị tủ sách', 'Library view')}>
+      <div className="library-folders-display-controls"><button type="button" className="library-folder-button library-folder-map-entry" disabled={busy} onClick={() => { if (onOpenMap) onOpenMap(); else setLocalMap(true) }}><Network size={16} aria-hidden="true" />{text('Bản đồ tủ sách', 'Library map')}</button><div className="library-folders-view" role="group" aria-label={text('Cách hiển thị tủ sách', 'Library view')}>
         <button type="button" disabled={busy} aria-pressed={view === 'normal'} onClick={() => changeView('normal')}><LayoutGrid size={15} aria-hidden="true" />{text('Thông thường', 'Normal')}</button>
         <button type="button" disabled={busy} aria-pressed={view === 'tree'} onClick={() => changeView('tree')}><ListTree size={16} aria-hidden="true" />{text('Cây thư mục', 'Tree')}</button>
-      </div>
+      </div></div>
     </div>
     <div className="library-folders-actions">
       {currentFolder && <button type="button" className="library-folder-button" disabled={busy} onClick={() => navigate(currentFolder.parentId)}><ArrowUp size={16} aria-hidden="true" />{text('Thư mục cha', 'Up one level')}</button>}
@@ -281,7 +303,6 @@ function Workspace({ lang, profile, records, books, allBooks, filterActive, rend
     </div>
     {filterActive && <p className="library-folders-hint">{text('Đang hiển thị tài liệu phù hợp trong toàn bộ tủ sách.', 'Showing matching documents across the entire library.')}</p>}
     {selected.size >= 1000 && <p className="library-folders-hint">{text('Mỗi lần có thể chuyển tối đa 1.000 tài liệu.', 'Move up to 1,000 documents at a time.')}</p>}
-    {notice && <p className="library-folders-notice" role="status">{notice}</p>}
 
     {view === 'normal' ? <>
       {immediateFolders.length > 0 && <div className="library-folder-grid" aria-label={text('Thư mục con', 'Subfolders')}>
@@ -310,6 +331,7 @@ function Workspace({ lang, profile, records, books, allBooks, filterActive, rend
         </li>)}
       </ul>
       {!treeRows.length && <div className="library-folders-empty"><Folder size={25} aria-hidden="true" /><p>{filterActive ? text('Không có tài liệu phù hợp với bộ lọc.', 'No documents match these filters.') : text('Tạo thư mục để sắp xếp tài liệu trong tủ sách.', 'Create a folder to organize your library documents.')}</p></div>}
+    </>}
     </>}
 
     {dialog && <FolderModal title={dialogTitle} id={dialogId} busy={busy} lang={lang} onClose={closeDialog} onSubmit={submit} onReturnFocus={restoreFocus}>

@@ -1,6 +1,8 @@
 .library-folders-workspace{color:var(--site-text);font-family:var(--font-ui);min-width:0;margin:0 0 28px;font-size:13px;line-height:1.6}
 .library-folders-workspace *{box-sizing:border-box}
 .library-folders-toolbar{display:flex;align-items:center;justify-content:space-between;gap:18px;margin:0 0 16px;min-width:0}
+.library-folders-display-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;min-width:0}
+.library-folder-map-entry{min-height:43px;font-size:12px}
 .library-folder-breadcrumbs{display:flex;align-items:center;gap:7px;flex-wrap:wrap;min-width:0;max-width:100%;color:var(--site-muted)}
 .library-folder-breadcrumbs button{display:inline-flex;align-items:center;gap:7px;min-width:0;max-width:100%;border:0;background:transparent;color:var(--site-muted);font:inherit;font-size:12px;padding:5px 0;white-space:normal;overflow-wrap:anywhere;text-align:left;cursor:pointer}
 .library-folder-breadcrumbs button[aria-current=location]{color:var(--site-text);font-weight:600}
@@ -18,7 +20,9 @@
 .library-folders-workspace button:disabled,.library-folder-dialog button:disabled{opacity:.5;cursor:not-allowed}
 .library-folders-workspace :is(button,input,select,summary):focus-visible,.library-folder-dialog :is(button,input,select):focus-visible{outline:2px solid var(--site-accent);outline-offset:3px}
 .library-folders-hint{font-size:12px;color:var(--site-muted);margin:-3px 0 17px;overflow-wrap:anywhere}
-.library-folders-notice{margin:0 0 17px;padding:10px 13px;background:var(--site-tint);border:1px solid var(--site-line);border-radius:8px;color:var(--site-text);font-size:12px}
+.library-folders-notice{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 17px;padding:7px 10px 7px 13px;background:var(--site-tint);border:1px solid var(--site-line);border-radius:8px;color:var(--site-text);font-size:12px}
+.library-folder-notice-close{display:grid;place-items:center;flex:none;width:32px;height:32px;border:0;border-radius:6px;background:transparent;color:var(--site-muted);cursor:pointer}
+.library-folder-notice-close:hover{background:var(--site-panel);color:var(--site-text)}
 .library-folder-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,220px),1fr));gap:12px;margin:0 0 22px}
 .library-folder-card{position:relative;min-width:0;display:flex;align-items:center;background:var(--site-panel);border:1px solid var(--site-line);border-radius:10px;padding:7px 8px 7px 4px}
 .library-folder-card-open{display:flex;align-items:center;gap:12px;flex:1;min-width:0;border:0;background:transparent;color:var(--site-accent);font:inherit;text-align:left;padding:10px;cursor:pointer}
@@ -78,6 +82,7 @@
 .library-folder-error{font-size:12px;color:var(--site-danger);border:1px solid var(--site-danger-line);border-radius:7px;padding:9px 11px;margin:17px 0 0}
 @media(max-width:700px){
   .library-folders-toolbar{align-items:flex-start;flex-direction:column;gap:11px}
+  .library-folders-display-controls{justify-content:flex-start;width:100%;gap:8px}
   .library-folders-view{align-self:flex-start}
   .library-folders-actions{gap:7px}
   .library-folder-selection{margin-left:0;flex:1;min-width:80px}
