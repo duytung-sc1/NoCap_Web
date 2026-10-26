@@ -235,6 +235,12 @@ export async function resolveConflict(
     if (!remote) throw new Error('Chưa tìm thấy bản cloud. Bản trên máy vẫn được giữ.')
     await acceptRemoteConflict(item, remote, expectedLocal)
   } else {
+    // The reset is already authoritative. Retrying a deletion against its
+    // tombstone cannot apply; accepting that version completes the same intent.
+    if (item.operation.kind === 'reading_progress' && remote?.deleted && expectedLocal?.deleted) {
+      await acceptRemoteConflict(item, remote, expectedLocal)
+      return
+    }
     // Older outbox entries may not yet know the remote record was deleted.
     // Preserve the local payload and operation identity while making that state
     // visible to the conflict UI, rather than sending an unsupported recreate.

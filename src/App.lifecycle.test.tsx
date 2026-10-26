@@ -10,7 +10,7 @@ import { REMEMBER_LOGIN_KEY } from './authPreferences'
 import App from './App'
 import { ApiError } from './api'
 import { androidRecordId } from './sync'
-import { saveStealthCheckpoint } from './stealth/checkpoint'
+import { readStealthCheckpoint, saveStealthCheckpoint } from './stealth/checkpoint'
 import { DRAWING_COLORS, emptyDrawing } from './drawing'
 import { emptyReaderNoteDraft, readReaderNoteDraft, writeReaderNoteDraft } from './readerNoteDrafts'
 
@@ -18,6 +18,7 @@ const fixtures = vi.hoisted(() => ({
   login: vi.fn(), googleLogin: vi.fn(), getFiles: vi.fn(), getFile: vi.fn(), getOfflineBook: vi.fn(), getCatalog: vi.fn(), removeLocalDocument: vi.fn(), mutate: vi.fn(), loadBytes: vi.fn(), downloadHttps: vi.fn(), adminIdentity: vi.fn(), adminRequest: vi.fn(), localRecords: vi.fn(), entitlement: vi.fn(), preparePdf: vi.fn(), saveDownload: vi.fn(), conflicts: vi.fn(), resolveConflict: vi.fn(), updateProfile: vi.fn(), deleteAccount: vi.fn(), searchBook: vi.fn(), readerThrows: false, adminThrows: false,
 }))
 const announcementFixtures = vi.hoisted(() => ({ get: vi.fn() }))
+const libraryResetFixtures = vi.hoisted(() => ({ reset: vi.fn(), offline: vi.fn() }))
 vi.mock('./httpsImport', async importOriginal => ({
   ...await importOriginal<typeof import('./httpsImport')>(), downloadHttpsPublication: fixtures.downloadHttps,
 }))
@@ -38,7 +39,8 @@ vi.mock('./api', async importOriginal => ({
 vi.mock('./store', async importOriginal => ({
   ...await importOriginal<typeof import('./store')>(),
   getFiles: fixtures.getFiles, getFile: fixtures.getFile, removeLocalDocument: fixtures.removeLocalDocument,
-  getOfflineBooks: async () => [], getOfflineBook: fixtures.getOfflineBook,
+  getOfflineBooks: libraryResetFixtures.offline, getOfflineBook: fixtures.getOfflineBook,
+  resetPublicLibraryBook: libraryResetFixtures.reset,
   getPending: async () => [], getCachedCatalog: async () => undefined,
   saveCachedCatalog: async () => {},
 }))
@@ -109,6 +111,8 @@ beforeEach(() => {
   fixtures.getFiles.mockReset().mockResolvedValue([])
   fixtures.getFile.mockReset().mockResolvedValue(undefined)
   fixtures.getOfflineBook.mockReset().mockResolvedValue(undefined)
+  libraryResetFixtures.reset.mockReset().mockResolvedValue(undefined)
+  libraryResetFixtures.offline.mockReset().mockResolvedValue([])
   fixtures.getCatalog.mockReset().mockResolvedValue({ books: [], categories: [] })
   announcementFixtures.get.mockReset().mockResolvedValue({ announcements: [] })
   fixtures.removeLocalDocument.mockReset().mockResolvedValue(undefined)
@@ -222,6 +226,89 @@ describe('nested library integration', () => {
   })
 })
 
+describe('removing public books from the personal library', () => {
+  const book = { id: 'qa-public-reset', title: 'QA public reset', author: 'QA', source: 'public', format: 'TXT', fileUrl: 'https://example.test/book.txt' }
+  function progress(profile = 'DEVICE_LOCAL'): SyncRecord {
+    const id = androidRecordId('reading_progress', book.id)
+    return { key: `${profile}:reading_progress:${id}`, profile, kind: 'reading_progress', id, version: 4, deleted: false,
+      payload: { book_id: book.id, progression: 1, locator_json: '{"progression":1}', last_read_at: 100 } }
+  }
+  function setup(profile = 'DEVICE_LOCAL') {
+    fixtures.getCatalog.mockResolvedValue({ books: [book], categories: [] })
+    fixtures.localRecords.mockResolvedValue([progress(profile)])
+    libraryResetFixtures.offline.mockImplementation(async scope => scope === 'PUBLIC_OFFLINE'
+      ? [{ key: `PUBLIC_OFFLINE:${book.id}`, profile: scope, bookId: book.id, data: new Blob(['book']), savedAt: 1 }] : [])
+    window.history.replaceState(null, '', '/library')
+  }
+
+  it('resets the shelf entry while keeping the public catalogue and shared cached bytes available', async () => {
+    setup()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    saveStealthCheckpoint('DEVICE_LOCAL', book.id, { progression: 0.8 })
+    libraryResetFixtures.reset.mockImplementation(async () => {
+      fixtures.localRecords.mockResolvedValue([{ ...progress(), deleted: true }])
+    })
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: `Gỡ khỏi tủ sách: ${book.title}` }))
+    await waitFor(() => expect(libraryResetFixtures.reset).toHaveBeenCalledExactlyOnceWith('DEVICE_LOCAL', book.id, androidRecordId('reading_progress', book.id)))
+    await screen.findByText('Đã gỡ khỏi tủ sách và đặt lại chưa đọc. Sách vẫn có trong Khám phá; ghi chú được giữ nguyên.')
+    expect(screen.queryByRole('button', { name: book.title })).toBeNull()
+    expect(readStealthCheckpoint('DEVICE_LOCAL', book.id)).toBeUndefined()
+    expect(fixtures.removeLocalDocument).not.toHaveBeenCalled()
+    fireEvent.click(screen.getAllByRole('button', { name: 'Khám phá' })[0])
+    expect(await screen.findByRole('button', { name: book.title })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: `Gỡ khỏi tủ sách: ${book.title}` })).toBeNull()
+  })
+
+  it('does not reset a public book when the user cancels', async () => {
+    setup()
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: `Gỡ khỏi tủ sách: ${book.title}` }))
+    expect(libraryResetFixtures.reset).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: book.title })).toBeTruthy()
+  })
+
+  it('keeps the shelf entry and resume checkpoint if the reset fails', async () => {
+    setup()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    libraryResetFixtures.reset.mockRejectedValue(new Error('Reset storage unavailable'))
+    saveStealthCheckpoint('DEVICE_LOCAL', book.id, { progression: 0.7 })
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: `Gỡ khỏi tủ sách: ${book.title}` }))
+    expect(await screen.findByText('Reset storage unavailable')).toBeTruthy()
+    expect(screen.getByRole('button', { name: book.title })).toBeTruthy()
+    expect(readStealthCheckpoint('DEVICE_LOCAL', book.id)?.progression).toBe(0.7)
+  })
+
+  it('reports a committed reset separately when refreshing the library fails', async () => {
+    setup()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    libraryResetFixtures.reset.mockImplementation(async () => { fixtures.getFiles.mockRejectedValueOnce(new Error('Refresh unavailable')) })
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: `Gỡ khỏi tủ sách: ${book.title}` }))
+    expect(await screen.findByText('Đã lưu việc gỡ sách. Danh sách chưa làm mới được; hãy tải lại trang. Sách và ghi chú vẫn được giữ.')).toBeTruthy()
+    expect(libraryResetFixtures.reset).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not repeat an in-flight reset or show the old account completion after switching accounts', async () => {
+    saveSession(session)
+    setup('ACCOUNT:qa-user')
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const pending = deferred<void>()
+    libraryResetFixtures.reset.mockReturnValue(pending.promise)
+    render(<App />)
+    const remove = await screen.findByRole('button', { name: `Gỡ khỏi tủ sách: ${book.title}` })
+    fireEvent.click(remove); fireEvent.click(remove)
+    expect(libraryResetFixtures.reset).toHaveBeenCalledTimes(1)
+    expect(window.confirm).toHaveBeenCalledTimes(1)
+    saveSession(null)
+    fireEvent(window, new StorageEvent('storage', { key: SESSION_STORAGE_KEY, storageArea: localStorage }))
+    await act(async () => { pending.resolve(); await pending.promise })
+    expect(screen.queryByText('Đã gỡ khỏi tủ sách và đặt lại chưa đọc. Sách vẫn có trong Khám phá; ghi chú được giữ nguyên.')).toBeNull()
+  })
+})
+
 describe('library write failures and concurrent actions', () => {
   async function reader() {
     fixtures.getFiles.mockResolvedValue([file('QA document')])
@@ -231,29 +318,114 @@ describe('library write failures and concurrent actions', () => {
     return screen.getByRole('button', { name: 'Đánh dấu vị trí' })
   }
 
-  it('opens read aloud alongside notes and stops speech on Escape and reader exit', async () => {
+  it('shares the reading sidebar with notes without restarting speech and stops on Escape or reader exit', async () => {
     const speech = new MockSynthesis()
     vi.stubGlobal('speechSynthesis', speech.api()); vi.stubGlobal('SpeechSynthesisUtterance', MockUtterance)
     try {
-      const readerView = within((await reader()).closest('.reader-shell') as HTMLElement)
-      fireEvent.click(readerView.getByRole('button', { name: 'Đọc thành tiếng' }))
+      const shell = (await reader()).closest('.reader-shell') as HTMLElement
+      const readerView = within(shell)
+      const toggle = readerView.getByRole('button', { name: 'Đọc thành tiếng' })
+      fireEvent.click(toggle)
+      const panel = shell.querySelector('#reader-speech-panel') as HTMLElement
+      expect(panel.parentElement).toBe(shell.querySelector('.reader-workspace'))
+      expect(panel.closest('[hidden]')).toBeNull()
+      expect(toggle.getAttribute('aria-expanded')).toBe('true')
       fireEvent.click(readerView.getByRole('button', { name: 'Nghe phần hiện tại' }))
       await waitFor(() => expect(speech.spoken).toHaveLength(1))
       expect(speech.spoken[0].text).toBe('QA spoken book text')
+      const playing = speech.cancel.mock.calls.length
       fireEvent.click(readerView.getByRole('button', { name: 'Bảng ghi chú' }))
+      expect(readerView.getByRole('complementary', { name: 'Ghi chú khi đọc' })).toBeTruthy()
+      expect(readerView.queryByRole('button', { name: 'Tạm dừng' })).toBeNull()
+      expect(panel.closest('[hidden]')).toBeTruthy()
+      expect(toggle.getAttribute('aria-expanded')).toBe('false')
+      expect(speech.cancel.mock.calls.length).toBe(playing)
+      fireEvent.click(readerView.getByRole('button', { name: 'Đóng bảng ghi chú' }))
+      expect(panel.closest('[hidden]')).toBeNull()
       expect(readerView.getByRole('button', { name: 'Tạm dừng' })).toBeTruthy()
+      fireEvent.click(readerView.getByRole('button', { name: 'Bảng ghi chú' }))
+      fireEvent.click(toggle)
+      expect(shell.querySelector('#reader-speech-panel')).toBe(panel)
+      expect(readerView.queryByRole('complementary', { name: 'Ghi chú khi đọc' })).toBeNull()
+      expect(readerView.getByRole('button', { name: 'Tạm dừng' })).toBeTruthy()
+      expect(speech.spoken).toHaveLength(1)
+      expect(speech.cancel.mock.calls.length).toBe(playing)
       const before = speech.cancel.mock.calls.length
       fireEvent.keyDown(window, { key: 'Escape' })
       expect(readerView.queryByRole('button', { name: 'Nghe phần hiện tại' })).toBeNull()
       expect(speech.cancel.mock.calls.length).toBeGreaterThan(before)
+      expect(document.activeElement).toBe(toggle)
       expect(screen.getByText('QA reader content')).toBeTruthy()
-      fireEvent.click(readerView.getByRole('button', { name: 'Đọc thành tiếng' }))
+      fireEvent.click(toggle)
       fireEvent.click(readerView.getByRole('button', { name: 'Nghe phần hiện tại' }))
       await waitFor(() => expect(speech.spoken).toHaveLength(2))
       const beforeExit = speech.cancel.mock.calls.length
       fireEvent.click(readerView.getByRole('button', { name: 'Trở về Trang chủ' }))
       expect(speech.cancel.mock.calls.length).toBeGreaterThan(beforeExit)
       expect(screen.queryByText('QA reader content')).toBeNull()
+    } finally { cleanup(); vi.unstubAllGlobals() }
+  })
+
+  it('temporarily shows keyboard or embedded search over the speech sidebar and closes the visible panel first', async () => {
+    const speech = new MockSynthesis()
+    vi.stubGlobal('speechSynthesis', speech.api()); vi.stubGlobal('SpeechSynthesisUtterance', MockUtterance)
+    try {
+      const shell = (await reader()).closest('.reader-shell') as HTMLElement
+      const readerView = within(shell)
+      const toggle = readerView.getByRole('button', { name: 'Đọc thành tiếng' })
+      const searchToggle = readerView.getByRole('button', { name: 'Tìm trong sách' })
+      fireEvent.click(toggle)
+      fireEvent.click(readerView.getByRole('button', { name: 'Nghe phần hiện tại' }))
+      await waitFor(() => expect(speech.spoken).toHaveLength(1))
+      const panel = shell.querySelector('#reader-speech-panel') as HTMLElement
+      const playing = speech.cancel.mock.calls.length
+      const shortcut = new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true, cancelable: true })
+      fireEvent(window, shortcut)
+      expect(shortcut.defaultPrevented).toBe(true)
+      const search = readerView.getByRole('complementary', { name: 'Tìm trong sách' })
+      const input = within(search).getByRole('searchbox', { name: 'Từ khóa trong sách' })
+      await waitFor(() => expect(document.activeElement).toBe(input))
+      expect(panel.closest('[hidden]')).toBeTruthy()
+      expect(toggle.getAttribute('aria-expanded')).toBe('false')
+      expect(speech.cancel.mock.calls.length).toBe(playing)
+      fireEvent.keyDown(input, { key: 'Escape' })
+      expect(readerView.queryByRole('complementary', { name: 'Tìm trong sách' })).toBeNull()
+      expect(panel.closest('[hidden]')).toBeNull()
+      expect(readerView.getByRole('button', { name: 'Tạm dừng' })).toBeTruthy()
+      expect(document.activeElement).toBe(searchToggle)
+      expect(speech.cancel.mock.calls.length).toBe(playing)
+      fireEvent.click(readerView.getByRole('button', { name: 'QA embedded reader search request' }))
+      expect(readerView.getByRole('complementary', { name: 'Tìm trong sách' })).toBeTruthy()
+      fireEvent.click(toggle)
+      expect(shell.querySelector('#reader-speech-panel')).toBe(panel)
+      expect(readerView.queryByRole('complementary', { name: 'Tìm trong sách' })).toBeNull()
+      expect(toggle.getAttribute('aria-expanded')).toBe('true')
+      expect(speech.spoken).toHaveLength(1)
+      fireEvent.keyDown(window, { key: 'Escape' })
+      expect(shell.querySelector('#reader-speech-panel')).toBeNull()
+      expect(speech.cancel.mock.calls.length).toBeGreaterThan(playing)
+      expect(document.activeElement).toBe(toggle)
+    } finally { cleanup(); vi.unstubAllGlobals() }
+  })
+
+  it('keeps read aloud visible when selecting a passage and can read that selection', async () => {
+    const speech = new MockSynthesis()
+    vi.stubGlobal('speechSynthesis', speech.api()); vi.stubGlobal('SpeechSynthesisUtterance', MockUtterance)
+    try {
+      const readerView = within((await reader()).closest('.reader-shell') as HTMLElement)
+      const toggle = readerView.getByRole('button', { name: 'Đọc thành tiếng' })
+      fireEvent.click(toggle)
+      fireEvent.click(readerView.getByRole('button', { name: 'QA select passage' }))
+      expect(toggle.getAttribute('aria-expanded')).toBe('true')
+      expect(readerView.queryByRole('complementary', { name: 'Ghi chú khi đọc' })).toBeNull()
+      const readSelection = readerView.getByRole('button', { name: 'Nghe đoạn đã chọn' })
+      expect(readSelection.hasAttribute('disabled')).toBe(false)
+      fireEvent.click(readSelection)
+      await waitFor(() => expect(speech.spoken).toHaveLength(1))
+      expect(speech.spoken[0].text).toBe('A selected passage worth remembering')
+      fireEvent.click(readerView.getByRole('button', { name: 'Bảng ghi chú' }))
+      const notes = readerView.getByRole('complementary', { name: 'Ghi chú khi đọc' })
+      expect(within(notes).getByText('A selected passage worth remembering')).toBeTruthy()
     } finally { cleanup(); vi.unstubAllGlobals() }
   })
 

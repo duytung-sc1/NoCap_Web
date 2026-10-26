@@ -165,6 +165,50 @@ export async function applyLocalMutations(profile: string, build: (records: Sync
   })
 }
 
+/** Reset only personal shelf membership. Public catalog data, shared downloads,
+ * annotations, review cards and past reading sessions remain intact. Progress
+ * must cross a server tombstone: writing zero cannot reset a completed book. */
+export async function resetPublicLibraryBook(profile: string, bookId: string, canonicalProgressId: string): Promise<void> {
+  if (!profile || !bookId.trim() || bookId.length > 512 || [...bookId].some(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127) ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(canonicalProgressId)) throw new Error('Invalid public library book identity')
+  await withSyncTransaction(async transaction => {
+    const records = await transaction.objectStore('records').getAll(range(profile))
+    const matching = records.filter(record => record.profile === profile && record.payload.book_id === bookId)
+    // Older clients can leave a canonical tombstone with an empty payload.
+    // Its observed deleted version is still authoritative for this identity.
+    const progress = records.filter(record => record.profile === profile && record.kind === 'reading_progress' &&
+      (record.payload.book_id === bookId || record.id === canonicalProgressId))
+    const now = Math.max(Date.now(), ...progress.map(record => Number.isSafeInteger(record.payload.last_read_at) ? Number(record.payload.last_read_at) : 0))
+    const resetPayload = { book_id: bookId, last_read_at: now, sync_version: 1 }
+    const progressIds = new Set(progress.filter(record => !record.deleted).map(record => record.id))
+    if (!progress.some(record => record.id === canonicalProgressId)) progressIds.add(canonicalProgressId)
+    for (const id of progressIds) {
+      const key = keyFor(profile, `reading_progress:${id}`)
+      const previousPending = await transaction.objectStore('pending').get(key)
+      await writeLocalMutation(transaction, profile, { kind: 'reading_progress', id, payload: resetPayload, deleted: true })
+      if (profile === 'DEVICE_LOCAL') continue
+      if (previousPending && !previousPending.attempted && previousPending.operation.recreate &&
+        !previousPending.operation.deleted && previousPending.remoteDeleted) {
+        // The preceding reset is already acknowledged. A reread that has not
+        // been submitted can simply be cancelled; the cloud is still deleted.
+        await transaction.objectStore('pending').delete(key)
+        continue
+      }
+      const pending = await transaction.objectStore('pending').get(key)
+      if (!pending) continue
+      // Freezing is part of this same transaction; another tab cannot replace
+      // the deletion with a reread before its version has been acknowledged.
+      await transaction.objectStore('pending').put(previousPending?.attempted && !previousPending.operation.deleted
+        ? { ...pending, resetAfterAcknowledgement: { payload: resetPayload } }
+        : { ...pending, attempted: true })
+    }
+    for (const record of matching) {
+      if (record.deleted || (record.kind !== 'favorites' && record.kind !== 'book_folder_locations')) continue
+      await writeLocalMutation(transaction, profile, { kind: record.kind, id: record.id, payload: record.payload, deleted: true })
+    }
+  })
+}
+
 async function writeLocalMutation(transaction: SyncTransaction, profile: string, { kind, id, payload, deleted = false, localOnly = false }: LocalMutation) {
   const key = keyFor(profile, `${kind}:${id}`)
     const records = transaction.objectStore('records')
@@ -176,6 +220,7 @@ async function writeLocalMutation(transaction: SyncTransaction, profile: string,
     if (profile === 'DEVICE_LOCAL' || localOnly || pending?.attempted) return
     await pendingStore.put({
       key, profile, attempted: false, needsBlobUpload: pending?.needsBlobUpload,
+      remoteDeleted: pending?.remoteDeleted ?? (!pending && current?.deleted && current.version > 0 ? true : undefined),
       operation: {
         opId: pending?.operation.opId || crypto.randomUUID(), kind, id,
         baseVersion: current?.version || 0, deleted, payload: nextPayload,
@@ -228,11 +273,27 @@ export async function acknowledgeSyncOperation(item: PendingOperation, latest: S
     if (pending?.operation.opId !== item.operation.opId) return
     const current = await records.get(item.key)
     if (current && current.version > latest.version) return
-    const changedAgain = current && (current.deleted !== item.operation.deleted || JSON.stringify(current.payload) !== JSON.stringify(item.operation.payload))
+    if (pending.resetAfterAcknowledgement && !latest.deleted) {
+      // Preserve a reread's visible position, but publish the reset first even
+      // when the superseded request was an older active-progress operation.
+      if (current) await records.put({ ...current, version: latest.version })
+      await pendingStore.put({
+        key: item.key, profile: item.profile, attempted: true,
+        operation: { opId: crypto.randomUUID(), kind: item.operation.kind, id: item.operation.id,
+          baseVersion: latest.version, deleted: true, payload: pending.resetAfterAcknowledgement.payload },
+      })
+      return
+    }
+    const resetAlreadyApplied = !!pending.resetAfterAcknowledgement && !!latest.deleted
+    // Repeated resets need no second write to a server tombstone. Their
+    // timestamps may differ, but the deleted state already records the reset.
+    const sameProgressDeletion = item.operation.kind === 'reading_progress' && !!current?.deleted && !!latest.deleted
+    const changedAgain = current && !sameProgressDeletion && ((resetAlreadyApplied && !current.deleted) || current.deleted !== item.operation.deleted || JSON.stringify(current.payload) !== JSON.stringify(item.operation.payload))
     if (changedAgain) {
       await records.put({ ...current, version: latest.version })
       await pendingStore.put({
         key: item.key, profile: item.profile, attempted: false,
+        remoteDeleted: latest.deleted ? true : undefined,
         needsBlobUpload: current.kind === 'catalog_books' && current.payload.file_url !== item.operation.payload.file_url,
         operation: {
           opId: crypto.randomUUID(), kind: current.kind, id: current.id,
@@ -277,16 +338,18 @@ export async function prepareLocalConflict(item: PendingOperation, remote?: Sync
     const current = await store.get(item.key)
     if (current?.operation.opId !== item.operation.opId) throw new Error('Mục đồng bộ đã thay đổi. Vui lòng thử lại.')
     const local = await transaction.objectStore('records').get(item.key)
-    const deleted = local?.deleted ?? item.operation.deleted
-    const localPayload = local?.payload || item.operation.payload
+    const resetRequired = item.operation.kind === 'reading_progress' && !remote?.deleted &&
+      (!!current.resetAfterAcknowledgement || current.operation.deleted)
+    const deleted = resetRequired || (local?.deleted ?? item.operation.deleted)
+    const localPayload = resetRequired ? current.resetAfterAcknowledgement?.payload || current.operation.payload : local?.payload || item.operation.payload
     const payload = retainCompletedProgress(item.operation.kind, localPayload, remote?.payload, deleted, !!remote?.deleted)
-    if (local && payload !== localPayload) await transaction.objectStore('records').put({ ...local, payload })
+    if (local && !resetRequired && payload !== localPayload) await transaction.objectStore('records').put({ ...local, payload })
     const operation: SyncOperation = {
       ...item.operation, opId: crypto.randomUUID(), baseVersion: remote?.version ?? item.operation.baseVersion,
       payload, deleted,
       recreate: remote?.deleted && !deleted ? true : undefined,
     }
-    const next = { ...current, operation, attempted: true, conflicted: true,
+    const next = { ...current, operation, attempted: true, conflicted: true, remoteDeleted: !!remote?.deleted, resetAfterAcknowledgement: undefined,
       needsBlobUpload: current.needsBlobUpload || operation.payload.file_url !== item.operation.payload.file_url }
     await store.put(next)
     return next

@@ -80,6 +80,22 @@
 .library-folder-dialog-close{position:absolute;right:15px;top:16px;width:32px;height:32px;display:grid;place-items:center;background:transparent;color:var(--site-muted);border:0;border-radius:6px;cursor:pointer}
 .library-folder-dialog-close:hover{background:var(--site-tint);color:var(--site-accent)}
 .library-folder-error{font-size:12px;color:var(--site-danger);border:1px solid var(--site-danger-line);border-radius:7px;padding:9px 11px;margin:17px 0 0}
+.library-add-explanation{font-size:12px;color:var(--site-muted);margin:0 0 12px;line-height:1.7}
+.library-add-search{position:relative;display:flex;align-items:center;color:var(--site-muted)}
+.library-add-search>svg{position:absolute;left:11px;pointer-events:none}
+.library-folder-dialog .library-add-search input{padding-left:36px}
+.library-add-count{font-size:11px;color:var(--site-muted);margin:12px 0 7px}
+.library-add-selection{display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.library-add-selection>div{display:flex;gap:10px;align-items:center}
+.library-add-list{max-height:min(360px,40dvh);overflow:auto;overscroll-behavior:contain;border:1px solid var(--site-line);border-radius:8px;background:var(--site-panel)}
+.library-folder-dialog label.library-add-item{display:flex;align-items:flex-start;gap:11px;margin:0;padding:12px;cursor:pointer;font-weight:400;border-bottom:1px solid var(--site-line)}
+.library-add-item:last-child{border-bottom:0}
+.library-add-item:has(input:checked){background:var(--site-tint)}
+.library-folder-dialog .library-add-item input[type=checkbox]{width:18px;height:18px;min-height:18px;padding:0;flex:none;accent-color:var(--site-accent);margin:3px 0 0}
+.library-add-item>span{min-width:0;display:grid;gap:4px}
+.library-add-item strong{font-size:12px;color:var(--site-text);font-weight:600;overflow-wrap:anywhere}
+.library-add-item small{font-size:10px;color:var(--site-muted);overflow-wrap:anywhere;line-height:1.5}
+.library-add-empty{margin:0;padding:18px 12px;font-size:12px;color:var(--site-muted);line-height:1.7}
 @media(max-width:700px){
   .library-folders-toolbar{align-items:flex-start;flex-direction:column;gap:11px}
   .library-folders-display-controls{justify-content:flex-start;width:100%;gap:8px}

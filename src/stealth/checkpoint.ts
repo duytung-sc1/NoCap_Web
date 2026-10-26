@@ -33,6 +33,10 @@ export function saveStealthCheckpoint(profile: string, bookId: string, position:
   } catch { return false }
 }
 
+export function clearStealthCheckpoint(profile: string, bookId: string): void {
+  try { localStorage.removeItem(key(profile, bookId)) } catch { /* The reset progress record still wins over a stale checkpoint. */ }
+}
+
 export function stealthLocator(position: StealthPosition): string {
   return JSON.stringify({ type: 'STEALTH', version: 2, progression: position.progression, href: position.sourceHref,
     rowIndex: position.rowIndex, rowCount: position.rowCount, rowId: position.rowId, rowOffset: position.rowOffset })

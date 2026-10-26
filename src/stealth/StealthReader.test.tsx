@@ -30,6 +30,12 @@ async function renderReader() {
 }
 
 describe('Excel reading pages and restoration', () => {
+  it('ignores a stale local checkpoint when the owning reader explicitly resets it', async () => {
+    saveStealthCheckpoint(props.profile, book.id, { progression: 0.8, rowIndex: 73, rowCount: 95 })
+    await act(async () => { render(<StealthReader {...props} resumeCheckpoint={null} initialProgression={0} />) })
+    await screen.findByRole('cell', { name: 'Paragraph 0' })
+    expect(progress.mock.calls.at(-1)?.[0]).toMatchObject({ rowIndex: 0, progression: 0 })
+  })
   it('keeps paging on the keyboard, opens each new page at the top and prevents out-of-range navigation', async () => {
     const { container } = await renderReader()
     await screen.findByRole('cell', { name: 'Paragraph 0' })

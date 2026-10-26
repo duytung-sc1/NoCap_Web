@@ -24,6 +24,7 @@ vi.mock('./LibraryFolderMap', () => ({ LibraryFolderMap: (input: ComponentProps<
       <button disabled={input.busy} onClick={event => input.onRenameFolder(folder, event.currentTarget)}>Map rename</button>
       <button disabled={input.busy} onClick={event => input.onMoveFolder(folder, event.currentTarget)}>Map move folder</button>
       <button disabled={input.busy} onClick={event => input.onDeleteFolder(folder, event.currentTarget)}>Map delete</button>
+      <button disabled={input.busy} onClick={event => input.onAddBooks?.(folder.id, event.currentTarget)}>Map add documents</button>
     </>}
     <button disabled={input.busy} onClick={event => input.onMoveBooks(['deep'], event.currentTarget)}>Map move document</button>
   </div>
@@ -43,6 +44,19 @@ beforeEach(() => { localStorage.clear(); vi.clearAllMocks(); Object.values(mutat
 afterEach(cleanup)
 
 describe('library map workspace integration', () => {
+  it('opens a fixed-target library picker from the selected map folder', async () => {
+    const input = props({ mapPage: true, filterActive: true, books: [] })
+    render(<LibraryFoldersWorkspace {...input} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Map add documents' }))
+    const dialog = within(screen.getByRole('dialog'))
+    expect(dialog.getByText('Library / Essays')).toBeTruthy()
+    fireEvent.click(dialog.getByRole('checkbox', { name: /Root book/ }))
+    fireEvent.click(dialog.getByRole('button', { name: 'Add to folder' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(mutations.moveLibraryBooks).toHaveBeenCalledWith(profile, ['root'], a)
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Map add documents' })))
+  })
+
   it('opens the separate map with the entire library and preserves the previous folder on Back', () => {
     const input = props({ onOpenMap: vi.fn(), onBackFromMap: vi.fn() })
     const mounted = render(<LibraryFoldersWorkspace {...input} />)

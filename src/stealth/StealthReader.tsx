@@ -19,7 +19,7 @@ import './StealthReader.css'
 import { stealthShortcut } from './shortcuts'
 import { DisguiseFullscreen } from './fullscreen'
 import { ExcelView } from './ExcelView'
-import { readStealthCheckpoint, saveStealthCheckpoint, stealthLocator, type StealthPosition } from './checkpoint'
+import { readStealthCheckpoint, saveStealthCheckpoint, stealthLocator, type StealthCheckpoint, type StealthPosition } from './checkpoint'
 export type { StealthPosition } from './checkpoint'
 
 export type DisguiseMode = 'excel' | 'vscode' | 'doc'
@@ -31,6 +31,7 @@ interface Props {
   lang: Lang
   initialProgression?: number
   initialLocator?: string
+  resumeCheckpoint?: StealthCheckpoint | null
   onClose: (position?: StealthPosition) => void
   onExitHome?: () => void
   onProgressChange?: (position: StealthPosition) => void
@@ -43,12 +44,13 @@ export function StealthReader({
   lang,
   initialProgression = 0,
   initialLocator,
+  resumeCheckpoint,
   onClose,
   onExitHome,
   onProgressChange,
 }: Props) {
   const curT = t[lang].stealth
-  const checkpoint = useMemo(() => readStealthCheckpoint(profile, book.id), [profile, book.id])
+  const checkpoint = useMemo(() => resumeCheckpoint === undefined ? readStealthCheckpoint(profile, book.id) : resumeCheckpoint ?? undefined, [profile, book.id, resumeCheckpoint])
   const [mode, setMode] = useState<DisguiseMode>('excel')
   const [panic, setPanic] = useState(false)
   const [rows, setRows] = useState<StealthRow[]>([])

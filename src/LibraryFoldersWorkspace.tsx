@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
-import { ArrowUp, BookOpen, ChevronDown, ChevronRight, Folder, FolderOpen, FolderPlus, LayoutGrid, ListTree, MoreHorizontal, MoveRight, Network, Pencil, Trash2, X } from 'lucide-react'
+import { ArrowUp, BookOpen, ChevronDown, ChevronRight, Folder, FolderOpen, FolderPlus, LayoutGrid, ListTree, MoreHorizontal, MoveRight, Network, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 import type { Lang } from './i18n'
 import type { Book, SyncRecord } from './types'
 import { createLibraryFolder, deleteLibraryFolder, folderPath, getLibraryFolderState, isDescendant, moveLibraryBooks, moveLibraryFolder, renameLibraryFolder, type LibraryFolder } from './libraryFolders'
@@ -23,7 +23,7 @@ export type LibraryFoldersWorkspaceProps = {
 }
 
 type View = 'normal' | 'tree'
-type FolderDialog = { kind: 'create'; parentId: string | null } | { kind: 'rename'; folderId: string } | { kind: 'moveFolder'; folderId: string } | { kind: 'delete'; folderId: string } | { kind: 'moveBooks'; bookIds: string[] }
+type FolderDialog = { kind: 'create'; parentId: string | null } | { kind: 'rename'; folderId: string } | { kind: 'moveFolder'; folderId: string } | { kind: 'delete'; folderId: string } | { kind: 'moveBooks'; bookIds: string[] } | { kind: 'addBooks'; folderId: string }
 type TreeRow = { kind: 'folder'; folder: LibraryFolder; depth: number } | { kind: 'book'; book: Book; depth: number }
 const VIEW_KEY = 'nocap-library-view-v1'
 function initialView(): View {
@@ -55,6 +55,8 @@ function Workspace({ lang, profile, records, books, allBooks, filterActive, rend
   const [dialog, setDialog] = useState<FolderDialog | null>(null)
   const [name, setName] = useState('')
   const [destination, setDestination] = useState('')
+  const [pickerQuery, setPickerQuery] = useState('')
+  const [pickedBooks, setPickedBooks] = useState<Set<string>>(() => new Set())
   const [busy, setBusy] = useState(false)
   const [saveFailed, setSaveFailed] = useState(false)
   const [notice, setNotice] = useState('')
@@ -163,7 +165,7 @@ function Workspace({ lang, profile, records, books, allBooks, filterActive, rend
     setName(next.kind === 'rename' ? state.folderById.get(next.folderId)?.name ?? '' : '')
     const parent = next.kind === 'moveFolder' ? state.folderById.get(next.folderId)?.parentId ?? null :
       next.kind === 'moveBooks' ? state.bookFolders.get(next.bookIds[0]) ?? null : current
-    setDestination(parent ?? ''); setSaveFailed(false); setNotice(''); setDialog(next)
+    setDestination(parent ?? ''); setPickerQuery(''); setPickedBooks(new Set()); setSaveFailed(false); setNotice(''); setDialog(next)
   }
   function closeDialog() { if (!pending.current) setDialog(null) }
   function restoreFocus() {
@@ -178,6 +180,24 @@ function Workspace({ lang, profile, records, books, allBooks, filterActive, rend
   }
 
   const dialogFolder = dialog && 'folderId' in dialog ? state.folderById.get(dialog.folderId) : undefined
+  const addCandidates = useMemo(() => dialog?.kind === 'addBooks' ? allBooks.filter(book => state.bookFolders.get(book.id) !== dialog.folderId) : [], [dialog, allBooks, state])
+  const candidateIds = useMemo(() => new Set(addCandidates.map(book => book.id)), [addCandidates])
+  const validPicked = useMemo(() => [...pickedBooks].filter(id => candidateIds.has(id)), [pickedBooks, candidateIds])
+  const normalizeSearch = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase(lang).replace(/đ/g, 'd')
+  const pickerResults = addCandidates.filter(book => normalizeSearch(`${book.title} ${book.author ?? ''}`).includes(normalizeSearch(pickerQuery.trim())))
+  function togglePicked(id: string) {
+    if (pending.current || !candidateIds.has(id)) return
+    setPickedBooks(previous => {
+      const next = new Set([...previous].filter(item => candidateIds.has(item)))
+      if (next.has(id)) next.delete(id)
+      else if (next.size < 1000) next.add(id)
+      return next
+    })
+  }
+  function selectPickerResults() {
+    if (pending.current) return
+    setPickedBooks(new Set([...new Set([...validPicked, ...pickerResults.map(book => book.id)])].slice(0, 1000)))
+  }
   const destinations = useMemo(() => {
     if (!dialog || (dialog.kind !== 'moveFolder' && dialog.kind !== 'moveBooks')) return []
     return folderRows.filter(({ folder }) => dialog.kind !== 'moveFolder' || (folder.id !== dialog.folderId && !isDescendant(state, folder.id, dialog.folderId)))
@@ -188,8 +208,9 @@ function Workspace({ lang, profile, records, books, allBooks, filterActive, rend
     event.preventDefault()
     if (!dialog || pending.current || ((dialog.kind === 'create' || dialog.kind === 'rename') && !name.trim())) return
     if ('folderId' in dialog && !state.folderById.has(dialog.folderId)) return
+    if (dialog.kind === 'addBooks' && !validPicked.length) return
     if ((dialog.kind === 'moveFolder' || dialog.kind === 'moveBooks') && destination && !destinations.some(item => item.id === destination)) return
-    const snapshot = dialog, target = destination || null, nextName = name.trim()
+    const snapshot = dialog, target = dialog.kind === 'addBooks' ? dialog.folderId : destination || null, nextName = name.trim(), selectedToAdd = validPicked.slice(0, 1000)
     const deletedParent = dialogFolder?.parentId ?? null
     pending.current = true; setBusy(true); setSaveFailed(false)
     let committed = false, refreshed = false
@@ -199,13 +220,14 @@ function Workspace({ lang, profile, records, books, allBooks, filterActive, rend
         else if (snapshot.kind === 'rename') await renameLibraryFolder(profile, snapshot.folderId, nextName)
         else if (snapshot.kind === 'moveFolder') await moveLibraryFolder(profile, snapshot.folderId, target)
         else if (snapshot.kind === 'delete') await deleteLibraryFolder(profile, snapshot.folderId)
+        else if (snapshot.kind === 'addBooks') await moveLibraryBooks(profile, selectedToAdd, target)
         else await moveLibraryBooks(profile, snapshot.bookIds, target)
         committed = true
       })
       if (!mounted.current) return
       if (committed || refreshed) {
         setDialog(null)
-        if (snapshot.kind === 'moveBooks') setSelected(new Set())
+        if (snapshot.kind === 'moveBooks' || snapshot.kind === 'addBooks') setSelected(new Set())
         if (snapshot.kind === 'delete' && current === snapshot.folderId) setCurrentId(deletedParent)
         setNotice(refreshed ? text('Đã lưu thay đổi.', 'Changes saved.') : text('Đã lưu thay đổi. Danh sách đang chờ làm mới.', 'Changes saved. The list is waiting to refresh.'))
       } else setSaveFailed(true)
@@ -225,6 +247,7 @@ function Workspace({ lang, profile, records, books, allBooks, filterActive, rend
     return <details className="library-folder-menu">
       <summary aria-label={text(`Thao tác thư mục ${folder.name}`, `Actions for folder ${folder.name}`)} aria-disabled={busy} onClick={event => { if (pending.current) event.preventDefault() }}><MoreHorizontal size={18} aria-hidden="true" /></summary>
       <div className="library-folder-menu-items">
+        <button type="button" disabled={busy} onClick={event => openDialog({ kind: 'addBooks', folderId: folder.id }, event.currentTarget)}><Plus size={14} aria-hidden="true" />{text('Thêm tài liệu…', 'Add documents…')}</button>
         <button type="button" disabled={busy} onClick={event => openDialog({ kind: 'rename', folderId: folder.id }, event.currentTarget)}><Pencil size={14} aria-hidden="true" />{text('Đổi tên', 'Rename')}</button>
         <button type="button" disabled={busy} onClick={event => openDialog({ kind: 'moveFolder', folderId: folder.id }, event.currentTarget)}><MoveRight size={14} aria-hidden="true" />{text('Di chuyển…', 'Move folder…')}</button>
         <button type="button" className="library-folder-danger" disabled={busy} onClick={event => openDialog({ kind: 'delete', folderId: folder.id }, event.currentTarget)}><Trash2 size={14} aria-hidden="true" />{text('Xóa thư mục…', 'Delete folder…')}</button>
@@ -261,7 +284,7 @@ function Workspace({ lang, profile, records, books, allBooks, filterActive, rend
   }
 
   const dialogTitle = !dialog ? '' : dialog.kind === 'create' ? text('Tạo thư mục', 'New folder') : dialog.kind === 'rename' ? text('Đổi tên thư mục', 'Rename folder') :
-    dialog.kind === 'moveFolder' ? text('Di chuyển thư mục', 'Move folder') : dialog.kind === 'delete' ? text('Xóa thư mục', 'Delete folder') : text('Chuyển tài liệu', 'Move documents')
+    dialog.kind === 'moveFolder' ? text('Di chuyển thư mục', 'Move folder') : dialog.kind === 'delete' ? text('Xóa thư mục', 'Delete folder') : dialog.kind === 'addBooks' ? text('Thêm tài liệu vào thư mục', 'Add documents to folder') : text('Chuyển tài liệu', 'Move documents')
   const breadcrumbs = path.length > 3 ? path.slice(-2) : path
   return <section ref={workspaceElement} tabIndex={-1} className={`library-folders-workspace${showingMap ? ' is-map-page' : ''}`} lang={lang} aria-label={text('Thư mục tủ sách', 'Library folders')} aria-busy={busy}>
     {notice && <div className="library-folders-notice" role="status"><span>{notice}</span><button type="button" className="library-folder-notice-close" aria-label={text('Đóng thông báo', 'Dismiss notice')} onClick={() => setNotice('')}><X size={15} aria-hidden="true" /></button></div>}
@@ -273,6 +296,7 @@ function Workspace({ lang, profile, records, books, allBooks, filterActive, rend
       onMoveFolder={(folder, trigger) => openDialog({ kind: 'moveFolder', folderId: folder.id }, trigger)}
       onDeleteFolder={(folder, trigger) => openDialog({ kind: 'delete', folderId: folder.id }, trigger)}
       onMoveBooks={(bookIds, trigger) => openDialog({ kind: 'moveBooks', bookIds }, trigger)}
+      onAddBooks={(folderId, trigger) => openDialog({ kind: 'addBooks', folderId }, trigger)}
       onOpenBook={onOpenBook} onDetailsBook={onDetailsBook} /> : <>
     <div className="library-folders-toolbar">
       <nav className="library-folder-breadcrumbs" aria-label={text('Đường dẫn thư mục', 'Folder path')} title={fullPath(current)}>
@@ -288,6 +312,7 @@ function Workspace({ lang, profile, records, books, allBooks, filterActive, rend
     <div className="library-folders-actions">
       {currentFolder && <button type="button" className="library-folder-button" disabled={busy} onClick={() => navigate(currentFolder.parentId)}><ArrowUp size={16} aria-hidden="true" />{text('Thư mục cha', 'Up one level')}</button>}
       <button ref={newFolderButton} type="button" className="library-folder-button" disabled={busy} onClick={event => openDialog({ kind: 'create', parentId: current }, event.currentTarget)}><FolderPlus size={16} aria-hidden="true" />{text('Thư mục mới', 'New folder')}</button>
+      {currentFolder && <button type="button" className="library-folder-button" disabled={busy} onClick={event => openDialog({ kind: 'addBooks', folderId: currentFolder.id }, event.currentTarget)}><Plus size={16} aria-hidden="true" />{text('Thêm tài liệu vào thư mục', 'Add documents to folder')}</button>}
       {currentFolder && <div className="library-current-folder-actions">{folderActions(currentFolder)}</div>}
       {view === 'tree' && <>
         <button type="button" className="library-folder-link" disabled={busy || !folderRows.length} onClick={expandAll}>{text('Mở rộng tất cả', 'Expand all')}</button>
@@ -318,7 +343,7 @@ function Workspace({ lang, profile, records, books, allBooks, filterActive, rend
           <div className="library-book-controls"><label>{bookSelection(book)}<span>{text('Chọn', 'Select')}</span></label>{bookMove(book)}</div>
         </div>)}
       </div>}
-      {!normalBooks.length && <div className="library-folders-empty"><BookOpen size={25} aria-hidden="true" /><p>{filterActive ? text('Không có tài liệu phù hợp với bộ lọc.', 'No documents match these filters.') : text('Chưa có tài liệu ở đây. Dùng “Chuyển…” trên một tài liệu để đưa vào thư mục này.', 'No documents here yet. Use “Move…” on a document to place it in this folder.')}</p></div>}
+      {!normalBooks.length && <div className="library-folders-empty"><BookOpen size={25} aria-hidden="true" /><p>{filterActive ? text('Không có tài liệu phù hợp với bộ lọc.', 'No documents match these filters.') : currentFolder ? text('Thư mục này chưa có tài liệu. Chọn tài liệu từ tủ sách để thêm vào đây.', 'This folder has no documents yet. Choose documents from your library to add here.') : text('Chưa có tài liệu ở đây. Dùng “Chuyển…” trên một tài liệu để đưa vào thư mục này.', 'No documents here yet. Use “Move…” on a document to place it in this folder.')}</p>{currentFolder && !filterActive && <button type="button" className="library-folder-button library-folder-submit" disabled={busy} onClick={event => openDialog({ kind: 'addBooks', folderId: currentFolder.id }, event.currentTarget)}><Plus size={16} aria-hidden="true" />{text('Chọn tài liệu từ tủ sách', 'Choose documents from library')}</button>}</div>}
     </> : <>
       <ul className="library-folder-tree" aria-label={text('Cây thư mục tủ sách', 'Library folder tree')}>
         {treeRows.map(row => row.kind === 'folder' ? <li className={`library-tree-row library-tree-folder${current === row.folder.id ? ' is-current' : ''}`} key={`folder:${row.folder.id}`} style={{ '--library-depth': Math.min(row.depth, 6) } as CSSProperties}>
@@ -345,9 +370,20 @@ function Workspace({ lang, profile, records, books, allBooks, filterActive, rend
         <label htmlFor={`${dialogId}-destination`}>{text('Thư mục đích', 'Destination folder')}</label>
         <select id={`${dialogId}-destination`} data-autofocus value={destination} disabled={busy} onChange={event => setDestination(event.target.value)}><option value="">{rootLabel}</option>{destinations.map(item => <option value={item.id} key={item.id}>{item.label}</option>)}</select>
       </>}
+      {dialog.kind === 'addBooks' && <>
+        <p className="library-dialog-context">{fullPath(dialog.folderId)}</p>
+        <p className="library-add-explanation">{text('Chọn tài liệu đã có trong tủ sách của bạn. Tài liệu ở thư mục khác sẽ được chuyển vào thư mục này, không tạo bản sao.', 'Choose documents already in your library. Documents in another folder will be moved here; no copy is created.')}</p>
+        <label htmlFor={`${dialogId}-search`}>{text('Tìm tài liệu', 'Search documents')}</label>
+        <div className="library-add-search"><Search size={16} aria-hidden="true" /><input id={`${dialogId}-search`} data-autofocus type="search" placeholder={text('Tên sách hoặc tác giả…', 'Title or author…')} value={pickerQuery} disabled={busy} onChange={event => setPickerQuery(event.target.value)} autoComplete="off" /></div>
+        <div className="library-add-selection"><p className="library-add-count" role="status">{text(`Đã chọn ${validPicked.length} / tối đa 1.000 tài liệu`, `${validPicked.length} selected / up to 1,000 documents`)}</p><div><button type="button" className="library-folder-link" disabled={busy || !pickerResults.length || validPicked.length >= 1000} onClick={selectPickerResults}>{text('Chọn kết quả', 'Select results')}</button>{validPicked.length > 0 && <button type="button" className="library-folder-link" disabled={busy} onClick={() => setPickedBooks(new Set())}>{text('Bỏ chọn', 'Clear selection')}</button>}</div></div>
+        <div className="library-add-list" role="group" aria-label={text('Tài liệu trong tủ sách', 'Documents in your library')}>
+          {pickerResults.map(book => <label className="library-add-item" key={book.id}><input type="checkbox" checked={validPicked.includes(book.id)} disabled={busy || (!validPicked.includes(book.id) && validPicked.length >= 1000)} onChange={() => togglePicked(book.id)} /><span><strong>{book.title}</strong>{book.author && <small>{book.author}</small>}<small>{fullPath(state.bookFolders.get(book.id) ?? null)}</small></span></label>)}
+          {!pickerResults.length && <p className="library-add-empty">{addCandidates.length ? text('Không có tài liệu phù hợp. Thử tên sách hoặc tác giả khác.', 'No matching documents. Try another title or author.') : text('Không còn tài liệu nào trong tủ sách để thêm vào thư mục này.', 'There are no other library documents to add to this folder.')}</p>}
+        </div>
+      </>}
       {dialog.kind === 'delete' && <p className="library-delete-explanation">{text(`Xóa thư mục “${dialogFolder?.name ?? ''}” sẽ chuyển các tài liệu và thư mục con trực tiếp về “${fullPath(dialogFolder?.parentId ?? null)}”. Tài liệu và ghi chú được giữ nguyên.`, `Deleting “${dialogFolder?.name ?? ''}” moves its immediate documents and subfolders to “${fullPath(dialogFolder?.parentId ?? null)}”. Documents and notes are preserved.`)}</p>}
       {'folderId' in dialog && !dialogFolder ? <p className="library-folder-error" role="alert">{text('Thư mục này đã bị xóa. Đóng hộp thoại để tiếp tục.', 'This folder was removed. Close the dialog to continue.')}</p> : saveFailed && <p className="library-folder-error" role="alert">{text('Chưa lưu được thay đổi. Hãy kiểm tra thông báo và thử lại.', 'Changes could not be saved. Check the message and try again.')}</p>}
-      <div className="library-folder-dialog-actions"><button type="button" className="library-folder-button" disabled={busy} onClick={closeDialog}>{text('Hủy', 'Cancel')}</button><button type="submit" className={`library-folder-button library-folder-submit${dialog.kind === 'delete' ? ' library-folder-delete-submit' : ''}`} disabled={busy || ('folderId' in dialog && !dialogFolder) || ((dialog.kind === 'create' || dialog.kind === 'rename') && !name.trim())}>{busy ? text('Đang lưu…', 'Saving…') : dialog.kind === 'delete' ? text('Xóa thư mục', 'Delete folder') : dialog.kind === 'moveBooks' || dialog.kind === 'moveFolder' ? text('Chuyển', 'Move') : text('Lưu', 'Save')}</button></div>
+      <div className="library-folder-dialog-actions"><button type="button" className="library-folder-button" disabled={busy} onClick={closeDialog}>{text('Hủy', 'Cancel')}</button><button type="submit" className={`library-folder-button library-folder-submit${dialog.kind === 'delete' ? ' library-folder-delete-submit' : ''}`} disabled={busy || ('folderId' in dialog && !dialogFolder) || (dialog.kind === 'addBooks' && !validPicked.length) || ((dialog.kind === 'create' || dialog.kind === 'rename') && !name.trim())}>{busy ? text('Đang lưu…', 'Saving…') : dialog.kind === 'delete' ? text('Xóa thư mục', 'Delete folder') : dialog.kind === 'addBooks' ? text('Thêm vào thư mục', 'Add to folder') : dialog.kind === 'moveBooks' || dialog.kind === 'moveFolder' ? text('Chuyển', 'Move') : text('Lưu', 'Save')}</button></div>
     </FolderModal>}
   </section>
 }
@@ -356,8 +392,15 @@ function FolderModal({ title, id, busy, lang, onClose, onSubmit, onReturnFocus, 
   const form = useRef<HTMLFormElement>(null), returnFocus = useRef(onReturnFocus)
   useEffect(() => { returnFocus.current = onReturnFocus }, [onReturnFocus])
   useEffect(() => {
-    form.current?.querySelector<HTMLElement>('[data-autofocus], button')?.focus()
-    return () => returnFocus.current()
+    const node = form.current
+    node?.querySelector<HTMLElement>('[data-autofocus], button')?.focus()
+    return () => {
+      // The trigger may still be disabled while a successful submit commits.
+      // Restore immediately on cancel, then retry only if the DOM update has
+      // temporarily left focus on the body. Skip StrictMode's connected probe.
+      returnFocus.current()
+      queueMicrotask(() => { if (!node?.isConnected && document.activeElement === document.body) returnFocus.current() })
+    }
   }, [])
   return <div className="modal-shade library-folder-overlay"><form ref={form} className="library-folder-dialog" role="dialog" aria-modal="true" aria-labelledby={`${id}-title`} aria-busy={busy} tabIndex={-1} onSubmit={onSubmit} onKeyDown={event => {
     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); if (!busy) onClose() }

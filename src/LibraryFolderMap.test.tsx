@@ -18,6 +18,20 @@ function props(patch: Partial<LibraryFolderMapProps> = {}): LibraryFolderMapProp
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 describe('the separate library folder map', () => {
+  it('adds documents to the selected empty folder directly from the inspector', () => {
+    const onAddBooks = vi.fn()
+    render(<LibraryFolderMap {...props({ onAddBooks })} />)
+    expect(screen.queryByRole('button', { name: 'Thêm tài liệu vào thư mục' })).toBeNull()
+    fireEvent.click(screen.getByTitle('Văn học'))
+    const inspector = within(screen.getByRole('region', { name: 'Thư mục đang chọn' }))
+    const emptyAction = inspector.getByRole('button', { name: 'Chọn tài liệu từ tủ sách' })
+    fireEvent.click(emptyAction)
+    expect(onAddBooks).toHaveBeenCalledWith('literature', emptyAction)
+    const toolbarAction = inspector.getByRole('button', { name: 'Thêm tài liệu vào thư mục' })
+    fireEvent.click(toolbarAction)
+    expect(onAddBooks).toHaveBeenLastCalledWith('literature', toolbarAction)
+  })
+
   it('places real top branches under the root and selects direct documents without changing folders', () => {
     const settings = props()
     render(<LibraryFolderMap {...settings} />)

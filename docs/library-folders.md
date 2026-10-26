@@ -23,6 +23,18 @@ Deleting a folder tombstones that folder alone. Its immediate child folders and 
 
 Invalid inputs and stale destinations raise `LibraryFolderError` with a stable `code`; callers can localize those errors. A failed operation commits no partial records or outbox entries. A successful operation broadcasts the normal sync-required notification after its local transaction commits.
 
+## Add documents from inside a folder
+
+An opened folder offers **Add documents to folder**, including an action in its empty state. The selected-folder inspector in the Folder Map offers the same picker. The picker searches the entire personal library by title or author, excludes documents already in the destination, and supports selecting up to 1,000 documents. Documents assigned elsewhere are moved, not copied. The destination remains fixed while selecting; saving rechecks both that folder and the current library entries.
+
+## Remove a public book from the personal library
+
+Opening a public book adds it to the personal shelf once its reading position is saved, including a position of zero. Favorites, offline copies and explicit folder locations also count as shelf membership. The public catalogue itself is independent.
+
+**Reset and remove from library** is available on a public book's shelf card and in its details. After confirmation, `resetPublicLibraryBook` atomically tombstones its reading progress, favorites and folder locations for the owning profile. The book stays in Explore. Notes, highlights, review cards, reading history, reader preferences, private documents and shared offline bytes remain intact. A reset-progress tombstone suppresses membership caused only by the shared offline cache; opening the book again, favoriting it or explicitly adding it to a folder can put it back on the shelf.
+
+Completed progress must cross an acknowledged deletion before a new reading session is recreated. The outbox retains that deletion barrier even if the user starts reading immediately or a previous progress write is already in flight. Empty legacy progress tombstones are recognized by the canonical progress record ID. Old stealth checkpoints cannot restore the removed reading position.
+
 ## Backup and restore
 
 Library backups include both folder record kinds, their hierarchy, and explicit root locations. Restoring into an account preserves existing live folder IDs. Folder identities that the target account has already observed deleted are never resurrected: live backup folders with those IDs receive fresh UUIDs. Restored parent and document-location references follow the new UUIDs, while the original deletion tombstones remain intact. Document IDs, deterministic location IDs, notes, reading progress, and source file bytes are preserved.

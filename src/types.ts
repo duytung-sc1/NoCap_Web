@@ -59,7 +59,18 @@ export type SyncOperation = {
   recreate?: boolean
   payload: Record<string, unknown>
 }
-export type PendingOperation = { key: string; profile: string; operation: SyncOperation; attempted: boolean; conflicted?: boolean; needsBlobUpload?: boolean; remoteDeleted?: boolean }
+export type PendingOperation = {
+  key: string
+  profile: string
+  operation: SyncOperation
+  attempted: boolean
+  conflicted?: boolean
+  needsBlobUpload?: boolean
+  remoteDeleted?: boolean
+  /** A reset made while an older progress write is in flight must still send
+   * its tombstone before a later reading session can recreate progress. */
+  resetAfterAcknowledgement?: { payload: Record<string, unknown> }
+}
 export type LocalFile = { key: string; profile: string; book: Book; data: Blob; addedAt: number }
 
 export type ReaderLocation = { locatorJson: string; progression: number; chapterTitle: string }

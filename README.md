@@ -173,6 +173,15 @@ shows a message and preserves the previous drawing instead of truncating it.
 
 ## Read aloud and voice samples (Web)
 
+Read-aloud controls use the reader's side-panel area, beside the document on
+desktop and below it on phones, matching Notes and Search. Only one panel is
+visible at a time. Opening Notes or Search keeps browser speech and its selected
+voice/speed running; the speaker button restores the existing controls. Selecting
+a passage while read aloud is visible keeps its Read selection action available.
+Closing read aloud, leaving the reader or changing the reading scope stops speech.
+The fixed Achernar audition stops when its panel is hidden and never autoplays
+when the panel is shown again.
+
 Reading a current section or selected passage uses the browser's speech service.
 Local device voices are the default. Users can explicitly allow browser-provided
 Google/Microsoft online voices; those providers may receive the text being read.

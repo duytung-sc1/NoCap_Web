@@ -3,11 +3,12 @@ import { AlignJustify, AlignLeft, ArrowLeft, ArrowRight, Award, BarChart3, BookM
 import { ApiError, deleteAccount, forgotPassword, getCatalog, getEntitlement, getUser, loadBookBytes, login, loginWithGoogle, logout, register, updateProfile, type Entitlement } from './api'
 import SystemAnnouncements from './SystemAnnouncements'
 import type { StealthPosition } from './stealth/StealthReader'
-import { readStealthCheckpoint, stealthLocator } from './stealth/checkpoint'
-import { applyLibraryRestore, getCachedCatalog, getFile, getFiles, getOfflineBook, getOfflineBooks, getPending, keyFor, readSession, removeFile, removeLocalDocument, removeOfflineBook, saveCachedCatalog, saveSession, SESSION_STORAGE_KEY } from './store'
+import { clearStealthCheckpoint, readStealthCheckpoint, stealthLocator, type StealthCheckpoint } from './stealth/checkpoint'
+import { applyLibraryRestore, getCachedCatalog, getFile, getFiles, getOfflineBook, getOfflineBooks, getPending, keyFor, readSession, removeFile, removeLocalDocument, removeOfflineBook, resetPublicLibraryBook, saveCachedCatalog, saveSession, SESSION_STORAGE_KEY } from './store'
 import { androidCompositeRecordId, androidRecordId, broadcastSyncRequired, canKeepLocalConflict, connectLiveSync, getConflicts, getDeviceId, localRecords, mutate, profileFor, readableError, resolveConflict, syncNow } from './sync'
 import { prepareBookDownload, saveBookDownload } from './bookDownload'
 import { currentLocalFile, mergeBooksById } from './library'
+import { isPublicLibraryBook, resetLibraryBookIds } from './libraryShelf'
 import { importWithChunkRecovery } from './lazyRecovery'
 import { reviewIsDue, type ReviewItemPayload } from './review'
 import type { Book, Category, FontFamily, LocalFile, PendingOperation, ReaderLocation, ReaderWidth, Session, SyncRecord, TextAlignment, TocItem } from './types'
@@ -196,6 +197,7 @@ function App() {
   const [activeSearchHit, setActiveSearchHit] = useState<ReaderSearchHit | null>(null)
   const searchToggle = useRef<HTMLButtonElement>(null)
   const [speechOpen, setSpeechOpen] = useState(false)
+  const speechVisible = speechOpen && !noteOpen && !searchOpen
   const [readerSpeechSource, setReaderSpeechSource] = useState<ReaderSpeechSource | null>(null)
   const speechToggle = useRef<HTMLButtonElement>(null)
   const onReaderSpeechReady = useCallback((source: ReaderSpeechSource | null) => setReaderSpeechSource(() => source), [])
@@ -234,7 +236,7 @@ function App() {
   const [accountSection, setAccountSection] = useState<AccountSettingsSection>('profile')
   const [controls, setControls] = useState<{ previous: () => void; next: () => void } | null>(null)
   const [selectedBook, setSelectedBook] = useState<Book | null>(null)
-  const [stealthGrant, setStealthGrant] = useState<{ token: string; bookId: string } | null>(null)
+  const [stealthGrant, setStealthGrant] = useState<{ token: string; bookId: string; checkpoint?: StealthCheckpoint | null } | null>(null)
   const stealthActive = !!stealthGrant && stealthGrant.token === session?.token && stealthGrant.bookId === reader?.book.id && allowsPro(entitlement, session)
   const stealthActiveRef = useRef(stealthActive)
   stealthActiveRef.current = stealthActive
@@ -359,9 +361,9 @@ function App() {
         if (proRequiredFeature) { setProRequiredFeature(null); return }
         if (tocOpen) { setTocOpen(false); return }
         if (settingsOpen) { setSettingsOpen(false); return }
-        if (speechOpen) { e.preventDefault(); setSpeechOpen(false); speechToggle.current?.focus(); return }
         if (searchOpen) { e.preventDefault(); setSearchOpen(false); setActiveSearchHit(null); searchToggle.current?.focus(); return }
         if (noteOpen) { e.preventDefault(); setNoteOpen(false); notesToggle.current?.focus(); return }
+        if (speechOpen) { e.preventDefault(); setSpeechOpen(false); speechToggle.current?.focus(); return }
         if (reviewOpen) { setReviewOpen(false); return }
         if (authOpen) { setAuthOpen(false); return }
         if (selectedBook) { closeBookDetails(); return }
@@ -503,6 +505,7 @@ function App() {
     try { await flight } finally { if (syncFlight.current?.promise === flight) syncFlight.current = null }
   }, [refreshLocal, lang, invalidateSession])
   const persistReadingProgress = useCallback(async (selectedProfile: string, book: Book, loc: ReaderLocation, activeSession: Session | null) => {
+    if (deletionFlights.current.has(keyFor(selectedProfile, book.id))) return
     try {
       const payload = { book_id: book.id, locator_json: loc.locatorJson, progression: Math.max(0, Math.min(1, loc.progression)), chapter_title: loc.chapterTitle || null, last_read_at: ms(), sync_version: 1 }
       await mutate(selectedProfile, 'reading_progress', androidRecordId('reading_progress', book.id), payload, false, book.source === 'local')
@@ -753,7 +756,9 @@ function App() {
   const favorites = useMemo(() => new Set(records.filter(r => r.kind === 'favorites' && !r.deleted).map(r => toText(r.payload.book_id))), [records])
   const reading = useMemo(() => books.filter(book => !!progressFor(records, book.id)).sort((a, b) => Number(progressFor(records, b.id)?.payload.last_read_at || 0) - Number(progressFor(records, a.id)?.payload.last_read_at || 0)), [books, records])
   const libraryFolderState = useMemo(() => getLibraryFolderState(records, profile), [records, profile])
-  const libraryBooks = useMemo(() => books.filter(book => book.source === 'local' || book.source === 'cloud' || offlineIds.has(book.id) || favorites.has(book.id) || libraryFolderState.bookFolders.has(book.id) || !!progressFor(records, book.id)), [books, offlineIds, favorites, records, libraryFolderState])
+  const canonicalProgressBookIds = useMemo(() => new Map(books.map(book => [androidRecordId('reading_progress', book.id), book.id])), [books])
+  const resetBookIds = useMemo(() => resetLibraryBookIds(records, canonicalProgressBookIds), [records, canonicalProgressBookIds])
+  const libraryBooks = useMemo(() => books.filter(book => book.source === 'local' || book.source === 'cloud' || (offlineIds.has(book.id) && !resetBookIds.has(book.id)) || favorites.has(book.id) || libraryFolderState.bookFolders.has(book.id) || !!progressFor(records, book.id)), [books, offlineIds, favorites, records, libraryFolderState, resetBookIds])
   const tags = useMemo(() => records.filter(record => record.kind === 'tags' && !record.deleted).map(record => ({ id: toText(record.payload.id), name: toText(record.payload.name) })).filter(item => item.id && item.name), [records])
   const collections = useMemo(() => records.filter(record => record.kind === 'collections' && !record.deleted).map(record => ({ id: toText(record.payload.id), name: toText(record.payload.name) })).filter(item => item.id && item.name), [records])
   const bookTags = useMemo(() => {
@@ -1006,7 +1011,7 @@ function App() {
   }
 
   function libraryBookCard(book: Book) {
-    return <BookCard key={book.id} book={book} lang={lang} progress={Number(progressFor(records, book.id)?.payload.progression || 0)} onOpen={() => void openBook(book)} onStealth={() => void launchStealth(book)} onDetails={() => showBookDetails(book)} onFavorite={book.source === 'local' ? undefined : () => void toggleFavorite(book)} favorite={favorites.has(book.id)} onDelete={book.source === 'local' || book.source === 'cloud' ? () => void deleteBook(book) : undefined} offline={book.source === 'local' || offlineIds.has(book.id)} downloadBusy={downloadBusy === book.id} onDownload={(book.source === 'local' || book.fileUrl) ? () => void downloadBook(book) : undefined} />
+    return <BookCard key={book.id} book={book} lang={lang} progress={Number(progressFor(records, book.id)?.payload.progression || 0)} onOpen={() => void openBook(book)} onStealth={() => void launchStealth(book)} onDetails={() => showBookDetails(book)} onFavorite={book.source === 'local' ? undefined : () => void toggleFavorite(book)} favorite={favorites.has(book.id)} onDelete={book.source === 'local' || book.source === 'cloud' ? () => void deleteBook(book) : undefined} onRemoveFromLibrary={page !== 'catalog' && isPublicLibraryBook(book) ? () => void removePublicBook(book) : undefined} offline={book.source === 'local' || offlineIds.has(book.id)} downloadBusy={downloadBusy === book.id} onDownload={(book.source === 'local' || book.fileUrl) ? () => void downloadBook(book) : undefined} />
   }
 
   async function handleCreateTag() {
@@ -1207,6 +1212,7 @@ async function sha256Hex(file: Blob): Promise<string> {
   }
 
   async function openBook(book: Book, initialOverride?: string): Promise<boolean> {
+    if (deletionFlights.current.has(keyFor(profile, book.id))) return false
     if (readerRef.current && readerRef.current.id !== book.id) closeReaderRef.current()
     openController.current?.abort()
     const controller = new AbortController()
@@ -1242,7 +1248,7 @@ async function sha256Hex(file: Blob): Promise<string> {
       const savedComfort = comfortFromRecord(records.find(record => record.kind === 'per_book_preferences' && !record.deleted && record.payload.book_id === book.id), readerWidth)
       if (savedComfort) applyComfort(savedComfort)
       const savedProgress = progressFor(records, book.id)
-      const checkpoint = readStealthCheckpoint(targetProfile, book.id)
+      const checkpoint = resetBookIds.has(book.id) ? undefined : readStealthCheckpoint(targetProfile, book.id)
       const useCheckpoint = !initialOverride && checkpoint && checkpoint.updatedAt > Number(savedProgress?.payload.last_read_at || 0)
       const initialProgress = useCheckpoint ? checkpoint.progression : Number(savedProgress?.payload.progression || 0)
       beginReadingSession(book, initialProgress)
@@ -1462,7 +1468,9 @@ async function sha256Hex(file: Blob): Promise<string> {
 
   function selectReaderPassage(text: string, locator: string) {
     if (noteFlight.current) return
-    changeReaderNoteDraft({ selection: { text, locator }, anchor: { locatorJson: locator, progression: locationRef.current?.progression || 0, chapterTitle: locationRef.current?.chapterTitle || '' } }); setNoteOpen(true)
+    changeReaderNoteDraft({ selection: { text, locator }, anchor: { locatorJson: locator, progression: locationRef.current?.progression || 0, chapterTitle: locationRef.current?.chapterTitle || '' } })
+    // Keep the selection available to Read selection without replacing its sidebar.
+    if (!speechVisible) setNoteOpen(true)
     setSearchOpen(false); setActiveSearchHit(null)
   }
 
@@ -1572,7 +1580,10 @@ async function sha256Hex(file: Blob): Promise<string> {
       if (sessionRef.current?.token !== access.session.token || readerRef.current?.id !== target.id || !allowsPro(access.entitlement, sessionRef.current)) return
       setSelectedBook(null); setSettingsOpen(false); setTocOpen(false); setNoteOpen(false); setNoteNavigation(null)
       setSearchOpen(false); setActiveSearchHit(null)
-      setStealthGrant({ token: access.session.token, bookId: target.id })
+      const progress = progressFor(records, target.id)
+      const saved = resetBookIds.has(target.id) ? undefined : readStealthCheckpoint(targetProfile, target.id)
+      const checkpoint = saved && saved.updatedAt > Number(progress?.payload.last_read_at || 0) ? saved : null
+      setStealthGrant({ token: access.session.token, bookId: target.id, checkpoint })
     } finally { stealthLaunchBusy.current = false }
   }
   launchStealthRef.current = launchStealth
@@ -1759,6 +1770,30 @@ async function sha256Hex(file: Blob): Promise<string> {
       if (!isCurrent()) return
       setNotice(translate("Đã xóa tài liệu.", lang))
       if (book.source === 'cloud' && activeSession && online) void synchronize(activeSession, true)
+    } catch (error) { if (isCurrent()) setNotice(readableError(error, lang)) }
+    finally { deletionFlights.current.delete(flightKey) }
+  }
+
+  async function removePublicBook(book: Book) {
+    if (!isPublicLibraryBook(book)) return
+    const targetProfile = profile, activeSession = session
+    const flightKey = keyFor(targetProfile, book.id)
+    if (deletionFlights.current.has(flightKey)) return
+    if (!window.confirm(lang === 'vi'
+      ? `Gỡ “${book.title}” khỏi tủ sách và đặt lại chưa đọc?\n\nTiến độ, yêu thích và vị trí trong thư mục sẽ được đặt lại. Ghi chú/highlight được giữ nguyên. Bạn vẫn có thể tìm và đọc sách trong Khám phá.`
+      : `Remove “${book.title}” from your library and mark it unread?\n\nReading progress, favorite and folder placement will be reset. Notes and highlights are kept. The book remains available in Explore.`)) return
+    deletionFlights.current.add(flightKey)
+    const isCurrent = () => profileRef.current === targetProfile && sessionRef.current?.token === activeSession?.token
+    try {
+      await resetPublicLibraryBook(targetProfile, book.id, androidRecordId('reading_progress', book.id))
+      clearStealthCheckpoint(targetProfile, book.id)
+      const refreshed = await refreshLocal(targetProfile).then(() => true, () => false)
+      broadcastSyncRequired(targetProfile)
+      if (!isCurrent()) return
+      setNotice(refreshed
+        ? (lang === 'vi' ? 'Đã gỡ khỏi tủ sách và đặt lại chưa đọc. Sách vẫn có trong Khám phá; ghi chú được giữ nguyên.' : 'Removed from your library and marked unread. The book remains in Explore; notes are kept.')
+        : (lang === 'vi' ? 'Đã lưu việc gỡ sách. Danh sách chưa làm mới được; hãy tải lại trang. Sách và ghi chú vẫn được giữ.' : 'The removal was saved, but the list could not refresh. Reload the page. The public book and notes are kept.'))
+      if (activeSession && online) void synchronize(activeSession, true)
     } catch (error) { if (isCurrent()) setNotice(readableError(error, lang)) }
     finally { deletionFlights.current.delete(flightKey) }
   }
@@ -2240,14 +2275,11 @@ async function sha256Hex(file: Blob): Promise<string> {
           <button className="icon-button" title={lang === 'vi' ? 'Mục lục sách' : 'Table of contents'} aria-label={lang === 'vi' ? 'Mục lục' : 'Table of contents'} onClick={() => { setNavigateTarget(null); setTocOpen(true) }}><List size={20} /></button>
           <button ref={searchToggle} className="icon-button reader-search-toggle" title={lang === 'vi' ? 'Tìm trong sách (Ctrl+F / ⌘F)' : 'Search in book (Ctrl+F / ⌘F)'} aria-label={lang === 'vi' ? 'Tìm trong sách' : 'Search in book'} aria-expanded={searchOpen} aria-controls="reader-search-panel" onClick={() => { setSearchOpen(open => !open); setNoteOpen(false); setActiveSearchHit(null) }}><Search size={19} /></button>
           <button className="icon-button" title={lang === 'vi' ? 'Tùy chỉnh đọc & font' : 'Reading settings'} aria-label={lang === 'vi' ? 'Tùy chỉnh' : 'Settings'} onClick={() => setSettingsOpen(true)}><Type size={20} /></button>
-          <button ref={speechToggle} className="icon-button" title={lang === 'vi' ? 'Đọc thành tiếng · Bản thử' : 'Read aloud · Preview'} aria-label={lang === 'vi' ? 'Đọc thành tiếng' : 'Read aloud'} aria-expanded={speechOpen} aria-controls="reader-speech-panel" onClick={() => setSpeechOpen(open => !open)}><Volume2 size={20} /></button>
+          <button ref={speechToggle} className={`icon-button reader-speech-toggle${speechVisible ? ' active' : ''}`} title={lang === 'vi' ? 'Đọc thành tiếng · Bản thử' : 'Read aloud · Preview'} aria-label={lang === 'vi' ? 'Đọc thành tiếng' : 'Read aloud'} aria-expanded={speechVisible} aria-controls="reader-speech-panel" onClick={() => { setSpeechOpen(!speechVisible); setNoteOpen(false); setSearchOpen(false); setActiveSearchHit(null) }}><Volume2 size={20} /></button>
           <button className={`icon-button ${currentBookmarked ? 'active' : ''}`} title={currentBookmarked ? (lang === 'vi' ? 'Bỏ dấu trang' : 'Remove bookmark') : (lang === 'vi' ? 'Thêm dấu trang' : 'Add bookmark')} aria-label={currentBookmarked ? (lang === 'vi' ? 'Bỏ dấu trang' : 'Remove bookmark') : (lang === 'vi' ? 'Đánh dấu vị trí' : 'Bookmark position')} aria-pressed={currentBookmarked} disabled={bookmarkSaving === keyFor(profile, reader.book.id)} aria-busy={bookmarkSaving === keyFor(profile, reader.book.id)} onClick={() => void toggleBookmark()}><Bookmark size={20} fill={currentBookmarked ? 'currentColor' : 'none'} /></button>
           <button ref={notesToggle} className={`reader-notes-toggle ${noteOpen ? 'active' : ''}`} title={lang === 'vi' ? 'Vừa đọc vừa ghi chú' : 'Read and take notes'} aria-label={lang === 'vi' ? 'Bảng ghi chú' : 'Notes panel'} aria-expanded={noteOpen} aria-controls="reader-notes-panel" onClick={() => { setNoteOpen(open => !open); setSearchOpen(false); setActiveSearchHit(null) }}><PanelRightOpen size={18} /><span>{lang === 'vi' ? 'Ghi chú' : 'Notes'}</span></button>
         </div>
       </div>
-      {speechOpen && !stealthActive && !comparison && <ReaderSpeechPanel key={`speech:${profile}:${reader.book.id}`} lang={lang} language={reader.book.language}
-        source={readerSpeechSource} selection={selection?.text || ''} scopeKey={JSON.stringify([speechScopeKey(location?.locatorJson), navigateTarget, noteNavigation?.requestId, stealthProgressRequest?.requestId])}
-        onClose={() => { setSpeechOpen(false); speechToggle.current?.focus() }} />}
       <div className="reader-workspace">
         <div className="reader-document-column">
           <div className="reader-body">
@@ -2263,6 +2295,9 @@ async function sha256Hex(file: Blob): Promise<string> {
             {controls && <button onClick={() => controls.next()} aria-label={lang === 'vi' ? 'Trang sau' : 'Next page'}>{lang === 'vi' ? 'Sau' : 'Next'}<ChevronRight size={21} /></button>}
           </div>
         </div>
+        {speechOpen && !stealthActive && !comparison && <ReaderSpeechPanel key={`speech:${profile}:${reader.book.id}`} lang={lang} language={reader.book.language} bookTitle={reader.book.title} hidden={!speechVisible}
+          source={readerSpeechSource} selection={selection?.text || ''} scopeKey={JSON.stringify([speechScopeKey(location?.locatorJson), navigateTarget, noteNavigation?.requestId, stealthProgressRequest?.requestId])}
+          onClose={() => { setSpeechOpen(false); speechToggle.current?.focus() }} />}
         <ReaderNotesPanel key={`${profile}:${reader.book.id}`} open={noteOpen} lang={lang} bookTitle={reader.book.title}
           records={readerNotes} note={noteText} color={noteColor} quote={selection?.text || ''} saving={noteSaving}
           drawing={noteDrawing} onDrawingChange={changeReaderDrawing}
@@ -2286,6 +2321,7 @@ async function sha256Hex(file: Blob): Promise<string> {
         lang={lang}
         initialProgression={location?.progression || 0}
         initialLocator={location?.locatorJson}
+        resumeCheckpoint={stealthGrant?.checkpoint}
         onClose={closeStealthReader}
         onExitHome={() => {
           setStealthGrant(null)
@@ -2468,6 +2504,7 @@ async function sha256Hex(file: Blob): Promise<string> {
       onFavorite={selectedBook.source === 'local' ? undefined : () => void toggleFavorite(selectedBook)}
       onDownload={(selectedBook.source === 'local' || selectedBook.fileUrl) ? () => void downloadBook(selectedBook) : undefined}
       onDelete={selectedBook.source === 'local' || selectedBook.source === 'cloud' ? () => { const b = selectedBook; closeBookDetails(); void deleteBook(b) } : undefined}
+      onRemoveFromLibrary={isPublicLibraryBook(selectedBook) && libraryBooks.some(book => book.id === selectedBook.id) ? () => { const b = selectedBook; closeBookDetails(); void removePublicBook(b) } : undefined}
     />}
   </div>
 }
@@ -2481,11 +2518,11 @@ function SectionHeader({ title, action, onAction }: { title: string; action: str
   return <div className="section-header"><h2>{title}</h2><button onClick={onAction}>{action} <ArrowRight size={16} /></button></div>
 }
 
-function BookCard({ book, progress, onOpen, onStealth, onDetails, favorite, onFavorite, onDelete, offline, downloadBusy, onDownload, lang = 'vi' }: { book: Book; progress?: number; onOpen: () => void; onStealth?: () => void; onDetails?: () => void; favorite: boolean; onFavorite?: () => void; onDelete?: () => void; offline?: boolean; downloadBusy?: boolean; onDownload?: () => void; lang?: Lang }) {
+function BookCard({ book, progress, onOpen, onStealth, onDetails, favorite, onFavorite, onDelete, onRemoveFromLibrary, offline, downloadBusy, onDownload, lang = 'vi' }: { book: Book; progress?: number; onOpen: () => void; onStealth?: () => void; onDetails?: () => void; favorite: boolean; onFavorite?: () => void; onDelete?: () => void; onRemoveFromLibrary?: () => void; offline?: boolean; downloadBusy?: boolean; onDownload?: () => void; lang?: Lang }) {
   const handleDetails = onDetails || onOpen
   const curT = t[lang]
   const metaText = offline ? curT.bookCard.availableLocally : book.source === 'cloud' ? curT.bookCard.cloudPersonal : book.language === 'vi' ? curT.bookCard.vietnamese : curT.bookCard.ebook
-  return <article className="book-card"><button className="cover-button" onClick={handleDetails} aria-label={curT.bookCard.detailsAria(book.title)}><div className="book-cover">{book.coverUrl ? <img src={book.coverUrl} alt="" loading="lazy" onError={event => { event.currentTarget.style.display = 'none' }} /> : null}<div className="cover-fallback"><BookOpen size={34} /><small>NoCap</small></div></div></button><div className="book-info"><div className="book-meta">{metaText}</div><button className="book-title" onClick={handleDetails}>{book.title}</button><p>{bookLabel(book, lang)}</p>{!!progress && <div className="progress-bar" aria-label={curT.bookCard.readPercentAria(Math.round(progress * 100))}><span style={{ width: `${Math.max(2, progress * 100)}%` }} /></div>}<div className="card-actions"><button className="read-link" onClick={onOpen}>{progress ? curT.bookCard.continueReading : curT.bookCard.startReading} <ArrowRight size={15} /></button>{onStealth && <button type="button" className="icon-button stealth-card-btn" title={curT.bookCard.stealthRead || (lang === 'vi' ? 'Đọc ẩn công sở · Pro (F2)' : 'Stealth Read · Pro (F2)')} aria-label={curT.bookCard.stealthRead || translate("Đọc ẩn công sở", lang)} onClick={e => { e.stopPropagation(); onStealth() }}><Briefcase size={16} /></button>}{onDownload && <button className="icon-button" title={downloadBusy ? curT.download.preparing : curT.bookCard.downloadFile} aria-label={`${downloadBusy ? curT.download.preparing : curT.bookCard.downloadFile}: ${book.title}`} onClick={onDownload} disabled={downloadBusy} aria-busy={downloadBusy}><Download size={17} /></button>}{onFavorite && <button className="icon-button" title={favorite ? curT.bookCard.unfavorite : curT.bookCard.favorite} aria-label={favorite ? `${curT.bookCard.unfavorite}: ${book.title}` : `${curT.bookCard.favorite}: ${book.title}`} onClick={onFavorite}><BookMarked size={17} fill={favorite ? 'currentColor' : 'none'} /></button>}{onDelete && <button className="icon-button" title={curT.bookCard.deleteFile} aria-label={curT.bookCard.deleteFile} onClick={onDelete}><Trash2 size={17} /></button>}</div></div></article>
+  return <article className="book-card"><button className="cover-button" onClick={handleDetails} aria-label={curT.bookCard.detailsAria(book.title)}><div className="book-cover">{book.coverUrl ? <img src={book.coverUrl} alt="" loading="lazy" onError={event => { event.currentTarget.style.display = 'none' }} /> : null}<div className="cover-fallback"><BookOpen size={34} /><small>NoCap</small></div></div></button><div className="book-info"><div className="book-meta">{metaText}</div><button className="book-title" onClick={handleDetails}>{book.title}</button><p>{bookLabel(book, lang)}</p>{!!progress && <div className="progress-bar" aria-label={curT.bookCard.readPercentAria(Math.round(progress * 100))}><span style={{ width: `${Math.max(2, progress * 100)}%` }} /></div>}<div className="card-actions"><button className="read-link" onClick={onOpen}>{progress ? curT.bookCard.continueReading : curT.bookCard.startReading} <ArrowRight size={15} /></button>{onStealth && <button type="button" className="icon-button stealth-card-btn" title={curT.bookCard.stealthRead || (lang === 'vi' ? 'Đọc ẩn công sở · Pro (F2)' : 'Stealth Read · Pro (F2)')} aria-label={curT.bookCard.stealthRead || translate("Đọc ẩn công sở", lang)} onClick={e => { e.stopPropagation(); onStealth() }}><Briefcase size={16} /></button>}{onDownload && <button className="icon-button" title={downloadBusy ? curT.download.preparing : curT.bookCard.downloadFile} aria-label={`${downloadBusy ? curT.download.preparing : curT.bookCard.downloadFile}: ${book.title}`} onClick={onDownload} disabled={downloadBusy} aria-busy={downloadBusy}><Download size={17} /></button>}{onFavorite && <button className="icon-button" title={favorite ? curT.bookCard.unfavorite : curT.bookCard.favorite} aria-label={favorite ? `${curT.bookCard.unfavorite}: ${book.title}` : `${curT.bookCard.favorite}: ${book.title}`} onClick={onFavorite}><BookMarked size={17} fill={favorite ? 'currentColor' : 'none'} /></button>}{onRemoveFromLibrary && <button type="button" className="icon-button" title={lang === 'vi' ? 'Gỡ khỏi tủ sách và đặt lại chưa đọc' : 'Remove from library and mark unread'} aria-label={`${lang === 'vi' ? 'Gỡ khỏi tủ sách' : 'Remove from library'}: ${book.title}`} onClick={onRemoveFromLibrary}><RotateCcw size={17} /></button>}{onDelete && <button className="icon-button" title={curT.bookCard.deleteFile} aria-label={curT.bookCard.deleteFile} onClick={onDelete}><Trash2 size={17} /></button>}</div></div></article>
 }
 
 function BookDetailsModal({
@@ -2506,6 +2543,7 @@ function BookDetailsModal({
   onFavorite,
   onDownload,
   onDelete,
+  onRemoveFromLibrary,
   lang = 'vi',
 }: {
   book: Book
@@ -2525,6 +2563,7 @@ function BookDetailsModal({
   onFavorite?: () => void
   onDownload?: () => void
   onDelete?: () => void
+  onRemoveFromLibrary?: () => void
   lang?: Lang
 }) {
   const curT = t[lang]
@@ -2575,6 +2614,11 @@ function BookDetailsModal({
               {onDelete && (
                 <button className="secondary" style={{ color: '#b91c1c' }} onClick={onDelete}>
                   <Trash2 size={16} /> {curT.bookModal.deleteBook}
+                </button>
+              )}
+              {onRemoveFromLibrary && (
+                <button type="button" className="secondary danger-action" onClick={onRemoveFromLibrary}>
+                  <RotateCcw size={16} /> {lang === 'vi' ? 'Đặt lại và gỡ khỏi tủ sách' : 'Reset and remove from library'}
                 </button>
               )}
             </div>

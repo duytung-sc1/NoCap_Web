@@ -204,6 +204,34 @@ describe('read aloud panel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close read aloud' }))
     expect(props.onClose).toHaveBeenCalledOnce()
   })
+  it('keeps browser speech and chosen settings when another sidebar temporarily hides its controls', async () => {
+    const male = speechVoice('vi-VN', true, 'Microsoft An - Vietnamese (Vietnam)')
+    const female = speechVoice('vi-VN', true, 'Linh')
+    synthesis.voices = [male, female]
+    const { container, rerender } = render(<ReaderSpeechPanel {...props} bookTitle="Research notes" />)
+    const maleOption = screen.getByRole('option', { name: /Microsoft An/ }) as HTMLOptionElement
+    fireEvent.change(screen.getByLabelText('Voice'), { target: { value: maleOption.value } })
+    fireEvent.change(screen.getByLabelText('Speed'), { target: { value: '1.5' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Read current section' }))
+    await waitFor(() => expect(synthesis.spoken).toHaveLength(1))
+    const utterance = synthesis.spoken[0], cancels = synthesis.cancel.mock.calls.length
+    expect(utterance.voice).toBe(male)
+    expect(utterance.rate).toBe(1.5)
+
+    rerender(<ReaderSpeechPanel {...props} bookTitle="Research notes" hidden />)
+    expect(container.querySelector('#reader-speech-panel')).toHaveProperty('hidden', true)
+    expect(screen.queryByRole('button', { name: 'Read current section' })).toBeNull()
+    expect(synthesis.cancel).toHaveBeenCalledTimes(cancels)
+    expect(synthesis.spoken).toEqual([utterance])
+
+    rerender(<ReaderSpeechPanel {...props} bookTitle="Research notes" />)
+    expect((screen.getByLabelText('Voice') as HTMLSelectElement).value).toBe(maleOption.value)
+    expect((screen.getByLabelText('Speed') as HTMLSelectElement).value).toBe('1.5')
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeTruthy()
+    expect(synthesis.cancel).toHaveBeenCalledTimes(cancels)
+    expect(synthesis.speak).toHaveBeenCalledOnce()
+    expect(source).toHaveBeenCalledOnce()
+  })
 })
 
 describe('Achernar sample in the read aloud panel', () => {
@@ -267,6 +295,35 @@ describe('Achernar sample in the read aloud panel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Play Achernar sample' }))
     expect(screen.getByRole('status').textContent).toContain('Playing sample')
     expect(source).not.toHaveBeenCalled()
+  })
+
+  it('disposes a playing sample when hidden and never restarts it just by reopening the sidebar', () => {
+    const { container, rerender } = render(<ReaderSpeechPanel {...props} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Try Achernar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Play Achernar sample' }))
+    const first = container.querySelector('audio')!
+    expect(screen.getByRole('status').textContent).toContain('Playing sample')
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalledOnce()
+
+    rerender(<ReaderSpeechPanel {...props} hidden />)
+    expect(first.getAttribute('src')).toBeNull()
+    expect(first.isConnected).toBe(false)
+    expect(HTMLMediaElement.prototype.pause).toHaveBeenLastCalledWith()
+    expect(vi.mocked(HTMLMediaElement.prototype.pause).mock.contexts.at(-1)).toBe(first)
+    expect(container.querySelector('audio')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Play Achernar sample' })).toBeNull()
+
+    rerender(<ReaderSpeechPanel {...props} />)
+    expect(screen.getByRole('button', { name: 'Try Achernar' }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('button', { name: 'Play Achernar sample' })).toBeTruthy()
+    expect(container.querySelector('audio')).toBeNull()
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: 'Play Achernar sample' }))
+    expect(container.querySelector('audio')).not.toBe(first)
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(2)
+    expect(source).not.toHaveBeenCalled()
+    expect(synthesis.spoken).toHaveLength(0)
   })
 
   it('disposes the sample on a page change, mode change, panel close and unmount', () => {

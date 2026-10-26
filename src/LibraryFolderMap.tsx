@@ -20,6 +20,7 @@ export type LibraryFolderMapProps = {
   onMoveFolder: (folder: LibraryFolder, trigger: HTMLElement) => void
   onDeleteFolder: (folder: LibraryFolder, trigger: HTMLElement) => void
   onMoveBooks: (ids: string[], trigger: HTMLElement) => void
+  onAddBooks?: (folderId: string, trigger: HTMLElement) => void
   onOpenBook: (book: Book) => void
   onDetailsBook: (book: Book) => void
 }
@@ -31,7 +32,7 @@ const PAGE_SIZE = 60
 
 /** A separate, bounded overview of the same user-owned library folders. */
 export function LibraryFolderMap(props: LibraryFolderMapProps) {
-  const { lang, state, books, busy, initialFolderId = null, renderBook, onBack, onOpenFolder, onCreateFolder, onRenameFolder, onMoveFolder, onDeleteFolder, onMoveBooks } = props
+  const { lang, state, books, busy, initialFolderId = null, renderBook, onBack, onOpenFolder, onCreateFolder, onRenameFolder, onMoveFolder, onDeleteFolder, onMoveBooks, onAddBooks } = props
   const vi = lang === 'vi'
   const rootName = vi ? 'Tủ sách của bạn' : 'Your library'
   const model = useMemo(() => buildFolderMapModel(state, books, lang), [state, books, lang])
@@ -206,11 +207,11 @@ export function LibraryFolderMap(props: LibraryFolderMapProps) {
 
     <section id={inspectorId} ref={inspectorRef} tabIndex={-1} className="library-map-inspector" aria-label={vi ? 'Thư mục đang chọn' : 'Selected folder'}>
       <div className="library-map-inspector-heading"><div><h2>{selectedFolder?.name ?? rootName}</h2><p className="library-map-selected-path" title={[rootName, ...selectedPath.map(folder => folder.name)].join(' / ')}>{[rootName, ...(selectedPath.length > 4 ? ['…'] : []), ...selectedPath.slice(-4).map(folder => folder.name)].join(' / ')}</p><p>{vi ? `${selectedRow.childCount} thư mục con · ${directBooks.length} tài liệu trực tiếp · ${selectedRow.totalBookCount} tài liệu toàn nhánh` : `${selectedRow.childCount} subfolders · ${directBooks.length} direct documents · ${selectedRow.totalBookCount} documents in branch`}</p></div>
-        <div className="library-map-inspector-actions"><button type="button" className="library-map-button is-primary" onClick={() => onOpenFolder(selected)}><FolderOpen size={16} />{vi ? 'Mở thư mục' : 'Open folder'}</button></div>
+        <div className="library-map-inspector-actions">{selectedFolder && onAddBooks && <button type="button" className="library-map-button is-primary" disabled={busy} onClick={event => onAddBooks(selectedFolder.id, event.currentTarget)}><Plus size={16} />{vi ? 'Thêm tài liệu vào thư mục' : 'Add documents to folder'}</button>}<button type="button" className="library-map-button" disabled={busy} onClick={() => onOpenFolder(selected)}><FolderOpen size={16} />{vi ? 'Mở thư mục' : 'Open folder'}</button></div>
       </div>
       <div className="library-map-folder-actions"><button type="button" className="library-map-button" disabled={busy} onClick={event => createFolder(selected, event.currentTarget)}><FolderPlus size={16} />{vi ? 'Tạo thư mục con' : 'New subfolder'}</button>{selectedFolder && <><button type="button" className="library-map-button" disabled={busy} onClick={event => onRenameFolder(selectedFolder, event.currentTarget)}><Pencil size={15} />{vi ? 'Đổi tên' : 'Rename'}</button><button type="button" className="library-map-button" disabled={busy} onClick={event => onMoveFolder(selectedFolder, event.currentTarget)}><MoveRight size={16} />{vi ? 'Di chuyển thư mục' : 'Move folder'}</button><button type="button" className="library-map-button is-danger" disabled={busy} onClick={event => onDeleteFolder(selectedFolder, event.currentTarget)}><Trash2 size={15} />{vi ? 'Xóa thư mục' : 'Delete folder'}</button></>}</div>
       <h3><BookOpen size={17} />{vi ? 'Tài liệu trong thư mục này' : 'Documents in this folder'}</h3>
-      {directBooks.length ? <><div className="library-map-books">{shownBooks.map(book => <div key={book.id} className="library-map-book">{renderBook(book)}<button type="button" className="library-map-button library-map-book-move" disabled={busy} onClick={event => onMoveBooks([book.id], event.currentTarget)}><MoveRight size={15} />{vi ? 'Chuyển tài liệu' : 'Move document'}</button></div>)}</div>{shownBooks.length < directBooks.length && <button type="button" className="library-map-button library-map-load-more" onClick={() => setBookLimit(previous => previous + PAGE_SIZE)}>{vi ? `Xem thêm · ${shownBooks.length}/${directBooks.length} tài liệu` : `Show more · ${shownBooks.length}/${directBooks.length} documents`}</button>}</> : <p className="library-map-empty">{selectedRow.totalBookCount ? vi ? 'Tài liệu đang nằm trong các thư mục con. Chọn một nhánh phía trên để xem.' : 'Documents are in subfolders. Select a branch above to see them.' : vi ? 'Thư mục này chưa có tài liệu.' : 'This folder has no documents yet.'}</p>}
+      {directBooks.length ? <><div className="library-map-books">{shownBooks.map(book => <div key={book.id} className="library-map-book">{renderBook(book)}<button type="button" className="library-map-button library-map-book-move" disabled={busy} onClick={event => onMoveBooks([book.id], event.currentTarget)}><MoveRight size={15} />{vi ? 'Chuyển tài liệu' : 'Move document'}</button></div>)}</div>{shownBooks.length < directBooks.length && <button type="button" className="library-map-button library-map-load-more" onClick={() => setBookLimit(previous => previous + PAGE_SIZE)}>{vi ? `Xem thêm · ${shownBooks.length}/${directBooks.length} tài liệu` : `Show more · ${shownBooks.length}/${directBooks.length} documents`}</button>}</> : <div className="library-map-empty"><p>{selectedRow.totalBookCount ? vi ? 'Tài liệu đang nằm trong các thư mục con. Chọn một nhánh phía trên để xem.' : 'Documents are in subfolders. Select a branch above to see them.' : vi ? 'Thư mục này chưa có tài liệu.' : 'This folder has no documents yet.'}</p>{selectedFolder && onAddBooks && <button type="button" className="library-map-button" disabled={busy} onClick={event => onAddBooks(selectedFolder.id, event.currentTarget)}><Plus size={16} />{vi ? 'Chọn tài liệu từ tủ sách' : 'Choose documents from library'}</button>}</div>}
     </section>
   </section>
 }
