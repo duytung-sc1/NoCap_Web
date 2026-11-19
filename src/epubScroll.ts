@@ -6,6 +6,7 @@ export type EpubScrollManager = {
   scrollLeft: number
   scrollTo: (x: number, y: number, silent?: boolean) => void
   scrollBy: (x: number, y: number, silent?: boolean) => void
+  counter?: (bounds: { heightDelta: number; widthDelta: number }) => void
 }
 
 /**
@@ -15,6 +16,24 @@ export type EpubScrollManager = {
  * This patches only the current rendition, never the library prototype.
  */
 export function synchronizeEpubScroll(manager: EpubScrollManager) {
+  const counter = manager.counter
+  if (counter) {
+    manager.counter = function (bounds) {
+      // Shrinking an iframe can move/clamp the browser's scroll position before
+      // its scroll event updates epub.js. Apply only the remaining adjustment;
+      // compensating the full delta again can move into the previous chapter.
+      const remaining = (delta: number, current: number, cached: number) => {
+        if (!Number.isFinite(delta) || !Number.isFinite(current) || !Number.isFinite(cached)) return delta
+        const applied = current - cached
+        return delta < 0 ? Math.min(0, delta - Math.min(0, applied)) : Math.max(0, delta - Math.max(0, applied))
+      }
+      counter.call(this, {
+        ...bounds,
+        heightDelta: remaining(bounds.heightDelta, this.container.scrollTop, this.scrollTop),
+        widthDelta: remaining(bounds.widthDelta, this.container.scrollLeft, this.scrollLeft),
+      })
+    }
+  }
   for (const method of ['scrollTo', 'scrollBy'] as const) {
     const original = manager[method]
     manager[method] = function (x, y, silent) {
