@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import type { LocalFile, ReaderAnnotation, Session, SyncRecord } from './types'
+import type { Book, LocalFile, ReaderAnnotation, Session, SyncRecord } from './types'
 import type { ReaderSearchResult, ReaderSearchSource } from './readerSearch'
 import type { ReaderSpeechSource } from './readerSpeech'
 import { MockSynthesis, MockUtterance } from './readerSpeech.testUtils'
@@ -17,6 +17,8 @@ import { emptyReaderNoteDraft, readReaderNoteDraft, writeReaderNoteDraft } from 
 const fixtures = vi.hoisted(() => ({
   login: vi.fn(), googleLogin: vi.fn(), getFiles: vi.fn(), getFile: vi.fn(), getOfflineBook: vi.fn(), getCatalog: vi.fn(), removeLocalDocument: vi.fn(), mutate: vi.fn(), loadBytes: vi.fn(), downloadHttps: vi.fn(), adminIdentity: vi.fn(), adminRequest: vi.fn(), localRecords: vi.fn(), entitlement: vi.fn(), preparePdf: vi.fn(), saveDownload: vi.fn(), conflicts: vi.fn(), resolveConflict: vi.fn(), updateProfile: vi.fn(), deleteAccount: vi.fn(), searchBook: vi.fn(), readerThrows: false, adminThrows: false,
 }))
+const importFixtures = vi.hoisted(() => ({ commit: vi.fn() }))
+vi.mock('./importDocument', () => ({ commitDocumentImport: importFixtures.commit }))
 const announcementFixtures = vi.hoisted(() => ({ get: vi.fn() }))
 const libraryResetFixtures = vi.hoisted(() => ({ reset: vi.fn(), offline: vi.fn() }))
 vi.mock('./httpsImport', async importOriginal => ({
@@ -120,6 +122,7 @@ beforeEach(() => {
   fixtures.login.mockReset(); fixtures.googleLogin.mockReset()
   fixtures.loadBytes.mockReset().mockResolvedValue(new TextEncoder().encode('QA document').buffer)
   fixtures.downloadHttps.mockReset()
+  importFixtures.commit.mockReset()
   fixtures.adminIdentity.mockReset().mockRejectedValue(new ApiError(403, 'Not an admin', 'ADMIN_REQUIRED'))
   fixtures.adminRequest.mockReset().mockResolvedValue({ books: 4, categories: 2, users: 3, activeUsers: 3, syncRecords: 2, syncConflicts: 0, proSnapshots: 1, playConfigured: false })
   fixtures.readerThrows = false
@@ -223,6 +226,282 @@ describe('nested library integration', () => {
     expect(await screen.findByText('QA reader content')).toBeTruthy()
     expect(window.location.pathname).toBe('/read/nested-public-book')
     expect(fixtures.loadBytes).toHaveBeenCalledWith(expect.objectContaining({ id: 'nested-public-book' }), session.token, expect.objectContaining({ signal: expect.any(AbortSignal) }))
+  })
+
+  it('restores the selected nested folder after returning from its reader', async () => {
+    nestedLibrary()
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Mở thư mục An ninh mạng' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Mở thư mục Web Security' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Bắt đầu đọc' }))
+    await screen.findByText('QA reader content')
+    fireEvent.click(screen.getByRole('button', { name: 'Quay lại tủ sách' }))
+    expect(window.location.pathname).toBe('/library')
+    expect(await screen.findByRole('button', { name: 'Nested Research Book' })).toBeTruthy()
+    expect(screen.getByRole('navigation', { name: 'Đường dẫn thư mục' }).textContent).toContain('Web Security')
+  })
+})
+
+describe('document import destinations and feedback', () => {
+  type CommitInput = {
+    profile: string; book: Book; file: File; destinationId: string | null
+    records: Array<{ record: SyncRecord; sync: boolean }>; isCurrent: () => boolean
+  }
+  const parentId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+  const childId = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
+  const otherId = 'cccccccc-cccc-cccc-cccc-cccccccccccc'
+  let originalSubtle: PropertyDescriptor | undefined
+
+  beforeEach(() => {
+    originalSubtle = Object.getOwnPropertyDescriptor(crypto, 'subtle')
+    Object.defineProperty(crypto, 'subtle', { configurable: true, value: { digest: vi.fn(async () => new Uint8Array(32).buffer) } })
+  })
+  afterEach(() => {
+    if (originalSubtle) Object.defineProperty(crypto, 'subtle', originalSubtle)
+    else Reflect.deleteProperty(crypto, 'subtle')
+  })
+
+  function setup(profile = 'DEVICE_LOCAL') {
+    const entry = (id: string, name: string, parent: string | null): SyncRecord => ({
+      key: `${profile}:library_folders:${id}`, profile, id, kind: 'library_folders', version: 1, deleted: false,
+      payload: { id, name, parent_id: parent, created_at: 1, updated_at: 1 },
+    })
+    const folders = [entry(parentId, 'Học tập', null), entry(childId, 'Luận văn', parentId), entry(otherId, 'Tài liệu khác', null)]
+    let imported: LocalFile[] = [], records = folders
+    fixtures.getFiles.mockImplementation(async () => imported)
+    fixtures.localRecords.mockImplementation(async () => records)
+    fixtures.getFile.mockImplementation(async (_profile, id) => imported.find(value => value.book.id === id))
+    importFixtures.commit.mockImplementation(async (input: CommitInput) => {
+      const file: LocalFile = { key: `${input.profile}:${input.book.id}`, profile: input.profile, book: input.book, data: input.file, addedAt: Date.now() }
+      const id = androidRecordId('book_folder_locations', input.book.id)
+      const membership: SyncRecord = { key: `${input.profile}:book_folder_locations:${id}`, profile: input.profile, id,
+        kind: 'book_folder_locations', version: 0, deleted: false,
+        payload: { id, book_id: input.book.id, folder_id: input.destinationId, updated_at: Date.now() } }
+      const entries = [...input.records, { record: membership, sync: input.profile !== 'DEVICE_LOCAL' }]
+      imported = [file]
+      records = [...folders, ...entries.map(value => value.record)]
+      return { file, records: entries, destinationId: input.destinationId,
+        folderNames: input.destinationId === childId ? ['Học tập', 'Luận văn'] : input.destinationId === otherId ? ['Tài liệu khác'] : [] }
+    })
+    window.history.replaceState(null, '', '/library')
+  }
+
+  function pickedFile(name = 'Ghi chú nghiên cứu.txt', reading?: Promise<ArrayBuffer>) {
+    const picked = new File(['Ý chính cần đi cùng bằng chứng.'], name, { type: 'text/plain' })
+    Object.defineProperty(picked, 'arrayBuffer', { value: vi.fn(() => reading || Promise.resolve(new TextEncoder().encode('Ý chính cần đi cùng bằng chứng.').buffer)) })
+    return picked
+  }
+
+  async function openNestedImport() {
+    fireEvent.click(await screen.findByRole('button', { name: 'Mở thư mục Học tập' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Mở thư mục Luận văn' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Thêm tài liệu' })[0])
+    return screen.getByRole('dialog', { name: 'Thêm tài liệu' })
+  }
+
+  function deviceInput() {
+    return document.querySelector<HTMLInputElement>('input[type="file"][accept*=".epub"]')!
+  }
+
+  it('imports into the open nested folder and opens its document without losing return context', async () => {
+    setup()
+    render(<App />)
+    const dialog = await openNestedImport()
+    expect((within(dialog).getByLabelText('Lưu vào thư mục') as HTMLSelectElement).value).toBe(childId)
+    fireEvent.click(within(dialog).getByRole('button', { name: /Từ thiết bị/ }))
+    fireEvent.change(deviceInput(), { target: { files: [pickedFile()] } })
+    const open = await screen.findByRole('button', { name: 'Mở đọc' })
+    expect(importFixtures.commit).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ profile: 'DEVICE_LOCAL', destinationId: childId }))
+    expect(document.querySelector('.import-feedback')?.textContent).toContain('Tủ sách / Học tập / Luận văn')
+    fireEvent.click(open)
+    await screen.findByText('QA reader content')
+    fireEvent.click(screen.getByRole('button', { name: 'Quay lại tủ sách' }))
+    expect(screen.getByRole('navigation', { name: 'Đường dẫn thư mục' }).textContent).toContain('Luận văn')
+    expect(screen.getByRole('button', { name: 'Ghi chú nghiên cứu' })).toBeTruthy()
+  })
+
+  it('retains the picker destination and blocks a second submission while hashing is pending', async () => {
+    setup()
+    const hashInput = deferred<ArrayBuffer>()
+    render(<App />)
+    const dialog = await openNestedImport()
+    fireEvent.change(within(dialog).getByLabelText('Lưu vào thư mục'), { target: { value: otherId } })
+    fireEvent.click(within(dialog).getByRole('button', { name: /Từ thiết bị/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Đi đến thư mục Học tập' }))
+    const picked = pickedFile('Chương nghiên cứu.txt', hashInput.promise)
+    fireEvent.change(deviceInput(), { target: { files: [picked] } })
+    fireEvent.change(deviceInput(), { target: { files: [picked] } })
+    expect(importFixtures.commit).not.toHaveBeenCalled()
+    await act(async () => { hashInput.resolve(new Uint8Array([1, 2, 3]).buffer); await hashInput.promise })
+    await screen.findByRole('button', { name: 'Mở đọc' })
+    expect(importFixtures.commit).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ destinationId: otherId }))
+    expect(screen.getByRole('navigation', { name: 'Đường dẫn thư mục' }).textContent).toContain('Tài liệu khác')
+  })
+
+  it('ignores an old native picker result when its account has signed out before file selection', async () => {
+    saveSession(session)
+    setup(`ACCOUNT:${session.user.id}`)
+    render(<App />)
+    const dialog = await openNestedImport()
+    fireEvent.click(within(dialog).getByRole('button', { name: /Từ thiết bị/ }))
+    saveSession(null)
+    fireEvent(window, new StorageEvent('storage', { key: SESSION_STORAGE_KEY, storageArea: localStorage }))
+    await waitFor(() => expect(window.location.pathname).toBe('/'))
+    const picked = pickedFile('Riêng tư từ tài khoản trước.txt')
+    await act(async () => { fireEvent.change(deviceInput(), { target: { files: [picked] } }) })
+    expect(picked.arrayBuffer).not.toHaveBeenCalled()
+    expect(importFixtures.commit).not.toHaveBeenCalled()
+    expect(document.querySelector('.import-feedback')).toBeNull()
+  })
+
+  it('clears a cancelled picker and ignores a late change until a new selection is opened', async () => {
+    setup()
+    render(<App />)
+    const dialog = await openNestedImport()
+    fireEvent.click(within(dialog).getByRole('button', { name: /Từ thiết bị/ }))
+    fireEvent(deviceInput(), new Event('cancel', { bubbles: true }))
+    const picked = pickedFile('Lựa chọn đã hủy.txt')
+    await act(async () => { fireEvent.change(deviceInput(), { target: { files: [picked] } }) })
+    expect(picked.arrayBuffer).not.toHaveBeenCalled()
+    expect(importFixtures.commit).not.toHaveBeenCalled()
+    expect(document.querySelector('.import-feedback')).toBeNull()
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Thêm tài liệu' })[0])
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Thêm tài liệu' })).getByRole('button', { name: /Từ thiết bị/ }))
+    fireEvent.change(deviceInput(), { target: { files: [picked] } })
+    await screen.findByRole('button', { name: 'Mở đọc' })
+    expect(importFixtures.commit).toHaveBeenCalledOnce()
+  })
+
+  it('discards a pending import and its feedback after another tab signs out', async () => {
+    saveSession(session)
+    setup(`ACCOUNT:${session.user.id}`)
+    const hashInput = deferred<ArrayBuffer>()
+    render(<App />)
+    const dialog = await openNestedImport()
+    fireEvent.click(within(dialog).getByRole('button', { name: /Từ thiết bị/ }))
+    fireEvent.change(deviceInput(), { target: { files: [pickedFile('Riêng tư.txt', hashInput.promise)] } })
+    saveSession(null)
+    fireEvent(window, new StorageEvent('storage', { key: SESSION_STORAGE_KEY, storageArea: localStorage }))
+    await waitFor(() => expect(window.location.pathname).toBe('/'))
+    await act(async () => { hashInput.resolve(new Uint8Array([1]).buffer); await hashInput.promise })
+    expect(importFixtures.commit).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: 'Mở đọc' })).toBeNull()
+    expect(document.querySelector('.import-feedback')).toBeNull()
+  })
+
+  it('reports a committed HTTPS import as successful even when refreshing the library fails', async () => {
+    setup()
+    const commit = importFixtures.commit.getMockImplementation()!
+    importFixtures.commit.mockImplementation(async (input: CommitInput) => {
+      const result = await commit(input)
+      fixtures.getFiles.mockRejectedValue(new Error('Temporary list refresh failure'))
+      return result
+    })
+    fixtures.downloadHttps.mockResolvedValue(pickedFile())
+    render(<App />)
+    const dialog = await openNestedImport()
+    fireEvent.click(within(dialog).getByRole('button', { name: /Từ liên kết HTTPS/ }))
+    fireEvent.change(within(dialog).getByLabelText('Liên kết HTTPS'), { target: { value: 'https://books.example.org/research.txt' } })
+    fireEvent.submit(dialog.querySelector('form')!)
+    await screen.findByRole('button', { name: 'Mở đọc' })
+    expect(screen.queryByRole('dialog', { name: 'Thêm tài liệu' })).toBeNull()
+    expect(document.querySelector('.import-feedback')?.getAttribute('data-status')).toBe('success')
+    expect(screen.getByRole('button', { name: 'Ghi chú nghiên cứu' })).toBeTruthy()
+    expect(importFixtures.commit).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('reader origin restoration', () => {
+  it.each(['reader Back', 'Escape', 'browser Back'] as const)('restores Explore search, filters and scroll after %s', async exit => {
+    fixtures.getCatalog.mockResolvedValue({
+      books: [
+        { id: 'history-reader', title: 'Lịch sử Đảng', author: 'Nguyễn An', categoryId: 'history', format: 'TXT', fileUrl: 'https://books.example.test/history.txt' },
+        { id: 'another-reader', title: 'Một cuốn sách khác', author: 'QA', categoryId: 'fiction', format: 'TXT', fileUrl: 'https://books.example.test/fiction.txt' },
+      ],
+      categories: [{ id: 'history', name: 'Lịch sử' }, { id: 'fiction', name: 'Hư cấu' }],
+    })
+    window.history.replaceState(null, '', '/explore')
+    render(<App />)
+    await screen.findByRole('button', { name: 'Lịch sử Đảng' })
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Tìm sách' }), { target: { value: 'lich su dang' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Thể loại' }), { target: { value: 'history' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Sắp xếp sách' }), { target: { value: 'title' } })
+    expect(screen.getByRole('button', { name: 'Lịch sử Đảng' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Một cuốn sách khác' })).toBeNull()
+    vi.stubGlobal('scrollY', 735)
+    try {
+      if (exit === 'reader Back') {
+        fireEvent.click(screen.getByRole('button', { name: 'Lịch sử Đảng' }))
+        await screen.findByRole('button', { name: 'Đọc sách' })
+        fireEvent.click(screen.getByRole('button', { name: 'Đọc sách' }))
+      } else fireEvent.click(screen.getByRole('button', { name: 'Bắt đầu đọc' }))
+      await screen.findByText('QA reader content')
+      vi.stubGlobal('scrollY', 0)
+      vi.mocked(window.scrollTo).mockClear()
+      if (exit === 'reader Back') fireEvent.click(screen.getByRole('button', { name: 'Quay lại Khám phá' }))
+      else if (exit === 'Escape') fireEvent.keyDown(window, { key: 'Escape' })
+      else {
+        await act(async () => {
+          window.history.replaceState(null, '', '/explore')
+          window.dispatchEvent(new PopStateEvent('popstate'))
+        })
+      }
+      await waitFor(() => expect(screen.queryByText('QA reader content')).toBeNull())
+      expect(window.location.pathname).toBe('/explore')
+      expect((screen.getByRole('searchbox', { name: 'Tìm sách' }) as HTMLInputElement).value).toBe('lich su dang')
+      expect((screen.getByRole('combobox', { name: 'Thể loại' }) as HTMLSelectElement).value).toBe('history')
+      expect((screen.getByRole('combobox', { name: 'Sắp xếp sách' }) as HTMLSelectElement).value).toBe('title')
+      expect(screen.getByRole('button', { name: 'Lịch sử Đảng' })).toBeTruthy()
+      await waitFor(() => expect(window.scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 735 })))
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it('restores Explore search and scroll when the primary Close button dismisses a failed book opening', async () => {
+    fixtures.getCatalog.mockResolvedValue({ books: [
+      { id: 'failed-source', title: 'Lịch sử Việt Nam', author: 'QA', format: 'TXT', fileUrl: 'https://books.example.test/unavailable.txt' },
+    ], categories: [] })
+    fixtures.loadBytes.mockRejectedValue(new Error('QA source unavailable'))
+    window.history.replaceState(null, '', '/explore')
+    render(<App />)
+    await screen.findByRole('button', { name: 'Lịch sử Việt Nam' })
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Tìm sách' }), { target: { value: 'lich su' } })
+    vi.stubGlobal('scrollY', 612)
+    try {
+      fireEvent.click(screen.getByRole('button', { name: 'Bắt đầu đọc' }))
+      await screen.findByRole('heading', { name: 'Chưa mở được tài liệu' })
+      expect(window.location.pathname).toBe('/read/failed-source')
+      vi.stubGlobal('scrollY', 0)
+      vi.mocked(window.scrollTo).mockClear()
+      fireEvent.click(screen.getByText('Đóng', { selector: 'button' }))
+      expect(window.location.pathname).toBe('/explore')
+      expect(screen.queryByRole('heading', { name: 'Chưa mở được tài liệu' })).toBeNull()
+      expect((screen.getByRole('searchbox', { name: 'Tìm sách' }) as HTMLInputElement).value).toBe('lich su')
+      expect(screen.getByRole('button', { name: 'Lịch sử Việt Nam' })).toBeTruthy()
+      await waitFor(() => expect(window.scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 612 })))
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it('returns from an exact original passage to the same filtered Memory list', async () => {
+    const book = { id: 'memory-source', title: 'Tài liệu nghiên cứu', author: 'QA', format: 'TXT', fileUrl: 'https://books.example.test/source.txt' }
+    const locatorJson = '{"type":"TEXT","progression":0.35}'
+    const annotation: SyncRecord = { key: 'DEVICE_LOCAL:highlights:saved-source', profile: 'DEVICE_LOCAL', kind: 'highlights', id: 'saved-source', version: 1, deleted: false,
+      payload: { book_id: book.id, text: 'Bằng chứng cần được giữ cùng ý chính.', note: 'Lưu nguồn để đối chiếu.', locator_json: locatorJson, created_at: Date.now() } }
+    fixtures.getCatalog.mockResolvedValue({ books: [book], categories: [] })
+    fixtures.localRecords.mockResolvedValue([annotation])
+    window.history.replaceState(null, '', '/memory')
+    render(<App />)
+    const search = await screen.findByRole('textbox', { name: 'Tìm ghi chú' })
+    fireEvent.change(search, { target: { value: 'bang chung' } })
+    const source = await screen.findByRole('button', { name: 'Về đoạn gốc' })
+    fireEvent.click(source)
+    await screen.findByText('QA reader content')
+    await waitFor(() => expect(JSON.parse(screen.getByTestId('qa-reader-navigation').textContent!).locatorJson).toBe(locatorJson))
+    fireEvent.click(screen.getByRole('button', { name: 'Quay lại Ghi nhớ' }))
+    expect(window.location.pathname).toBe('/memory')
+    expect((screen.getByRole('textbox', { name: 'Tìm ghi chú' }) as HTMLInputElement).value).toBe('bang chung')
+    expect(await screen.findByText('Bằng chứng cần được giữ cùng ý chính.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Về đoạn gốc' })).toBeTruthy()
   })
 })
 
@@ -928,6 +1207,41 @@ describe('searching inside the open book', () => {
   function annotations(): ReaderAnnotation[] {
     return JSON.parse(screen.getByTestId('qa-reader-annotations').textContent!)
   }
+
+  it('reveals a mobile search result and keeps its query for reopening', async () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
+    try {
+      fixtures.searchBook.mockResolvedValue(result)
+      const toggle = await reader()
+      fireEvent.click(toggle)
+      await search()
+      fireEvent.click(await hitButton())
+      expect(screen.queryByRole('complementary', { name: 'Tìm trong sách' })).toBeNull()
+      expect(JSON.parse(screen.getByTestId('qa-reader-navigation').textContent!).locatorJson).toBe(locator)
+      fireEvent.click(toggle)
+      expect((within(searchPanel()).getByRole('searchbox', { name: 'Từ khóa trong sách' }) as HTMLInputElement).value).toBe('quiet river')
+      expect(await hitButton()).toBeTruthy()
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it('reveals a saved source on mobile without losing the unfinished note', async () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
+    const saved: SyncRecord = { key: 'DEVICE_LOCAL:highlights:saved', profile: 'DEVICE_LOCAL', kind: 'highlights', id: 'saved', version: 1, deleted: false,
+      payload: { book_id: 'QA document', text: 'A saved quotation', locator_json: locator, color: 'YELLOW' } }
+    fixtures.localRecords.mockResolvedValue([saved])
+    try {
+      await reader()
+      const toggle = screen.getByRole('button', { name: 'Bảng ghi chú' })
+      fireEvent.click(toggle)
+      const panel = screen.getByRole('complementary', { name: 'Ghi chú khi đọc' })
+      fireEvent.change(within(panel).getByLabelText('Ghi chú của bạn'), { target: { value: 'Ý tưởng đang viết dở' } })
+      fireEvent.click(within(panel).getByRole('button', { name: 'Về đoạn gốc' }))
+      expect(screen.queryByRole('complementary', { name: 'Ghi chú khi đọc' })).toBeNull()
+      expect(JSON.parse(screen.getByTestId('qa-reader-navigation').textContent!).locatorJson).toBe(locator)
+      fireEvent.click(toggle)
+      expect((screen.getByLabelText('Ghi chú của bạn') as HTMLTextAreaElement).value).toBe('Ý tưởng đang viết dở')
+    } finally { vi.unstubAllGlobals() }
+  })
 
   it('opens with Ctrl/Cmd+F, focuses its input, and returns focus to the toolbar on Escape', async () => {
     const toggle = await reader()

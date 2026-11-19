@@ -4,23 +4,27 @@ import { getDocument, GlobalWorkerOptions, TextLayer, type PDFDocumentProxy, typ
 import 'pdfjs-dist/web/pdf_viewer.css'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import epubFontFaces from './fonts.css?inline'
+import { applyDocumentTypography, contentLanguage } from './typography'
 import { readerTypeface } from './readerTypography'
 import type { Book, FontFamily, ReaderAnnotation, ReaderLocation, ReaderWidth, TextAlignment, TocItem } from './types'
 import { detectReaderFormat } from './readerFormat'
-import { restoreEpubAfterResize, synchronizeEpubScroll, waitForEpubTargetFonts, type EpubScrollManager } from './epubScroll'
+import { refillEpubAfterRender, restoreEpubAfterResize, synchronizeEpubScroll, waitForEpubTargetFonts, type EpubScrollManager } from './epubScroll'
 import { observeEpubViewport } from './epubViewport'
 import { archiveLocator, archivePageIndex, clampProgression, epubProgression, findSpineHref, normalizedPdfRects, pdfTextOffsets, rangeFromOffsets, rangeOffsets, sectionTextProgression, type PdfRect } from './readerPositions'
 import type Rendition from 'epubjs/types/rendition'
 import type Contents from 'epubjs/types/contents'
 import { pdfOutline } from './pdfOutline'
+import { pdfDocumentOptions } from './pdfResources'
 import { translate } from './uiText'
 import type { Lang } from './i18n'
 import type { ReaderSearchSource } from './readerSearch'
 import { createArticleSearchSource, createEpubSearchSource, createPdfSearchSource } from './readerSearchSources'
 import type { ReaderSpeechSource } from './readerSpeech'
 import { captureReaderSpeech } from './readerSpeechText'
+import { PdfReaderControls, PDF_MIN_ZOOM, PDF_MAX_ZOOM } from './PdfReaderControls'
 
 GlobalWorkerOptions.workerSrc = workerUrl
+const EMPTY_ANNOTATIONS: ReaderAnnotation[] = []
 
 type Props = {
   lang?: Lang
@@ -48,15 +52,15 @@ type Props = {
 }
 
 /** Callback changes must not reopen a document or replace its search engine. */
-function useSearchPublication(onSearchReady: Props['onSearchReady']) {
-  const callback = useRef(onSearchReady)
-  const source = useRef<ReaderSearchSource | null>(null)
+function useReaderPublication<T>(onReady?: (source: T | null) => void) {
+  const callback = useRef(onReady)
+  const source = useRef<T | null>(null)
   useEffect(() => {
-    callback.current = onSearchReady
-    onSearchReady?.(source.current)
-    return () => onSearchReady?.(null)
-  }, [onSearchReady])
-  return useCallback((next: ReaderSearchSource | null) => {
+    callback.current = onReady
+    onReady?.(source.current)
+    return () => onReady?.(null)
+  }, [onReady])
+  return useCallback((next: T | null) => {
     source.current = next
     callback.current?.(next)
   }, [])
@@ -78,16 +82,16 @@ export function ReaderPane(props: Props) {
   const format = detectReaderFormat(props.book, props.bytes)
   const contentKey = `${props.book.id}:${props.book.fileUrl || ''}:${contentVersion(props.bytes)}`
   const root = useRef<HTMLDivElement>(null)
-  const { onSpeechReady } = props
+  const publishSpeech = useReaderPublication(props.onSpeechReady)
   useEffect(() => {
     let active = true
     const source: ReaderSpeechSource = async signal => {
       if (!active || signal.aborted || !root.current) throw new DOMException('Reader closed', 'AbortError')
       return captureReaderSpeech(root.current, format)
     }
-    onSpeechReady?.(source)
-    return () => { active = false; onSpeechReady?.(null) }
-  }, [contentKey, format, onSpeechReady])
+    publishSpeech(source)
+    return () => { active = false; publishSpeech(null) }
+  }, [contentKey, format, publishSpeech])
   const pane = format === 'pdf' ? <PdfPane key={contentKey} {...props} />
     : format === 'epub' ? <EpubPane key={contentKey} {...props} />
     : format === 'cbz' ? <CbzPane key={contentKey} {...props} />
@@ -142,6 +146,7 @@ function applyEpubComfort(view: Rendition, comfort: Pick<Props, 'fontSize' | 'fo
 }
 
 async function displayEpubLocation(view: Rendition, target: string | undefined, isCurrent: () => boolean, readiness: WeakMap<Document, Promise<void>>) {
+  if (!isCurrent()) return
   await view.display(target)
   await alignEpubLocation(view, target, isCurrent, readiness)
 }
@@ -169,7 +174,7 @@ async function alignEpubLocation(view: Rendition, target: string | undefined, is
 }
 
 function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme, onLocation, onSelection, onControls, onToc, navigateTarget, navigateProgression, navigateLocator, annotations = [], onSearchReady, onSearchRequest, keyboardActive = true }: Props) {
-  const publishSearch = useSearchPublication(onSearchReady)
+  const publishSearch = useReaderPublication(onSearchReady)
   const language = sourceBook.language
   const publicationLanguage = useRef<string | undefined>(undefined)
   const langRef = useRef(lang)
@@ -187,9 +192,11 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
   const onTocRef = useRef(onToc)
   const renderedAnnotations = useRef<string[]>([])
   const locationsReady = useRef(false)
+  const locationsPromise = useRef<Promise<unknown> | null>(null)
   const requestedProgression = useRef<number | null>(null)
   const contentReadiness = useRef(new WeakMap<Document, Promise<void>>())
   const renditionReady = useRef(false)
+  const navigationVersion = useRef(0)
   const reflow = useRef<ReturnType<typeof restoreEpubAfterResize> | null>(null)
   const appliedLocatorRequest = useRef<string | null>(null)
   const comfortRef = useRef({ fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme, language })
@@ -202,14 +209,28 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
     controlsRef.current = onControls
     onTocRef.current = onToc
   }, [onLocation, onSelection, onControls, onToc])
+  const generateLocations = useCallback(async (book: import('epubjs/types/book').default) => {
+    // epub.js appends to its location table on every generate() call. Share
+    // preparation across rapid navigation requests instead of indexing twice.
+    const pending = locationsPromise.current ??= book.locations.generate(1200)
+    try {
+      await pending
+      if (bookRef.current === book && locationsPromise.current === pending) locationsReady.current = true
+    } catch (error) {
+      if (bookRef.current === book && locationsPromise.current === pending) locationsPromise.current = null
+      throw error
+    }
+  }, [])
 
   useEffect(() => {
     if (!navigateTarget || !rendition.current || !renditionReady.current) return
     const target = findSpineHref(bookRef.current?.spine, navigateTarget) || navigateTarget
     const current = rendition.current
     let active = true
+    const version = ++navigationVersion.current
+    requestedProgression.current = null
     reflow.current?.cancel()
-    void displayEpubLocation(current, target, () => active, contentReadiness.current).catch(() => {})
+    void displayEpubLocation(current, target, () => active && navigationVersion.current === version, contentReadiness.current).catch(() => {})
     return () => { active = false }
   }, [navigateTarget, renditionVersion])
 
@@ -226,8 +247,10 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
     if (!cfi && !href) return
     appliedLocatorRequest.current = key
     let active = true
+    const version = ++navigationVersion.current
+    requestedProgression.current = null
     reflow.current?.cancel()
-    void displayEpubLocation(view, cfi || href, () => active, contentReadiness.current).catch(() => {})
+    void displayEpubLocation(view, cfi || href, () => active && navigationVersion.current === version, contentReadiness.current).catch(() => {})
     return () => { active = false }
   }, [navigateLocator, renditionVersion])
 
@@ -237,51 +260,57 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
     const view = rendition.current
     if (!request || !book || !view || !renditionReady.current) return
     let active = true
+    const version = ++navigationVersion.current
+    const isCurrent = () => active && navigationVersion.current === version
+    requestedProgression.current = null
     reflow.current?.cancel()
     void (async () => {
       try {
         if (request.href) {
           if (!locationsReady.current) {
-            await book.locations.generate(1200)
-            locationsReady.current = true
+            await generateLocations(book)
+            if (!isCurrent()) return
           }
           const targetHref = findSpineHref(book.spine, request.href) || request.href
-          requestedProgression.current = Math.min(1, Math.max(0, request.progression))
-          if (active) {
+          requestedProgression.current = clampProgression(request.progression)
+          if (isCurrent()) {
             await view.display(targetHref)
+            if (!isCurrent()) return
             locationRef.current({
               locatorJson: JSON.stringify({ type: 'STEALTH', version: 1, href: request.href, progression: request.progression }),
-              progression: Math.min(1, Math.max(0, request.progression)),
+              progression: clampProgression(request.progression),
               chapterTitle: '',
             })
           }
           return
         }
         if (!locationsReady.current) {
-          await book.locations.generate(1200)
-          locationsReady.current = true
+          await generateLocations(book)
+          if (!isCurrent()) return
         }
-        const progression = Math.min(1, Math.max(0, request.progression))
+        const progression = clampProgression(request.progression)
         const cfi = book.locations.cfiFromPercentage(progression)
-        if (active && cfi) await view.display(cfi)
+        if (isCurrent() && cfi) await view.display(cfi)
       } catch {
         // Keep the current EPUB location if this book cannot generate CFIs.
       }
     })()
     return () => { active = false }
-  }, [navigateProgression, renditionVersion])
+  }, [navigateProgression, renditionVersion, generateLocations])
 
   useEffect(() => {
     if (!host.current) return
     setError('')
     renditionReady.current = false
     locationsReady.current = false
+    locationsPromise.current = null
     requestedProgression.current = null
     publicationLanguage.current = undefined
     let alive = true
     let book: import('epubjs/types/book').default | null = null
     let view: Rendition | null = null
     let stopObservingViewport: (() => void) | undefined
+    let stopRefillingViewport: (() => void) | undefined
     async function open() {
       try {
         const { default: ePub } = await import('epubjs')
@@ -316,9 +345,11 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
         await view.started
         if (!alive) return
         synchronizeEpubScroll((view as unknown as { manager: EpubScrollManager }).manager)
+        stopRefillingViewport = refillEpubAfterRender(view as unknown as Parameters<typeof refillEpubAfterRender>[0])
         // Set typography before display measures any spine views.
         applyEpubComfort(view, { ...comfortRef.current, language: comfortRef.current.language?.trim() || publicationLanguage.current })
         view.hooks.render.register((frame: { contents: Contents }) => {
+          if (!alive) return
           const contents = frame.contents
           const document = contents.document
           // render hooks start synchronously, before display() resolves; content
@@ -334,15 +365,18 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
             view!.themes.inject(contents)
             view!.themes.overrides(contents)
             const comfort = comfortRef.current
-            const typeface = readerTypeface(comfort.fontFamily, comfort.language?.trim() || publicationLanguage.current)
+            applyDocumentTypography(document, comfort.language?.trim() || publicationLanguage.current)
+            const typeface = readerTypeface(comfort.fontFamily, document.documentElement.lang)
             if (typeface.family) {
               await document.fonts.load(`${comfort.fontSize * 0.18}px "${typeface.family}"`, document.body.textContent || 'NoCap').catch(() => [])
             }
+            await document.fonts.ready
           })()
           contentReadiness.current.set(document, ready)
           return ready
         })
         view.on('relocated', (location: { start?: { cfi?: string; href?: string; percentage?: number; index?: number }; end?: unknown }) => {
+          if (!alive) return
           const start = location.start
           if (!start?.cfi) return
           const spineLength = (book?.spine as unknown as { items?: unknown[] })?.items?.length || 1
@@ -385,6 +419,7 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
           locationRef.current({ locatorJson, progression, chapterTitle: '' })
         })
         view.on('selected', (cfiRange: string, contents: { window?: Window }) => {
+          if (!alive) return
           const selected = contents.window?.getSelection()?.toString().trim() || ''
           if (!selected) return
           let href = ''
@@ -406,13 +441,13 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
         if (saved?.type === 'STEALTH' && typeof saved.href === 'string') {
           const targetHref = findSpineHref(book.spine, saved.href) || saved.href
           try {
-            await book.locations.generate(1200)
-            locationsReady.current = true
+            await generateLocations(book)
+            if (!alive) return
             requestedProgression.current = typeof saved.progression === 'number'
               ? Math.min(1, Math.max(0, saved.progression))
               : null
             await view.display(targetHref)
-            if (typeof saved.progression === 'number') {
+            if (alive && typeof saved.progression === 'number') {
               locationRef.current({
                 locatorJson: JSON.stringify({ type: 'STEALTH', version: 1, href: saved.href, progression: saved.progression }),
                 progression: Math.min(1, Math.max(0, saved.progression)),
@@ -420,18 +455,18 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
               })
             }
           }
-          catch { await view.display() }
+          catch { if (alive) await view.display() }
         } else if (saved?.type === 'STEALTH' && typeof saved.progression === 'number') {
           try {
-            await book.locations.generate(1200)
-            locationsReady.current = true
+            await generateLocations(book)
+            if (!alive) return
             const cfi = book.locations.cfiFromPercentage(Math.min(1, Math.max(0, saved.progression)))
             if (cfi) await view.display(cfi)
             else await view.display()
-          } catch { await view.display() }
+          } catch { if (alive) await view.display() }
         } else if (locations?.cfi) {
           try { await displayEpubLocation(view, locations.cfi, () => alive, contentReadiness.current) }
-          catch { await view.display() }
+          catch { if (alive) await view.display() }
         } else if (saved?.href) {
           const targetHref = findSpineHref(book?.spine, saved.href as string)
           try {
@@ -440,6 +475,7 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
             let target = targetHref
             if (section && typeof prog === 'number' && prog > 0) {
               await section.load(book.load.bind(book))
+              if (!alive) return
               const root = section.document?.querySelector('body')
               if (root) {
                 const range = rangeFromOffsets(root, Math.floor((root.textContent?.length || 0) * clampProgression(prog)))
@@ -448,7 +484,7 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
             }
             if (alive) await displayEpubLocation(view, target, () => alive, contentReadiness.current)
           } catch {
-            await view.display()
+            if (alive) await view.display()
           }
         } else {
           await displayEpubLocation(view, undefined, () => alive, contentReadiness.current)
@@ -469,8 +505,8 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
       } catch { if (alive) setError(translate("Không mở được EPUB này. Tệp có thể bị hỏng hoặc không đúng định dạng.", langRef.current)) }
     }
     void open()
-    return () => { alive = false; publishSearch(null); stopObservingViewport?.(); reflow.current?.dispose(); reflow.current = null; renditionReady.current = false; rendition.current = null; locationsReady.current = false; view?.destroy(); book?.destroy() }
-  }, [bytes, initial, publishSearch])
+    return () => { alive = false; navigationVersion.current++; publishSearch(null); stopObservingViewport?.(); stopRefillingViewport?.(); reflow.current?.dispose(); reflow.current = null; renditionReady.current = false; rendition.current = null; bookRef.current = null; locationsReady.current = false; locationsPromise.current = null; view?.destroy(); book?.destroy() }
+  }, [bytes, initial, publishSearch, generateLocations])
 
   useEffect(() => {
     const view = rendition.current
@@ -517,14 +553,18 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
   return error ? <div className="reader-error">{error}</div> : <div ref={host} className="epub-host" style={{ overflowAnchor: 'none' }} aria-label={translate("Nội dung EPUB", lang)} />
 }
 
-function PdfPane({ lang = 'vi', bytes, initial, onLocation, onSelection, onControls, onToc, navigateTarget, navigateProgression, navigateLocator, annotations = [], onSearchReady }: Props) {
-  const publishSearch = useSearchPublication(onSearchReady)
+function PdfPane({ lang = 'vi', bytes, initial, onLocation, onSelection, onControls, onToc, navigateTarget, navigateProgression, navigateLocator, annotations = EMPTY_ANNOTATIONS, onSearchReady }: Props) {
+  const publishSearch = useReaderPublication(onSearchReady)
+  const locationRef = useRef(onLocation)
+  useEffect(() => { locationRef.current = onLocation }, [onLocation])
   const langRef = useRef(lang)
   useEffect(() => { langRef.current = lang }, [lang])
   const canvas = useRef<HTMLCanvasElement>(null)
   const host = useRef<HTMLDivElement>(null)
   const appliedLocatorRequest = useRef<string | null>(null)
-  const resizeAnchor = useRef<{ page: number; ratio: number } | null>(null)
+  const resizeAnchor = useRef<{ page: number; x: number; y: number } | null>(null)
+  const stage = useRef<HTMLDivElement>(null)
+  const pageBox = useRef<HTMLDivElement>(null)
   const pageMetrics = useRef({ page: 1, height: 1100, width: 800 })
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null)
   const textLayerDiv = useRef<HTMLDivElement>(null)
@@ -532,7 +572,10 @@ function PdfPane({ lang = 'vi', bytes, initial, onLocation, onSelection, onContr
   const [speechPage, setSpeechPage] = useState<number | null>(null)
   const renderedTextPage = useRef(0)
   const [pdfHighlights, setPdfHighlights] = useState<{ page: number; rects: Array<PdfRect & { id: string; color: string }> }>({ page: 0, rects: [] })
-  const [renderWidth, setRenderWidth] = useState(800)
+  const [fitWidth, setFitWidth] = useState(800)
+  const measuredFitWidth = useRef(800)
+  const [zoom, setZoom] = useState(1)
+  const renderWidth = Math.round(fitWidth * zoom)
   const [dimensions, setDimensions] = useState<{ width: number; height: number }>({ width: 800, height: 1100 })
   const [page, setPage] = useState(() => {
     const saved = parseInitial(initial)
@@ -543,30 +586,60 @@ function PdfPane({ lang = 'vi', bytes, initial, onLocation, onSelection, onContr
   const onTocRef = useRef(onToc)
   useEffect(() => { onTocRef.current = onToc }, [onToc])
 
+  const rememberPdfPosition = useCallback(() => {
+    const element = host.current
+    const box = pageBox.current
+    const metrics = pageMetrics.current
+    if (resizeAnchor.current || !element || !box || renderedTextPage.current !== metrics.page) return
+    const left = box.offsetLeft + (stage.current?.offsetLeft || 0)
+    const top = box.offsetTop + (stage.current?.offsetTop || 0)
+    resizeAnchor.current = {
+      page: metrics.page,
+      x: (element.scrollLeft + element.clientWidth / 2 - left) / Math.max(1, metrics.width),
+      y: (element.scrollTop - top) / Math.max(1, metrics.height),
+    }
+  }, [])
+
   useEffect(() => {
-    const parent = canvas.current?.parentElement?.parentElement
+    const parent = host.current
     if (!parent) return
     const resize = () => {
       const style = getComputedStyle(parent)
       const width = parent.clientWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0)
       const nextWidth = Math.min(960, Math.max(1, width))
-      const metrics = pageMetrics.current
-      if (host.current && nextWidth !== metrics.width && renderedTextPage.current === metrics.page) {
-        resizeAnchor.current = { page: metrics.page, ratio: host.current.scrollTop / Math.max(1, metrics.height) }
-      }
-      setRenderWidth(nextWidth)
+      if (nextWidth === measuredFitWidth.current) return
+      rememberPdfPosition()
+      measuredFitWidth.current = nextWidth
+      setFitWidth(nextWidth)
     }
     resize()
     const observer = new ResizeObserver(resize)
     observer.observe(parent)
     return () => observer.disconnect()
-  }, [document])
+  }, [document, rememberPdfPosition])
+
+  function changeZoom(value: number) {
+    const next = Math.min(PDF_MAX_ZOOM, Math.max(PDF_MIN_ZOOM, value))
+    if (next === zoom) return
+    rememberPdfPosition()
+    setZoom(next)
+  }
+
+  function goToPage(value: number) {
+    if (!document || !Number.isInteger(value) || value < 1 || value > document.numPages) return
+    resizeAnchor.current = null
+    if (host.current) { host.current.scrollTop = 0; host.current.scrollLeft = 0 }
+    setPage(value)
+  }
 
   useEffect(() => {
     if (!navigateTarget) return
     if (navigateTarget.startsWith('page:')) {
       const p = parseInt(navigateTarget.replace('page:', ''), 10)
-      if (p >= 1 && (!document || p <= document.numPages)) queueMicrotask(() => setPage(p))
+      if (p >= 1 && (!document || p <= document.numPages)) {
+        resizeAnchor.current = null
+        queueMicrotask(() => setPage(p))
+      }
     }
   }, [navigateTarget, document])
 
@@ -595,6 +668,7 @@ function PdfPane({ lang = 'vi', bytes, initial, onLocation, onSelection, onContr
     if (!document || !saved || saved.type !== 'PDF') return
     const requested = Number(saved.pageNumber) || Number(saved.pageIndex) + 1
     if (!Number.isFinite(requested)) return
+    resizeAnchor.current = null
     let active = true
     queueMicrotask(() => { if (active) setPage(Math.min(document.numPages, Math.max(1, Math.trunc(requested)))) })
     return () => { active = false }
@@ -602,7 +676,7 @@ function PdfPane({ lang = 'vi', bytes, initial, onLocation, onSelection, onContr
 
   useEffect(() => {
     let active = true
-    const task = getDocument({ data: bytes.slice(0) })
+    const task = getDocument(pdfDocumentOptions(bytes))
     void task.promise.then(pdf => {
       if (!active) return
       setPage(current => Math.min(pdf.numPages, Math.max(1, Math.trunc(current))))
@@ -623,9 +697,10 @@ function PdfPane({ lang = 'vi', bytes, initial, onLocation, onSelection, onContr
     let active = true
     let render: RenderTask | null = null
     let textLayer: TextLayer | null = null
+    let restoreFrame: number | undefined
     setError('')
     if (pageMetrics.current.page !== page) {
-      if (host.current) host.current.scrollTop = 0
+      if (host.current) { host.current.scrollTop = 0; host.current.scrollLeft = 0 }
       resizeAnchor.current = null
     }
     renderedTextPage.current = 0
@@ -666,20 +741,36 @@ function PdfPane({ lang = 'vi', bytes, initial, onLocation, onSelection, onContr
         })
         await textLayer.render()
         if (active) {
-          const anchor = resizeAnchor.current
-          if (anchor?.page === page && host.current) host.current.scrollTop = anchor.ratio * viewport.height
-          resizeAnchor.current = null
           pageMetrics.current = { page, height: viewport.height, width: viewport.width }
           renderedTextPage.current = page
+          restoreFrame = requestAnimationFrame(() => {
+            if (!active) return
+            const anchor = resizeAnchor.current
+            const element = host.current
+            const box = pageBox.current
+            if (anchor?.page === page && element && box) {
+              const left = box.offsetLeft + (stage.current?.offsetLeft || 0)
+              const top = box.offsetTop + (stage.current?.offsetTop || 0)
+              element.scrollLeft = Math.max(0, anchor.x * viewport.width + left - element.clientWidth / 2)
+              element.scrollTop = Math.max(0, anchor.y * viewport.height + top)
+            }
+            resizeAnchor.current = null
+          })
           setSpeechPage(page)
           setTextLayerVersion(value => value + 1)
         }
       }
     }).catch(error => { if (active && error?.name !== 'RenderingCancelledException') setError(translate("Không hiển thị được trang PDF này.", langRef.current)) })
     const progression = document.numPages > 1 ? (page - 1) / (document.numPages - 1) : 1
-    onLocation({ locatorJson: JSON.stringify({ type: 'PDF', version: 1, pageIndex: page - 1, pageNumber: page, progression, selectedText: '', startOffset: 0, endOffset: 0 }), progression, chapterTitle: `${translate('Trang', langRef.current)} ${page}` })
-    return () => { active = false; renderedTextPage.current = 0; render?.cancel(); textLayer?.cancel() }
-  }, [document, page, onLocation, renderWidth])
+    locationRef.current({ locatorJson: JSON.stringify({ type: 'PDF', version: 1, pageIndex: page - 1, pageNumber: page, progression, selectedText: '', startOffset: 0, endOffset: 0 }), progression, chapterTitle: `${translate('Trang', langRef.current)} ${page}` })
+    return () => {
+      active = false
+      renderedTextPage.current = 0
+      if (restoreFrame !== undefined) cancelAnimationFrame(restoreFrame)
+      render?.cancel()
+      textLayer?.cancel()
+    }
+  }, [document, page, renderWidth])
 
   useEffect(() => {
     const saved = parseInitial(navigateLocator?.locatorJson)
@@ -760,48 +851,54 @@ function PdfPane({ lang = 'vi', bytes, initial, onLocation, onSelection, onContr
   return error && !document ? (
     <div className="reader-error">{error}</div>
   ) : (
-    <div className="pdf-host" ref={host}>
-      {error && <div className="reader-error" role="alert">{error}</div>}
-      <div
-        className="pdf-page-container"
-        hidden={Boolean(error)}
-        data-read-aloud-page={page}
-        data-read-aloud-ready={speechPage === page}
-        style={{
-          position: 'relative',
-          display: error ? 'none' : 'inline-block',
-          width: dimensions.width,
-          minHeight: dimensions.height,
-        }}
-      >
-        <canvas ref={canvas} />
-        <div aria-hidden="true" className="pdf-highlight-overlay" style={{ position: 'absolute', inset: 0, pointerEvents: 'none', mixBlendMode: 'multiply' }}>
-          {(pdfHighlights.page === page ? pdfHighlights.rects : []).map(rect => <span key={rect.id} style={{ position: 'absolute', left: `${rect.left * 100}%`, top: `${rect.top * 100}%`, width: `${rect.width * 100}%`, height: `${rect.height * 100}%`, background: highlightColors[rect.color.toUpperCase()] || highlightColors.YELLOW, opacity: 0.4 }} />)}
-        </div>
-        <div
-          ref={textLayerDiv}
-          className="textLayer pdf-text-layer"
-          onMouseUp={handleSelection}
-          onTouchEnd={handleSelection}
-          style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}
-        />
-      </div>
-      {pageHighlights.length > 0 && (
-        <div className="pdf-page-highlights">
-          {pageHighlights.map(h => (
-            <div key={h.id} className={`pdf-highlight-item color-${h.color.toLowerCase()}`}>
-              <span className="dot" /> “{h.text}”
+    <div className="pdf-reader">
+      <PdfReaderControls lang={lang} page={page} pageCount={document?.numPages} zoom={zoom} onZoom={changeZoom} onPage={goToPage} />
+      <div className="pdf-host" ref={host}>
+        {error && <div className="reader-error" role="alert">{error}</div>}
+        <div ref={stage} className="pdf-scroll-stage" style={{ width: dimensions.width }}>
+          <div
+            ref={pageBox}
+            className="pdf-page-container"
+            hidden={Boolean(error)}
+            data-read-aloud-page={page}
+            data-read-aloud-ready={speechPage === page}
+            style={{
+              position: 'relative',
+              display: error ? 'none' : 'block',
+              width: dimensions.width,
+              minHeight: dimensions.height,
+            }}
+          >
+            <canvas ref={canvas} />
+            <div aria-hidden="true" className="pdf-highlight-overlay" style={{ position: 'absolute', inset: 0, pointerEvents: 'none', mixBlendMode: 'multiply' }}>
+              {(pdfHighlights.page === page ? pdfHighlights.rects : []).map(rect => <span key={rect.id} style={{ position: 'absolute', left: `${rect.left * 100}%`, top: `${rect.top * 100}%`, width: `${rect.width * 100}%`, height: `${rect.height * 100}%`, background: highlightColors[rect.color.toUpperCase()] || highlightColors.YELLOW, opacity: 0.4 }} />)}
             </div>
-          ))}
+            <div
+              ref={textLayerDiv}
+              className="textLayer pdf-text-layer"
+              onMouseUp={handleSelection}
+              onTouchEnd={handleSelection}
+              style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}
+            />
+          </div>
         </div>
-      )}
-      <p>{translate("Trang", lang)} {page} / {document?.numPages || '…'}</p>
+        {pageHighlights.length > 0 && (
+          <div className="pdf-page-highlights">
+            {pageHighlights.map(h => (
+              <div key={h.id} className={`pdf-highlight-item color-${h.color.toLowerCase()}`}>
+                <span className="dot" /> “{h.text}”
+              </div>
+            ))}
+          </div>
+        )}
+        <p>{translate("Trang", lang)} {page} / {document?.numPages || '…'}</p>
+      </div>
     </div>
   )
 }
 
 function CbzPane({ lang = 'vi', bytes, initial, onLocation, onControls, onToc, navigateTarget, navigateProgression, navigateLocator, onSearchReady }: Props) {
-  useSearchPublication(onSearchReady)
+  useReaderPublication(onSearchReady)
   const langRef = useRef(lang)
   useEffect(() => { langRef.current = lang }, [lang])
   const [pages, setPages] = useState<Array<{ url: string; name: string }>>([])
@@ -1012,7 +1109,7 @@ function CbzPane({ lang = 'vi', bytes, initial, onLocation, onControls, onToc, n
 }
 
 function ImagePane({ lang = 'vi', book, bytes, onLocation, onControls, theme, navigateLocator, onSearchReady }: Props) {
-  useSearchPublication(onSearchReady)
+  useReaderPublication(onSearchReady)
   const [error, setError] = useState('')
   const host = useRef<HTMLDivElement>(null)
   const url = useMemo(() => {
@@ -1035,7 +1132,7 @@ function ImagePane({ lang = 'vi', book, bytes, onLocation, onControls, theme, na
 }
 
 function TextPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme, onLocation, onSelection, onControls, onToc, navigateTarget, navigateProgression, navigateLocator, annotations = [], onSearchReady, format }: Props & { format: 'text' | 'html' | 'docx' }) {
-  const publishSearch = useSearchPublication(onSearchReady)
+  const publishSearch = useReaderPublication(onSearchReady)
   const langRef = useRef(lang)
   useEffect(() => { langRef.current = lang }, [lang])
   const locationRef = useRef(onLocation)
@@ -1060,7 +1157,7 @@ function TextPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
           const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes)
           html = format === 'html' ? text : text.split(/\n\s*\n/).map(paragraph => `<p>${paragraph.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('\n', '<br>')}</p>`).join('')
         }
-        const clean = DOMPurify.sanitize(html, { ALLOWED_TAGS: ['p', 'br', 'h1', 'h2', 'h3', 'h4', 'strong', 'em', 'b', 'i', 'ul', 'ol', 'li', 'blockquote', 'hr', 'table', 'thead', 'tbody', 'tr', 'td', 'th', 'a', 'img'], ALLOWED_ATTR: ['id', 'href', 'src', 'alt', 'title'] })
+        const clean = DOMPurify.sanitize(html, { ALLOWED_TAGS: ['p', 'br', 'h1', 'h2', 'h3', 'h4', 'strong', 'em', 'b', 'i', 'ul', 'ol', 'li', 'blockquote', 'hr', 'table', 'thead', 'tbody', 'tr', 'td', 'th', 'a', 'img'], ALLOWED_ATTR: ['id', 'href', 'src', 'alt', 'title', 'lang'] })
         if (active) {
           const parser = new DOMParser()
           const doc = parser.parseFromString(clean, 'text/html')
@@ -1068,6 +1165,7 @@ function TextPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
           headings.forEach((heading, index) => { heading.id ||= `heading-${index}` })
           Array.from(doc.body.querySelectorAll('p, h1, h2, h3, h4, li, blockquote, td, th')).forEach((block, index) => {
             block.setAttribute('data-nocap-block', String(index))
+            block.setAttribute('lang', contentLanguage(block.textContent, block.getAttribute('lang') || sourceBook.language))
           })
           Array.from(doc.body.querySelectorAll('a')).forEach(link => {
             const href = link.getAttribute('href') || ''
@@ -1092,7 +1190,7 @@ function TextPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
     }
     void decode()
     return () => { active = false }
-  }, [bytes, format])
+  }, [bytes, format, sourceBook.language])
   useEffect(() => {
     const article = host.current?.querySelector('article')
     if (!decoded || error || !article) return
@@ -1276,7 +1374,7 @@ function TextPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
       <article
         style={{
           fontSize: `${fontSize * 0.18}px`,
-          fontFamily: readerTypeface(fontFamily, sourceBook.language).stack,
+          fontFamily: readerTypeface(fontFamily, sourceBook.language, content.replace(/<[^>]*>/g, ' ')).stack,
           lineHeight: lineHeight || 1.65,
           textAlign: textAlignment || 'left',
           maxWidth: readingMeasure(readerWidth),

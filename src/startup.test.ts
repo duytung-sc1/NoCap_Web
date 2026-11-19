@@ -18,7 +18,7 @@ afterEach(async () => { document.body.replaceChildren(); await Promise.resolve()
 describe('startup before the application bundle loads', () => {
   it('shows useful content without requiring a downloaded script, font or stylesheet', () => {
     start()
-    expect(document.querySelector('[data-startup-title]')!.textContent).toContain('Đang mở')
+    expect(document.querySelector('[data-startup-title]')!.textContent).toContain('không gian đọc và ghi nhớ')
     expect(document.querySelector<HTMLElement>('[data-startup-recovery]')!.hidden).toBe(true)
   })
   it('exposes a retry after a stalled bundle without reloading automatically or clearing data', () => {

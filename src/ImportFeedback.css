@@ -1,0 +1,65 @@
+.import-feedback {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+  margin-bottom: 20px;
+  padding: 18px;
+  border: 1px solid var(--site-line);
+  border-radius: 12px;
+  background: var(--site-panel);
+  color: var(--site-text);
+  font-family: var(--font-ui);
+}
+
+.import-feedback-icon { flex: none; padding-top: 2px; color: var(--site-accent); }
+.import-feedback-content { flex: 1; min-width: 0; }
+.import-feedback h3 { margin: 0 0 6px; font: inherit; font-size: 14px; font-weight: 600; line-height: 1.6; }
+.import-feedback-title { display: block; font-size: 13px; font-weight: 500; line-height: 1.7; overflow-wrap: anywhere; }
+.import-feedback-destination { display: flex; flex-wrap: wrap; gap: 4px 9px; margin: 6px 0 0; font-size: 12px; line-height: 1.7; }
+.import-feedback-destination > span:first-child { flex: none; color: var(--site-muted); }
+.import-feedback-destination > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.import-feedback-message { margin: 7px 0 0; font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+.import-feedback[data-status=success] { background: var(--site-success-bg); }
+.import-feedback[data-status=success] .import-feedback-icon { color: var(--site-success); }
+.import-feedback[data-status=error] { background: var(--site-danger-bg); border-color: var(--site-danger-line); }
+.import-feedback[data-status=error] .import-feedback-icon { color: var(--site-danger); }
+.import-feedback-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.import-feedback-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  max-width: 100%;
+  padding: 9px 13px;
+  border: 1px solid var(--site-line);
+  border-radius: 8px;
+  background: var(--site-panel);
+  color: var(--site-text);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.6;
+  cursor: pointer;
+}
+.import-feedback-actions .import-feedback-open { border-color: var(--site-button); background: var(--site-button); color: var(--site-button-text); }
+.import-feedback-dismiss {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--site-muted);
+  cursor: pointer;
+}
+.import-feedback-dismiss:hover { background: var(--site-panel); color: var(--site-text); }
+.import-feedback button:focus-visible { outline: 2px solid var(--site-accent); outline-offset: 2px; }
+
+@media (max-width: 500px) {
+  .import-feedback { gap: 9px; padding: 14px 10px 14px 14px; }
+}

@@ -1,5 +1,7 @@
 # Áp dụng font NoCap Web — 12/10/2026
 
+> Cấu hình dưới đây đã được thay thế ngày 26/10/2026 bởi [quy tắc toàn bộ dùng font không chân, tách Việt/Anh](typography-policy.md).
+
 Tiếp nối [báo cáo kiểm tra trước khi sửa](typography-audit-2026-10-12.md), sau khi người dùng duyệt tiếp tục. Phạm vi: NoCap Web; không thay source Android hoặc backend. Báo cáo ghi lại kết quả của vòng QA local trước khi người dùng yêu cầu commit, push và deploy.
 
 ## Font sau khi sửa

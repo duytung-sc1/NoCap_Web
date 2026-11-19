@@ -17,5 +17,50 @@
 /manifest.webmanifest
   Cache-Control: no-cache
 
+/site-theme.css
+  Cache-Control: no-cache
+
+/legal-theme.css
+  Cache-Control: no-cache
+
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
+
+/account
+  X-Robots-Tag: noindex
+
+/account/*
+  X-Robots-Tag: noindex
+
+/admin
+  X-Robots-Tag: noindex
+
+/admin/*
+  X-Robots-Tag: noindex
+
+/library
+  X-Robots-Tag: noindex
+
+/library/*
+  X-Robots-Tag: noindex
+
+/memory
+  X-Robots-Tag: noindex
+
+/memory/*
+  X-Robots-Tag: noindex
+
+/stats
+  X-Robots-Tag: noindex
+
+/stats/*
+  X-Robots-Tag: noindex
+
+/read/*
+  X-Robots-Tag: noindex
+
+/books/*
+  X-Robots-Tag: noindex
+
+/auth/*
+  X-Robots-Tag: noindex

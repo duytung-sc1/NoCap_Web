@@ -4,14 +4,28 @@ import type { Lang } from './i18n'
 import { downloadHttpsPublication, httpsImportMessage, type ImportProgress } from './httpsImport'
 import { HttpsImportError, publicationSource } from '../shared/httpsPublication'
 import { ChapterImportPanel } from './ChapterImportPanel'
+import { contentLanguage } from './typography'
+import './ImportDocumentDialog.css'
 
-export function ImportDocumentDialog({ lang, profile, onClose, onPickFile, onImport }: {
+export type ImportDestinationFolder = { id: string; path: string }
+
+export type ImportDocumentDialogProps = {
   lang: Lang; profile: string; onClose: () => void; onPickFile: () => void
   onImport: (file: File, sourceUrl: string) => Promise<boolean>
-}) {
+  destinationFolders?: ReadonlyArray<ImportDestinationFolder>
+  destinationId?: string | null
+  onDestinationChange?: (folderId: string | null) => void
+  saveError?: string
+}
+
+export function ImportDocumentDialog({
+  lang, profile, onClose, onPickFile, onImport,
+  destinationFolders = [], destinationId = null, onDestinationChange, saveError,
+}: ImportDocumentDialogProps) {
   const vi = lang === 'vi'
   const [source, setSource] = useState<'choose' | 'url' | 'chapters'>('choose')
   const [savingChapters, setSavingChapters] = useState(false)
+  const [chapterDestinationLocked, setChapterDestinationLocked] = useState(false)
   const [url, setUrl] = useState('')
   const [phase, setPhase] = useState<'idle' | 'download' | 'save'>('idle')
   const [progress, setProgress] = useState<ImportProgress>({ received: 0 })
@@ -44,13 +58,17 @@ export function ImportDocumentDialog({ lang, profile, onClose, onPickFile, onImp
       if (!await onImport(file, publicationSource(url))) throw new HttpsImportError('SAVE_FAILED')
       if (mounted.current) onClose()
     } catch (failure) {
-      if (!controller.signal.aborted && mounted.current) setError(httpsImportMessage(failure, lang))
+      if (!controller.signal.aborted && mounted.current) setError(failure instanceof HttpsImportError && failure.code === 'SAVE_FAILED' ? 'SAVE_FAILED' : httpsImportMessage(failure, lang))
     } finally {
       active.current = null
       if (mounted.current) setPhase('idle')
     }
   }
   const busy = phase !== 'idle'
+  const destination = destinationFolders.find(folder => folder.id === destinationId)
+  const destinationPath = destination?.path || (vi ? 'Tủ sách' : 'Library')
+  const missingDestination = Boolean(destinationId && !destination)
+  const showFullPath = !missingDestination && Boolean(destinationId)
   return <div className="modal-shade import-document-shade" onKeyDown={event => {
     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close() }
     if (event.key === 'F2') { event.preventDefault(); event.stopPropagation() }
@@ -59,11 +77,23 @@ export function ImportDocumentDialog({ lang, profile, onClose, onPickFile, onImp
       const target = event.shiftKey ? controls.at(-1) : controls[0]
       if (document.activeElement === (event.shiftKey ? controls[0] : controls.at(-1))) { event.preventDefault(); target?.focus() }
     }
-  }}><div ref={dialog} className={`dialog import-document-dialog${source === 'chapters' ? ' chapter-import-dialog' : ''}`} role="dialog" aria-modal="true" aria-labelledby="import-document-title">
+  }}><div ref={dialog} className={`dialog import-document-dialog${source === 'chapters' ? ' chapter-import-dialog' : ''}`} role="dialog" aria-modal="true" aria-labelledby="import-document-title" lang={lang}>
     <button className="icon-button dialog-close" onClick={close} disabled={phase === 'save' || savingChapters} aria-label={vi ? 'Đóng' : 'Close'}><X size={19} /></button>
     <p className="eyebrow">NOCAP</p>
     <h2 id="import-document-title">{source === 'chapters' ? (vi ? 'Nhập truyện nhiều chương' : 'Import story chapters') : (vi ? 'Thêm tài liệu' : 'Import document')}</h2>
-    {source === 'chapters' ? <ChapterImportPanel key={profile} lang={lang} profile={profile} onImport={onImport} onClose={onClose} onBack={() => setSource('choose')} onBusyChange={setSavingChapters} /> : source === 'choose' ? <>
+    {onDestinationChange && <div className="import-destination">
+      <label htmlFor="import-document-destination">{vi ? 'Lưu vào thư mục' : 'Save to folder'}</label>
+      <select id="import-document-destination" value={destinationId || ''} disabled={busy || chapterDestinationLocked}
+        aria-describedby={missingDestination ? 'import-destination-error' : showFullPath ? 'import-destination-path' : undefined}
+        onChange={event => onDestinationChange(event.target.value || null)}>
+        <option value="">{vi ? 'Tủ sách' : 'Library'}</option>
+        {missingDestination && <option value={destinationId!} disabled>{vi ? 'Thư mục không còn khả dụng' : 'Folder unavailable'}</option>}
+        {destinationFolders.map(folder => <option key={folder.id} value={folder.id} lang={contentLanguage(folder.path, undefined, lang)}>{folder.path}</option>)}
+      </select>
+      {showFullPath && <p id="import-destination-path" className="import-destination-path" lang={contentLanguage(destinationPath, undefined, lang)}>{destinationPath}</p>}
+      {missingDestination && <p id="import-destination-error" className="import-destination-error" role="alert">{vi ? 'Thư mục đã thay đổi. Hãy chọn nơi lưu khác trước khi thêm tài liệu.' : 'The folder changed. Choose another destination before importing.'}</p>}
+    </div>}
+    {source === 'chapters' ? <ChapterImportPanel key={profile} lang={lang} profile={profile} onImport={onImport} onClose={onClose} onBack={() => setSource('choose')} onBusyChange={setSavingChapters} onDestinationLockChange={setChapterDestinationLocked} saveError={saveError} /> : source === 'choose' ? <>
       <p>{vi ? 'Chọn tệp trên máy hoặc tải tài liệu từ liên kết HTTPS.' : 'Choose a file on your device or download a document from an HTTPS link.'}</p>
       <div className="import-source-options">
         <button className="import-source-option" onClick={() => { onClose(); onPickFile() }} autoFocus><FileUp size={23} /><span><strong>{vi ? 'Từ thiết bị' : 'From device'}</strong><small>{vi ? 'Chọn tệp có sẵn trên máy.' : 'Choose an existing file.'}</small></span></button>
@@ -80,7 +110,7 @@ export function ImportDocumentDialog({ lang, profile, onClose, onPickFile, onImp
         <span>{phase === 'save' ? (vi ? 'Đang lưu tài liệu…' : 'Saving document…') : (vi ? 'Đang tải tài liệu…' : 'Downloading document…')}</span>
         {phase === 'download' && <><progress max={progress.total || 1} value={progress.total ? Math.min(progress.received, progress.total) : undefined} aria-label={vi ? 'Tiến độ tải' : 'Download progress'} /><small>{(progress.received / 1024 / 1024).toFixed(1)} MB{progress.total ? ` / ${(progress.total / 1024 / 1024).toFixed(1)} MB` : ''}</small></>}
       </div>}
-      {error && <p role="alert" className="form-message">{error}</p>}
+      {error && <p role="alert" className="form-message">{error === 'SAVE_FAILED' ? saveError || httpsImportMessage(new HttpsImportError('SAVE_FAILED'), lang) : error}</p>}
       <div className="dialog-actions"><button type="button" className="secondary" onClick={() => { if (busy) close(); else { setSource('choose'); setError('') } }} disabled={phase === 'save'}>{phase === 'download' ? (vi ? 'Hủy tải' : 'Cancel download') : (vi ? 'Quay lại' : 'Back')}</button><button className="primary" disabled={busy || !url.trim()}><Download size={16} />{busy ? (vi ? 'Đang xử lý…' : 'Working…') : (vi ? 'Tải và thêm vào tủ sách' : 'Download and add to library')}</button></div>
     </form>}
   </div></div>

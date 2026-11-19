@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { handleHttpsImport, isPublicAddress } from '../server/httpsImport'
 import { IMPORT_TIMEOUT_MS, MAX_HTML_BYTES, MAX_PUBLICATION_BYTES } from '../shared/httpsPublication'
-import { MAX_CHAPTER_INDEX_BYTES } from '../shared/chapterImport'
+import { MAX_CHAPTER_INDEX_BYTES, MAX_CATALOG_PAGES } from '../shared/chapterImport'
 
 const origin = 'https://nocap.example.org'
 const request = (url = 'https://books.example.org/book.pdf', extra: Record<string, string> = {}) => new Request(`${origin}/api/import`, {
@@ -20,10 +20,23 @@ function mockNetwork(remote: (url: string, init: RequestInit) => Response | Prom
 }
 
 describe('public HTTPS download endpoint', () => {
+  it('reports explicit upstream refusal, authentication, missing pages and throttling separately', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      for (const [status, code] of [[401, 'SOURCE_AUTH_REQUIRED'], [403, 'SOURCE_BLOCKED'], [404, 'SOURCE_NOT_FOUND'], [429, 'SOURCE_RATE_LIMITED']] as const) {
+        let cancelled = false
+        const response = await handleHttpsImport(request(), mockNetwork(() => new Response(new ReadableStream({ cancel() { cancelled = true } }), { status })))
+        expect(response.status).toBe(status === 429 ? 429 : 502)
+        expect(await response.json()).toEqual({ error: { code } })
+        expect(response.headers.get('Cache-Control')).toContain('no-store')
+        expect(cancelled).toBe(true)
+      }
+    } finally { warning.mockRestore() }
+  })
   it('restricts chapter-index mode to the public read-only endpoint and validated pagination', async () => {
     const indexRequest = (url: string) => new Request(`${origin}/api/import`, { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ url, mode: 'chapter-index' }) })
     const endpoint = 'https://api.sstruyen.pics/novels/77/chapters?page=1&keyword=&limit=50&sort=asc'
-    for (const invalid of [endpoint.replace('api.sstruyen.pics', 'other.example.org'), endpoint.replace('/novels/77/chapters', '/user/me'), endpoint.replace('page=1', 'page=41'), endpoint.replace('keyword=', 'keyword=secret'), endpoint + '&token=private', endpoint + '&page=2']) {
+    for (const invalid of [endpoint.replace('api.sstruyen.pics', 'other.example.org'), endpoint.replace('/novels/77/chapters', '/user/me'), endpoint.replace('page=1', `page=${MAX_CATALOG_PAGES + 1}`), endpoint.replace('keyword=', 'keyword=secret'), endpoint + '&token=private', endpoint + '&page=2']) {
       const fetcher = vi.fn()
       expect((await handleHttpsImport(indexRequest(invalid), fetcher)).status).toBe(400)
       expect(fetcher).not.toHaveBeenCalled()

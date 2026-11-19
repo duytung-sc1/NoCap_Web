@@ -98,6 +98,8 @@ export async function handleHttpsImport(request: Request, fetcher: Fetcher = (in
         url = input.mode === 'chapter-index' ? chapterIndexUrl(next) : publicationUrl(next)
       } catch (error) { if (error instanceof HttpsImportError) throw error; throw new HttpsImportError('INVALID_URL') }
     }
+    const sourceErrors: Record<number, string> = { 401: 'SOURCE_AUTH_REQUIRED', 403: 'SOURCE_BLOCKED', 404: 'SOURCE_NOT_FOUND', 429: 'SOURCE_RATE_LIMITED' }
+    if (sourceErrors[upstream.status]) throw new HttpsImportError(sourceErrors[upstream.status], upstream.status === 429 ? 429 : 502)
     if (!upstream.ok || upstream.status === 206 || !upstream.body) throw new HttpsImportError('SOURCE_UNAVAILABLE', 502)
     const length = Number(upstream.headers.get('content-length') || 0)
     if (length > maxBytes) throw new HttpsImportError(sizeError, 413)

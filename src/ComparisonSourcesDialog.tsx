@@ -1,3 +1,4 @@
+import { contentLanguage } from './typography'
 import { useEffect, useId, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import type { Book } from './types'
@@ -34,9 +35,9 @@ export function ComparisonSourcesDialog({ books, initialBookId, lang, onClose, o
     <h2 id="comparison-sources-title">{vi ? 'Đọc đối chiếu hai nguồn' : 'Compare two sources'}</h2>
     <p>{vi ? 'Mở hai tài liệu để đọc đối chiếu. Bạn cũng có thể mở cùng một sách ở hai vị trí.' : 'Open two documents to compare them. You can also open one book at two positions.'}</p>
     <label htmlFor={`${id}-left`}>{vi ? 'Nguồn bên trái' : 'Left source'}</label>
-    <select id={`${id}-left`} value={left} onChange={event => setLeft(event.target.value)} required>{books.map(book => <option key={book.id} value={book.id}>{book.title}</option>)}</select>
+    <select id={`${id}-left`} value={left} onChange={event => setLeft(event.target.value)} required>{books.map(book => <option key={book.id} lang={contentLanguage(book.title, book.language, lang)} value={book.id}>{book.title}</option>)}</select>
     <label htmlFor={`${id}-right`}>{vi ? 'Nguồn bên phải' : 'Right source'}</label>
-    <select id={`${id}-right`} value={right} onChange={event => setRight(event.target.value)} required>{books.map(book => <option key={book.id} value={book.id}>{book.title}</option>)}</select>
+    <select id={`${id}-right`} value={right} onChange={event => setRight(event.target.value)} required>{books.map(book => <option key={book.id} lang={contentLanguage(book.title, book.language, lang)} value={book.id}>{book.title}</option>)}</select>
     {!books.length && <p>{vi ? 'Hãy nhập tài liệu hoặc chọn một sách trong Khám phá trước.' : 'Import a document or choose a book in Explore first.'}</p>}
     <div className="dialog-actions"><button type="button" className="secondary" onClick={onClose}>{vi ? 'Hủy' : 'Cancel'}</button><button className="primary" disabled={!left || !right}>{vi ? 'Mở hai nguồn' : 'Open both sources'}</button></div>
   </form></div>

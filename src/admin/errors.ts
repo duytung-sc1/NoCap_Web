@@ -1,7 +1,10 @@
 import { ApiError } from '../api'
 import type { Lang } from '../i18n'
+import { mfaError } from '../mfaErrors'
 
 export function adminError(error: unknown, lang: Lang) {
+  const mfa = mfaError(error, lang)
+  if (mfa) return mfa
   const messages: Record<string, [string, string]> = {
     ADMIN_REQUIRED: ['Tài khoản không có quyền quản trị.', 'This account does not have administrator access.'],
     ADMIN_REAUTH_REQUIRED: ['Phiên quản trị đã hết hạn. Hãy đăng nhập lại.', 'Your administrator session expired. Sign in again.'],

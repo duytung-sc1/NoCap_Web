@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type F
 import { ArrowUp, BookOpen, ChevronDown, ChevronRight, Folder, FolderOpen, FolderPlus, LayoutGrid, ListTree, MoreHorizontal, MoveRight, Network, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 import type { Lang } from './i18n'
 import type { Book, SyncRecord } from './types'
+import { contentLanguage } from './typography'
 import { createLibraryFolder, deleteLibraryFolder, folderPath, getLibraryFolderState, isDescendant, moveLibraryBooks, moveLibraryFolder, renameLibraryFolder, type LibraryFolder } from './libraryFolders'
 import { LibraryFolderMap } from './LibraryFolderMap'
 import './LibraryFoldersWorkspace.css'
@@ -20,6 +21,8 @@ export type LibraryFoldersWorkspaceProps = {
   mapPage?: boolean
   onOpenMap?: () => void
   onBackFromMap?: (openedFolderId?: string | null) => void
+  currentFolderId?: string | null
+  onFolderChange?: (folderId: string | null) => void
 }
 
 type View = 'normal' | 'tree'
@@ -35,18 +38,22 @@ export function LibraryFoldersWorkspace(props: LibraryFoldersWorkspaceProps) {
   return <Workspace key={props.profile} {...props} />
 }
 
-function Workspace({ lang, profile, records, books, allBooks, filterActive, renderBook, onOpenBook, onDetailsBook, onMutate, mapPage, onOpenMap, onBackFromMap }: LibraryFoldersWorkspaceProps) {
+function Workspace({ lang, profile, records, books, allBooks, filterActive, renderBook, onOpenBook, onDetailsBook, onMutate, mapPage, onOpenMap, onBackFromMap, currentFolderId, onFolderChange }: LibraryFoldersWorkspaceProps) {
   const text = (vi: string, en: string) => lang === 'vi' ? vi : en
   const rootLabel = text('Tủ sách', 'Library')
   const state = useMemo(() => getLibraryFolderState(records, profile), [records, profile])
   const [view, setView] = useState<View>(initialView)
   const [localMap, setLocalMap] = useState(false)
   const showingMap = mapPage || localMap
-  const [currentId, setCurrentId] = useState<string | null>(null)
+  const [localCurrentId, setLocalCurrentId] = useState<string | null>(null)
+  const currentId = currentFolderId === undefined ? localCurrentId : currentFolderId
   const currentFolder = currentId ? state.folderById.get(currentId) : undefined
   const current = currentFolder?.id ?? null
   const path = useMemo(() => folderPath(state, current), [state, current])
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(path.map(folder => folder.id)))
+  const navigationPathKey = path.map(folder => folder.id).join('/')
+  const [expandedPathKey, setExpandedPathKey] = useState(navigationPathKey)
+  const [navigationOpen, setNavigationOpen] = useState(false)
   const matchKey = `${filterActive}:${books.map(book => book.id).join('\u0000')}`
   const [selectionScope, setSelectionScope] = useState(matchKey)
   const [selection, setSelected] = useState<Set<string>>(() => new Set())
@@ -68,9 +75,21 @@ function Workspace({ lang, profile, records, books, allBooks, filterActive, rend
     setSelectionScope(matchKey)
     setSelected(new Set())
   }
+  if (expandedPathKey !== navigationPathKey) {
+    setExpandedPathKey(navigationPathKey)
+    if (current) setExpanded(previous => new Set([...previous, ...path.map(folder => folder.id)]))
+  }
 
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
   useEffect(() => { try { localStorage.setItem(VIEW_KEY, view) } catch { /* Storage is optional. */ } }, [view])
+  useEffect(() => {
+    if (currentFolderId && !state.folderById.has(currentFolderId)) onFolderChange?.(null)
+  }, [currentFolderId, state.folderById, onFolderChange])
+
+  function setCurrentId(id: string | null) {
+    setLocalCurrentId(id)
+    onFolderChange?.(id)
+  }
 
   const { children, folderRows, counts } = useMemo(() => {
     const children = new Map<string | null, LibraryFolder[]>()
@@ -134,7 +153,7 @@ function Workspace({ lang, profile, records, books, allBooks, filterActive, rend
   }
   function navigate(id: string | null) {
     setCurrentId(id); setSelected(new Set())
-    if (id && view === 'tree') setExpanded(previous => new Set([...previous, id]))
+    if (id) setExpanded(previous => new Set([...previous, ...folderPath(state, id).map(folder => folder.id)]))
   }
   function changeView(next: View) {
     setView(next); setSelected(new Set())
@@ -283,6 +302,18 @@ function Workspace({ lang, profile, records, books, allBooks, filterActive, rend
     }
   }
 
+  const navigationRows: Array<{ folder: LibraryFolder; depth: number }> = []
+  if (view === 'normal' && !showingMap) {
+    const stack = [...(children.get(null) ?? [])].reverse().map(folder => ({ folder, depth: 0 }))
+    while (stack.length) {
+      const row = stack.pop()!
+      navigationRows.push(row)
+      if (!isExpanded(row.folder.id)) continue
+      const descendants = children.get(row.folder.id) ?? []
+      for (let index = descendants.length - 1; index >= 0; index--) stack.push({ folder: descendants[index], depth: row.depth + 1 })
+    }
+  }
+
   const dialogTitle = !dialog ? '' : dialog.kind === 'create' ? text('Tạo thư mục', 'New folder') : dialog.kind === 'rename' ? text('Đổi tên thư mục', 'Rename folder') :
     dialog.kind === 'moveFolder' ? text('Di chuyển thư mục', 'Move folder') : dialog.kind === 'delete' ? text('Xóa thư mục', 'Delete folder') : dialog.kind === 'addBooks' ? text('Thêm tài liệu vào thư mục', 'Add documents to folder') : text('Chuyển tài liệu', 'Move documents')
   const breadcrumbs = path.length > 3 ? path.slice(-2) : path
@@ -304,7 +335,9 @@ function Workspace({ lang, profile, records, books, allBooks, filterActive, rend
         {path.length > 3 && <span aria-hidden="true">/ …</span>}
         {breadcrumbs.map(folder => <span className="library-folder-crumb" key={folder.id}><ChevronRight size={13} aria-hidden="true" /><button type="button" disabled={busy} aria-current={current === folder.id ? 'location' : undefined} title={folder.name} onClick={() => navigate(folder.id)}>{folder.name}</button></span>)}
       </nav>
-      <div className="library-folders-display-controls"><button type="button" className="library-folder-button library-folder-map-entry" disabled={busy} onClick={() => { if (onOpenMap) onOpenMap(); else setLocalMap(true) }}><Network size={16} aria-hidden="true" />{text('Bản đồ tủ sách', 'Library map')}</button><div className="library-folders-view" role="group" aria-label={text('Cách hiển thị tủ sách', 'Library view')}>
+      <div className="library-folders-display-controls">
+        {view === 'normal' && <button type="button" className="library-folder-button library-navigation-toggle" disabled={busy} aria-expanded={navigationOpen} aria-controls={`${dialogId}-navigation`} onClick={() => setNavigationOpen(value => !value)}><ListTree size={16} aria-hidden="true" />{navigationOpen ? text('Ẩn thư mục', 'Hide folders') : text('Hiện thư mục', 'Show folders')}</button>}
+        <button type="button" className="library-folder-button library-folder-map-entry" disabled={busy} onClick={() => { if (onOpenMap) onOpenMap(); else setLocalMap(true) }}><Network size={16} aria-hidden="true" />{text('Bản đồ tủ sách', 'Library map')}</button><div className="library-folders-view" role="group" aria-label={text('Cách hiển thị tủ sách', 'Library view')}>
         <button type="button" disabled={busy} aria-pressed={view === 'normal'} onClick={() => changeView('normal')}><LayoutGrid size={15} aria-hidden="true" />{text('Thông thường', 'Normal')}</button>
         <button type="button" disabled={busy} aria-pressed={view === 'tree'} onClick={() => changeView('tree')}><ListTree size={16} aria-hidden="true" />{text('Cây thư mục', 'Tree')}</button>
       </div></div>
@@ -329,10 +362,24 @@ function Workspace({ lang, profile, records, books, allBooks, filterActive, rend
     {filterActive && <p className="library-folders-hint">{text('Đang hiển thị tài liệu phù hợp trong toàn bộ tủ sách.', 'Showing matching documents across the entire library.')}</p>}
     {selected.size >= 1000 && <p className="library-folders-hint">{text('Mỗi lần có thể chuyển tối đa 1.000 tài liệu.', 'Move up to 1,000 documents at a time.')}</p>}
 
-    {view === 'normal' ? <>
+    {view === 'normal' ? <div className={`library-folder-layout${navigationOpen ? ' navigation-open' : ''}`}>
+      <aside id={`${dialogId}-navigation`} className="library-folder-navigator" data-open={navigationOpen} aria-label={text('Điều hướng thư mục', 'Folder navigation')}>
+        <h3>{text('Thư mục của bạn', 'Your folders')}</h3>
+        <nav aria-label={text('Chọn thư mục', 'Choose a folder')}>
+          <button type="button" className="library-navigation-root" disabled={busy} aria-current={current === null ? 'location' : undefined} aria-label={text('Mở gốc tủ sách', 'Open library root')} onClick={() => navigate(null)}><BookOpen size={17} aria-hidden="true" /><span>{rootLabel}</span><small>{allBooks.length}</small></button>
+          <ul className="library-navigation-tree">
+            {navigationRows.map(({ folder, depth }) => <li key={folder.id} style={{ '--navigation-depth': Math.min(depth, 5) } as CSSProperties}>
+              {(children.get(folder.id)?.length ?? 0) > 0 ? <button type="button" className="library-navigation-expand" disabled={busy} aria-expanded={isExpanded(folder.id)} aria-label={isExpanded(folder.id) ? text(`Thu nhánh ${folder.name}`, `Collapse branch ${folder.name}`) : text(`Mở nhánh ${folder.name}`, `Expand branch ${folder.name}`)} onClick={() => toggleExpanded(folder.id)}>{isExpanded(folder.id) ? <ChevronDown size={15} /> : <ChevronRight size={15} />}</button> : <span className="library-navigation-spacer" aria-hidden="true" />}
+              <button type="button" className="library-navigation-folder" disabled={busy} aria-current={current === folder.id ? 'location' : undefined} aria-label={text(`Đi đến thư mục ${folder.name}`, `Go to folder ${folder.name}`)} title={fullPath(folder.id)} onClick={() => navigate(folder.id)}>{current === folder.id ? <FolderOpen size={17} aria-hidden="true" /> : <Folder size={17} aria-hidden="true" />}<span lang={contentLanguage(folder.name, undefined, lang)}>{folder.name}</span><small>{counts.get(folder.id) ?? 0}</small></button>
+            </li>)}
+          </ul>
+          {!state.folders.length && <p className="library-navigation-empty">{text('Tạo thư mục mới để sắp xếp tài liệu.', 'Create a folder to organize your documents.')}</p>}
+        </nav>
+      </aside>
+      <div className="library-folder-content">
       {immediateFolders.length > 0 && <div className="library-folder-grid" aria-label={text('Thư mục con', 'Subfolders')}>
         {immediateFolders.map(folder => <div key={folder.id} className="library-folder-card">
-          <button type="button" className="library-folder-card-open" disabled={busy} aria-label={text(`Mở thư mục ${folder.name}`, `Open folder ${folder.name}`)} onClick={() => navigate(folder.id)}><Folder size={27} aria-hidden="true" /><span><strong>{folder.name}</strong><small title={text('Bao gồm tài liệu trong thư mục con', 'Includes documents in subfolders')}>{text(`${counts.get(folder.id) ?? 0} tài liệu`, `${counts.get(folder.id) ?? 0} documents`)}</small></span></button>
+          <button type="button" className="library-folder-card-open" disabled={busy} aria-label={text(`Mở thư mục ${folder.name}`, `Open folder ${folder.name}`)} onClick={() => navigate(folder.id)}><Folder size={27} aria-hidden="true" /><span><strong lang={contentLanguage(folder.name, undefined, lang)}>{folder.name}</strong><small title={text('Bao gồm tài liệu trong thư mục con', 'Includes documents in subfolders')}>{text(`${counts.get(folder.id) ?? 0} tài liệu`, `${counts.get(folder.id) ?? 0} documents`)}</small></span><ChevronRight size={17} className="library-folder-card-chevron" aria-hidden="true" /></button>
           {folderActions(folder)}
         </div>)}
       </div>}
@@ -344,14 +391,15 @@ function Workspace({ lang, profile, records, books, allBooks, filterActive, rend
         </div>)}
       </div>}
       {!normalBooks.length && <div className="library-folders-empty"><BookOpen size={25} aria-hidden="true" /><p>{filterActive ? text('Không có tài liệu phù hợp với bộ lọc.', 'No documents match these filters.') : currentFolder ? text('Thư mục này chưa có tài liệu. Chọn tài liệu từ tủ sách để thêm vào đây.', 'This folder has no documents yet. Choose documents from your library to add here.') : text('Chưa có tài liệu ở đây. Dùng “Chuyển…” trên một tài liệu để đưa vào thư mục này.', 'No documents here yet. Use “Move…” on a document to place it in this folder.')}</p>{currentFolder && !filterActive && <button type="button" className="library-folder-button library-folder-submit" disabled={busy} onClick={event => openDialog({ kind: 'addBooks', folderId: currentFolder.id }, event.currentTarget)}><Plus size={16} aria-hidden="true" />{text('Chọn tài liệu từ tủ sách', 'Choose documents from library')}</button>}</div>}
-    </> : <>
+      </div>
+    </div> : <>
       <ul className="library-folder-tree" aria-label={text('Cây thư mục tủ sách', 'Library folder tree')}>
         {treeRows.map(row => row.kind === 'folder' ? <li className={`library-tree-row library-tree-folder${current === row.folder.id ? ' is-current' : ''}`} key={`folder:${row.folder.id}`} style={{ '--library-depth': Math.min(row.depth, 6) } as CSSProperties}>
           <button type="button" className="library-tree-expand" disabled={busy} aria-expanded={isExpanded(row.folder.id)} aria-label={isExpanded(row.folder.id) ? text(`Thu gọn ${row.folder.name}`, `Collapse ${row.folder.name}`) : text(`Mở rộng ${row.folder.name}`, `Expand ${row.folder.name}`)} onClick={() => toggleExpanded(row.folder.id)}>{isExpanded(row.folder.id) ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</button>
-          <button type="button" className="library-tree-name" disabled={busy} aria-current={current === row.folder.id ? 'location' : undefined} title={row.folder.name} onClick={() => navigate(row.folder.id)}>{isExpanded(row.folder.id) ? <FolderOpen size={19} aria-hidden="true" /> : <Folder size={19} aria-hidden="true" />}<span>{row.folder.name}</span></button>
+          <button type="button" className="library-tree-name" disabled={busy} aria-current={current === row.folder.id ? 'location' : undefined} title={row.folder.name} onClick={() => navigate(row.folder.id)}>{isExpanded(row.folder.id) ? <FolderOpen size={19} aria-hidden="true" /> : <Folder size={19} aria-hidden="true" />}<span lang={contentLanguage(row.folder.name, undefined, lang)}>{row.folder.name}</span></button>
           <span className="library-tree-count" title={text('Số tài liệu, gồm thư mục con', 'Documents, including subfolders')}>{counts.get(row.folder.id) ?? 0}</span>{folderActions(row.folder)}
         </li> : <li className={`library-tree-row library-tree-book${selected.has(row.book.id) ? ' is-selected' : ''}`} key={`book:${row.book.id}`} style={{ '--library-depth': Math.min(row.depth, 6) } as CSSProperties}>
-          {bookSelection(row.book)}<BookOpen size={16} className="library-tree-book-icon" aria-hidden="true" /><button type="button" className="library-tree-book-title" title={row.book.title} aria-label={text(`Mở ${row.book.title}`, `Open ${row.book.title}`)} disabled={busy} onClick={() => onOpenBook(row.book)}><span>{row.book.title}</span>{row.book.author && <small>{row.book.author}</small>}</button>
+          {bookSelection(row.book)}<BookOpen size={16} className="library-tree-book-icon" aria-hidden="true" /><button type="button" className="library-tree-book-title" title={row.book.title} aria-label={text(`Mở ${row.book.title}`, `Open ${row.book.title}`)} disabled={busy} onClick={() => onOpenBook(row.book)}><span lang={contentLanguage(row.book.title, row.book.language, lang)}>{row.book.title}</span>{row.book.author && <small lang={contentLanguage(row.book.author, row.book.language, lang)}>{row.book.author}</small>}</button>
           <button type="button" className="library-folder-link library-tree-details" disabled={busy} aria-label={text(`Chi tiết ${row.book.title}`, `Details for ${row.book.title}`)} onClick={() => onDetailsBook(row.book)}>{text('Chi tiết', 'Details')}</button>{bookMove(row.book)}
         </li>)}
       </ul>

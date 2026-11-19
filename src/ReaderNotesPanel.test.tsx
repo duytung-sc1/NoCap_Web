@@ -28,6 +28,40 @@ function props(overrides: Partial<ReaderNotesPanelProps> = {}): ReaderNotesPanel
 }
 
 describe('reading beside a notes panel', () => {
+  it('expands for mobile typing while retaining the controlled draft', () => {
+    vi.stubGlobal('innerWidth', 390)
+    try {
+      const handlers = props({ note: 'Keep this draft', canSave: true })
+      render(<ReaderNotesPanel {...handlers} />)
+      const panel = screen.getByRole('complementary', { name: 'Reading notes' })
+      fireEvent.focus(screen.getByLabelText('Your note'))
+      expect(panel.getAttribute('data-expanded')).toBe('true')
+      fireEvent.click(screen.getByRole('button', { name: 'Collapse notes panel' }))
+      expect(panel.getAttribute('data-expanded')).toBe('false')
+      expect((screen.getByLabelText('Your note') as HTMLTextAreaElement).value).toBe('Keep this draft')
+      expect(handlers.onSave).not.toHaveBeenCalled()
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it('keeps the sheet above a resized visual viewport and removes listeners on close', () => {
+    const viewport = Object.assign(new EventTarget(), { height: 480, offsetTop: 0 })
+    const remove = vi.spyOn(viewport, 'removeEventListener')
+    vi.stubGlobal('innerHeight', 844)
+    vi.stubGlobal('visualViewport', viewport)
+    try {
+      const { rerender } = render(<ReaderNotesPanel {...props()} />)
+      const panel = screen.getByRole('complementary', { name: 'Reading notes' })
+      expect(panel.style.getPropertyValue('--notes-bottom-inset')).toBe('364px')
+      viewport.height = 320
+      viewport.dispatchEvent(new Event('resize'))
+      expect(panel.style.getPropertyValue('--notes-visible-height')).toBe('320px')
+      expect(panel.style.getPropertyValue('--notes-bottom-inset')).toBe('524px')
+      rerender(<ReaderNotesPanel {...props({ open: false })} />)
+      expect(remove).toHaveBeenCalledWith('resize', expect.any(Function))
+      expect(remove).toHaveBeenCalledWith('scroll', expect.any(Function))
+    } finally { vi.unstubAllGlobals() }
+  })
+
   it('keeps the passage and draft controlled without grabbing focus, and saves only when allowed', () => {
     const handlers = props({ quote: 'A selected passage', note: 'A thought', canSave: true })
     const before = document.activeElement

@@ -43,6 +43,35 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 describe('library folder navigation and views', () => {
+  it('shares the current folder and selection between the side navigator and document pane', () => {
+    render(<LibraryFoldersWorkspace {...props()} />)
+    const navigation = within(screen.getByRole('complementary', { name: 'Folder navigation' }))
+    expect(navigation.getByRole('button', { name: 'Go to folder Essays' }).textContent).toContain('2')
+    fireEvent.click(navigation.getByRole('button', { name: 'Go to folder Essays' }))
+    expect(screen.getByTestId('card-essay')).toBeTruthy()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Essay book' }))
+    expect(screen.getByText('1 documents selected')).toBeTruthy()
+    fireEvent.click(navigation.getByRole('button', { name: 'Go to folder Classics' }))
+    expect(screen.getByTestId('card-deep')).toBeTruthy()
+    expect(screen.queryByTestId('card-essay')).toBeNull()
+    expect(screen.queryByText('1 documents selected')).toBeNull()
+    expect(navigation.getByRole('button', { name: 'Go to folder Classics' }).getAttribute('aria-current')).toBe('location')
+    expect(screen.getByRole('navigation', { name: 'Folder path' }).textContent).toContain('LibraryEssaysClassics')
+    fireEvent.click(navigation.getByRole('button', { name: 'Open library root' }))
+    expect(screen.getByTestId('card-root')).toBeTruthy()
+  })
+
+  it('collapses the laptop folder pane without resetting the chosen folder', () => {
+    render(<LibraryFoldersWorkspace {...props()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Show folders' }))
+    expect(screen.getByRole('button', { name: 'Hide folders' }).getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: 'Go to folder Essays' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Hide folders' }))
+    expect(screen.getByRole('button', { name: 'Show folders' }).getAttribute('aria-expanded')).toBe('false')
+    expect(screen.getByTestId('card-essay')).toBeTruthy()
+    expect(screen.getByRole('navigation', { name: 'Folder path' }).textContent).toContain('LibraryEssays')
+  })
+
   it('browses immediate folders and documents with whole-library descendant counts', () => {
     render(<LibraryFoldersWorkspace {...props()} />)
     expect(screen.getByTestId('card-root')).toBeTruthy()
@@ -183,7 +212,8 @@ describe('library folder mutations and dialog lifecycle', () => {
     fireEvent.click(dialog.getByRole('button', { name: 'Add to folder' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(mutations.moveLibraryBooks).toHaveBeenCalledWith(profile, ['root', 'essay'], d)
-    expect(document.activeElement).toBe(opener)
+    // Focus restoration retries in a cleanup microtask after the trigger is enabled.
+    await waitFor(() => expect(document.activeElement).toBe(opener))
   })
 
   it('searches the entire personal library, excludes existing members and retains selections across searches', async () => {

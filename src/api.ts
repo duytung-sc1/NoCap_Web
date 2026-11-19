@@ -79,8 +79,8 @@ export async function getAnnouncements(signal?: AbortSignal) {
   return api<{ announcements: PublicAnnouncement[] }>('/api/v1/announcements', { signal, credentials: 'omit' })
 }
 
-export async function login(email: string, password: string): Promise<Session> {
-  return api('/api/v1/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) })
+export async function login(email: string, password: string, otp?: string): Promise<Session> {
+  return api('/api/v1/auth/login', { method: 'POST', body: JSON.stringify({ email, password, ...(otp ? { otp } : {}) }) })
 }
 
 export async function register(email: string, password: string): Promise<Session & { emailSent: boolean }> {
@@ -91,12 +91,12 @@ export async function forgotPassword(email: string) {
   return api<{ message: string }>('/api/v1/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) })
 }
 
-export async function loginWithGoogle(idToken: string): Promise<Session> {
-  return api('/api/v1/auth/google', { method: 'POST', body: JSON.stringify({ idToken }) })
+export async function loginWithGoogle(idToken: string, otp?: string): Promise<Session> {
+  return api('/api/v1/auth/google', { method: 'POST', body: JSON.stringify({ idToken, ...(otp ? { otp } : {}) }) })
 }
 
-export async function updateProfile(token: string, patch: { displayName?: string; photoUrl?: string }): Promise<User> {
-  return api('/api/v1/me', { method: 'PATCH', body: JSON.stringify(patch) }, token)
+export async function updateProfile(token: string, patch: { displayName?: string; photoUrl?: string | null }, signal?: AbortSignal): Promise<User> {
+  return api('/api/v1/me', { method: 'PATCH', body: JSON.stringify(patch), signal }, token)
 }
 
 export async function deleteAccount(token: string): Promise<{ message: string }> {
@@ -124,8 +124,18 @@ export async function deleteAllCloudBackups(token: string): Promise<{ message: s
   return api('/api/v1/cloud/backup', { method: 'DELETE' }, token)
 }
 
-export async function getUser(token: string) {
-  return api<{ user: User }>('/api/v1/auth/user', {}, token)
+export async function getUser(token: string, signal?: AbortSignal) {
+  return api<{ user: User; privileged?: boolean; expiresAt?: number }>('/api/v1/auth/user', { signal }, token)
+}
+
+export async function sendVerification(token: string, signal?: AbortSignal) {
+  return api<{ success: boolean; alreadyVerified: boolean; user: User }>('/api/v1/auth/send-verification', { method: 'POST', body: '{}', signal }, token)
+}
+
+export async function changeUnverifiedEmail(token: string, email: string, password: string, signal?: AbortSignal) {
+  return api<{ user: User; emailSent: boolean; verificationError?: { code: string; message: string } }>('/api/v1/auth/change-email', {
+    method: 'POST', body: JSON.stringify({ email, password }), signal,
+  }, token)
 }
 
 export async function logout(token: string) {

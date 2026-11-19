@@ -19,6 +19,7 @@ import './StealthReader.css'
 import { stealthShortcut } from './shortcuts'
 import { DisguiseFullscreen } from './fullscreen'
 import { ExcelView } from './ExcelView'
+import { contentLanguage } from '../typography'
 import { readStealthCheckpoint, saveStealthCheckpoint, stealthLocator, type StealthCheckpoint, type StealthPosition } from './checkpoint'
 export type { StealthPosition } from './checkpoint'
 
@@ -314,7 +315,7 @@ export function StealthReader({
   }, [displayActiveRowIndex, mode, panic, fullscreen])
 
   return (
-    <div ref={wrapperRef} className="stealth-wrapper" style={{ opacity }} tabIndex={-1}>
+    <div ref={wrapperRef} className="stealth-wrapper" lang={lang} style={{ opacity }} tabIndex={-1}>
       {/* Settings are absent from the default view; F1 or the native View menu opens them. */}
       <dialog ref={settingsRef} className="stealth-settings" aria-labelledby="stealth-settings-title"
         onCancel={event => { event.preventDefault(); if (fullscreenRef.current?.active) exitFullscreen(); else setHelpOpen(false) }}>
@@ -376,6 +377,7 @@ export function StealthReader({
           loading={loading}
           curT={curT}
           lang={lang}
+          documentLanguage={panic ? 'en' : book.language}
           search={search}
           onSearchChange={setSearch}
           onFontSizeChange={setFontSize}
@@ -398,6 +400,7 @@ export function StealthReader({
           loading={loading}
           curT={curT}
           lang={lang}
+          documentLanguage={panic ? 'en' : book.language}
         />
       )}
 
@@ -413,6 +416,7 @@ export function StealthReader({
           loading={loading}
           curT={curT}
           lang={lang}
+          documentLanguage={panic ? 'en' : book.language}
         />
       )}
     </div>
@@ -467,6 +471,7 @@ interface SubViewProps {
   loading: boolean
   curT: StealthTranslations
   lang?: Lang
+  documentLanguage?: string
 }
 
 /* ================== VS CODE VIEW COMPONENT ================== */
@@ -480,6 +485,7 @@ function VsCodeView({
   loading,
   curT,
   lang = 'vi',
+  documentLanguage,
 }: SubViewProps & { onOpenSettings: () => void }) {
   const WINDOW_SIZE = 50
   const startIdx = Math.max(0, activeRowIndex - 15)
@@ -574,7 +580,7 @@ function VsCodeView({
                         &nbsp;&nbsp;<span className="vscode-comment">/* &gt;&gt;&gt; ANALYTICS PAYLOAD: */</span>
                         <br />
                         &nbsp;&nbsp;<span className="vscode-var">narrative: </span>
-                        <span className="vscode-string">"{row.text}"</span>,
+                        <span className="vscode-string" lang={contentLanguage(row.text, documentLanguage, lang)}>"{row.text}"</span>,
                         <br />
                         &nbsp;&nbsp;<span className="vscode-var">status: </span><span className="vscode-string">"{row.status}"</span>,
                         <br />
@@ -641,6 +647,7 @@ function DocView({
   panic,
   loading,
   lang = 'vi',
+  documentLanguage,
 }: SubViewProps & { onOpenSettings: () => void }) {
   const WINDOW_SIZE = 50
   const startIdx = Math.max(0, activeRowIndex - 15)
@@ -688,7 +695,7 @@ function DocView({
                   onClick={() => onSelectRow(actualIndex)}
                 >
                   <div className="doc-section-id">{sectionNumber}</div>
-                  <div className="doc-text-body">{row.text}</div>
+                  <div className="doc-text-body" lang={contentLanguage(row.text, documentLanguage, lang)}>{row.text}</div>
                 </div>
               )
             })}

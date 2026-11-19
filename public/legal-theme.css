@@ -1,0 +1,28 @@
+/* Legal documents follow the same saved appearance as the application. */
+:root[data-site-theme] {
+  --navy: var(--site-text);
+  --navy-soft: var(--site-muted);
+  --paper: var(--site-bg);
+  --surface: var(--site-panel);
+  --text: var(--site-text);
+  --muted: var(--site-muted);
+  --line: var(--site-line);
+  --accent: var(--site-accent);
+  --accent-soft: var(--site-tint);
+  --focus: var(--site-accent);
+  --warning: var(--site-warning);
+  color-scheme: var(--site-scheme);
+  background: var(--site-bg);
+  color: var(--site-text);
+}
+:root[data-site-theme] body { background: var(--site-bg); color: var(--site-text); }
+:root[data-site-theme] :is(.topbar, .hero, footer) { background: var(--site-hero); border-color: var(--site-line); color: var(--site-text); }
+:root[data-site-theme] :is(.brand, .hero h1, .hero strong, h1, h2, h3) { color: var(--site-text); }
+:root[data-site-theme] :is(.lede, .hero .lede, .topnav a, .pill, .date, footer .wrap) { color: var(--site-muted); border-color: var(--site-line); }
+:root[data-site-theme] :is(a, .eyebrow, .language-label) { color: var(--site-accent); }
+:root[data-site-theme] :is(.topnav a:hover, .language-label, .hero-mark) { background: var(--site-tint); border-color: var(--site-line); }
+:root[data-site-theme] :is(header, footer) { border-color: var(--site-line); }
+:root[data-site-theme] .contact-link { color: var(--site-button-text); background: var(--site-button); }
+:root[data-site-theme] .callout.warning { background: var(--site-warning-bg); border-color: var(--site-warning); }
+:root[data-site-theme] .callout.warning :is(p, strong) { color: var(--site-warning); }
+:root[data-site-theme] a:focus-visible { outline-color: var(--site-accent); }

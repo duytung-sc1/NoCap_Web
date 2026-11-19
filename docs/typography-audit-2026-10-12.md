@@ -1,5 +1,7 @@
 # Kiểm tra font NoCap Web — 12/10/2026
 
+> Lưu trữ lịch sử. Quy tắc hiện hành từ 26/10/2026 là [toàn bộ dùng font không chân, tách Việt/Anh](typography-policy.md). Không áp dụng lại các font cũ trong báo cáo này.
+
 > Đây là ảnh chụp hiện trạng **trước khi sửa** tại commit `3f93c61`. Sau báo cáo này, người dùng đã duyệt áp dụng font; xem [kết quả triển khai](typography-implementation-2026-10-12.md). Các nhận xét “chưa sửa/chưa kiểm tra EPUB” phía dưới thuộc thời điểm audit ban đầu.
 
 Phạm vi: dự án `D:/du an/nocap-web`, commit `3f93c61`, toàn bộ 8 tệp CSS của ứng dụng, các khai báo font trong TSX, hai trang pháp lý, tệp font đang cài và các font được tải từ Google Fonts. Đây là báo cáo kiểm tra; chưa sửa font hoặc logic của ứng dụng. Android nằm ngoài phạm vi lần này.

@@ -6,7 +6,7 @@ const WAVE_LIFETIME = 3400
 const EMISSION_INTERVAL = 180
 const MAX_WAVES = 16
 
-export function OceanWaves({ enabled = true }: { enabled?: boolean }) {
+export function OceanWaves({ enabled = true, appearance }: { enabled?: boolean; appearance?: string }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
   useEffect(() => {
@@ -14,6 +14,9 @@ export function OceanWaves({ enabled = true }: { enabled?: boolean }) {
     if (!canvas || !enabled) return
     const ctx = canvas.getContext('2d')
     if (!ctx) return
+    const accent = getComputedStyle(document.documentElement).getPropertyValue('--site-accent').trim()
+    const channels = /^#[0-9a-f]{6}$/i.test(accent) ? [1, 3, 5].map(offset => parseInt(accent.slice(offset, offset + 2), 16)) : [37, 45, 51]
+    const accentTint = (alpha: number) => `rgba(${channels.join(', ')}, ${alpha})`
 
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
     const finePointer = window.matchMedia('(any-hover: hover) and (any-pointer: fine)')
@@ -36,13 +39,13 @@ export function OceanWaves({ enabled = true }: { enabled?: boolean }) {
     if (!crestCtx) return
     crestCtx.scale(2, 2)
     const tint = crestCtx.createLinearGradient(0, 0, 0, 120)
-    tint.addColorStop(0, 'rgba(20, 139, 128, 0)')
-    tint.addColorStop(0.25, 'rgba(20, 139, 128, 0.32)')
-    tint.addColorStop(0.5, 'rgba(20, 139, 128, 0.68)')
-    tint.addColorStop(0.75, 'rgba(20, 139, 128, 0.32)')
-    tint.addColorStop(1, 'rgba(20, 139, 128, 0)')
+    tint.addColorStop(0, accentTint(0))
+    tint.addColorStop(0.25, accentTint(0.32))
+    tint.addColorStop(0.5, accentTint(0.68))
+    tint.addColorStop(0.75, accentTint(0.32))
+    tint.addColorStop(1, accentTint(0))
     crestCtx.strokeStyle = tint
-    crestCtx.shadowColor = 'rgba(50, 168, 153, 0.22)'
+    crestCtx.shadowColor = accentTint(0.22)
     crestCtx.shadowBlur = 7
     crestCtx.lineWidth = 1
     crestCtx.beginPath()
@@ -62,9 +65,9 @@ export function OceanWaves({ enabled = true }: { enabled?: boolean }) {
     const auraCtx = aura.getContext('2d')
     if (!auraCtx) return
     const glow = auraCtx.createRadialGradient(160, 160, 0, 160, 160, 160)
-    glow.addColorStop(0, 'rgba(65, 177, 158, 0.055)')
-    glow.addColorStop(0.5, 'rgba(65, 177, 158, 0.02)')
-    glow.addColorStop(1, 'rgba(65, 177, 158, 0)')
+    glow.addColorStop(0, accentTint(0.055))
+    glow.addColorStop(0.5, accentTint(0.02))
+    glow.addColorStop(1, accentTint(0))
     auraCtx.fillStyle = glow
     auraCtx.fillRect(0, 0, 320, 320)
 
@@ -176,7 +179,7 @@ export function OceanWaves({ enabled = true }: { enabled?: boolean }) {
       reducedMotion.removeEventListener('change', preferenceChanged)
       finePointer.removeEventListener('change', preferenceChanged)
     }
-  }, [enabled])
+  }, [enabled, appearance])
 
   return <canvas ref={canvasRef} aria-hidden="true" style={{ position: 'fixed', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 85 }} />
 }

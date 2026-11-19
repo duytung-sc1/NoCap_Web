@@ -21,6 +21,17 @@ function drawings(content: unknown): Record<string, unknown>[] {
 }
 
 describe('PDF reading-memory document', () => {
+  it('embeds separate language fonts, including Vietnamese notes and authors in an English export', () => {
+    const definition = notesPdfDefinition([entry('mixed', 'highlights', { book_id: 'english', text: 'Research from another source.', note: 'Tiếng Việt: Nguyễn, quyền riêng tư.' })], [
+      { id: 'english', title: 'English Research', author: 'Nguyễn', language: 'en', format: 'TXT' },
+    ], 'en')
+    expect(definition.defaultStyle?.font).toBe('PlusJakartaSans')
+    const content = definition.content as unknown as Record<string, unknown>[]
+    expect(content.find(item => item.text === 'Author: Nguyễn')?.font).toBe('BeVietnamPro')
+    expect(content.find(item => item.style === 'quote')?.font).toBe('PlusJakartaSans')
+    expect(content.filter(item => item.stack).some(item => item.font === 'BeVietnamPro')).toBe(true)
+  })
+
   it('groups current highlights, notes and bookmark snippets by book without changing the source', () => {
     const records = [
       entry('highlight', 'highlights', { book_id: 'vi', text: 'Tiếng Việt: ế ề ễ ể ệ, ắ ằ ẵ ẳ ặ.', note: 'Suy ngẫm riêng\nDòng thứ hai.' }),

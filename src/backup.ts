@@ -37,21 +37,46 @@ function decodeFile(value: unknown): { book: Book; data: Blob; addedAt: number }
   return { book: { ...value.book }, data: new Blob([bytes], { type: value.mimeType }), addedAt: value.addedAt }
 }
 
+function decodeOfflineFiles(values: unknown[]): ReturnType<typeof decodeFile>[] {
+  const unique = new Map<string, { encoded: BackupFile; decoded: ReturnType<typeof decodeFile> }>()
+  for (const value of values) {
+    const decoded = decodeFile(value), encoded = value as BackupFile
+    const previous = unique.get(decoded.book.id)
+    if (!previous) { unique.set(decoded.book.id, { encoded, decoded }); continue }
+    // Earlier v2 exports included both account and public cache rows. Their
+    // scope was omitted, so only byte- and metadata-identical copies are safe
+    // to collapse; differing cache timestamps do not change their contents.
+    const sameBook = Object.keys({ ...previous.decoded.book, ...decoded.book }).every(key =>
+      previous.decoded.book[key as keyof Book] === decoded.book[key as keyof Book])
+    const sameBytes = previous.encoded.dataBase64 === encoded.dataBase64 || atob(previous.encoded.dataBase64) === atob(encoded.dataBase64)
+    if (!sameBook || previous.decoded.data.type !== decoded.data.type || !sameBytes) throw invalid()
+  }
+  return [...unique.values()].map(value => value.decoded)
+}
+
 export async function createLibraryBackup(profile: string): Promise<LibraryBackupData> {
   const [records, localFiles, offline, publicOffline, catalog] = await Promise.all([
     getRecords(profile), getFiles(profile), getOfflineBooks(profile), getOfflineBooks('PUBLIC_OFFLINE'), getCachedCatalog(),
   ])
-  const cached = [...offline, ...publicOffline].filter(file => !localFiles.some(local => local.book.id === file.bookId))
-  const cachedFiles = await Promise.all(cached.map(f => {
-    const record = records.find(record => record.kind === 'catalog_books' && record.payload.id === f.bookId)
+  const localIds = new Set(localFiles.map(file => file.book.id)), cached = new Map<string, OfflineBook[]>()
+  for (const file of [...offline, ...publicOffline]) {
+    if (localIds.has(file.bookId)) continue
+    const copies = cached.get(file.bookId) || []
+    copies.push(file); cached.set(file.bookId, copies)
+  }
+  const cachedFiles = await Promise.all([...cached].map(([bookId, copies]) => {
+    const record = records.find(record => record.kind === 'catalog_books' && record.payload.id === bookId)
     const p = record?.payload
-    const book: Book = catalog?.books.find(book => book.id === f.bookId) || {
-      id: f.bookId, title: typeof p?.title === 'string' ? p.title : f.bookId,
+    const book: Book = catalog?.books.find(book => book.id === bookId) || {
+      id: bookId, title: typeof p?.title === 'string' ? p.title : bookId,
       author: typeof p?.author === 'string' ? p.author : '',
       fileUrl: typeof p?.file_url === 'string' ? p.file_url : undefined,
       format: typeof p?.format === 'string' ? p.format : undefined,
-      source: f.profile === 'PUBLIC_OFFLINE' ? 'public' : 'cloud',
+      source: copies.some(file => file.profile !== 'PUBLIC_OFFLINE') ? 'cloud' : 'public',
     }
+    // Match the scope used for reading, then fall back if that copy is absent.
+    const preferred = book.source === 'cloud' || book.fileUrl?.startsWith('nocap-private:') ? profile : 'PUBLIC_OFFLINE'
+    const f = copies.find(file => file.profile === preferred) || copies[0]
     return encodeFile(book, f.data, f.savedAt)
   }))
   const files = [...await Promise.all(localFiles.map(f => encodeFile(f.book, f.data, f.addedAt))), ...cachedFiles.filter(f => f.book.fileUrl?.startsWith('nocap-private:') || f.book.source === 'cloud')]
@@ -113,9 +138,12 @@ export async function restoreLibraryBackup(profile: string, backupData: unknown)
     return { key: keyFor(profile, `${value.kind}:${value.id}`), profile, kind: value.kind as SyncRecord['kind'], id: value.id, version: 0, deleted: value.deleted, payload: { ...value.payload } }
   })
   const books: Book[] = backupData.books.map(value => { if (!isBook(value)) throw invalid(); return { ...value } })
+  // Ambiguous identities must not silently select the last row and overwrite
+  // existing notes or document bytes when restoring an edited archive.
+  if (new Set(records.map(record => record.key)).size !== records.length || new Set(books.map(book => book.id)).size !== books.length) throw invalid()
   // Decode and validate the complete archive before opening a write transaction.
   const decodedFiles = (backupData.version === 2 ? backupData.files as unknown[] : []).map(decodeFile)
-  const decodedOffline = (backupData.version === 2 ? backupData.offlineBooks as unknown[] : []).map(decodeFile)
+  const decodedOffline = decodeOfflineFiles(backupData.version === 2 ? backupData.offlineBooks as unknown[] : [])
   if (new Set(decodedFiles.map(f => f.book.id)).size !== decodedFiles.length) throw invalid()
   if (decodedFiles.some(f => !books.some(book => book.id === f.book.id))) throw invalid()
   const account = profile.startsWith('ACCOUNT:')

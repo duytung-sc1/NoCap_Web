@@ -1,16 +1,25 @@
 export type ChapterLink = { url: string; title: string; number?: number }
 
+export type ChapterSourceWarningCode = 'page-limit' | 'chapter-limit' | 'size-limit' | 'page-failed' | 'dynamic-pagination' | 'catalog-changed'
+export type ChapterSourceDiagnostics = {
+  format: 'html' | 'streamed-html' | 'public-index'
+  completeness: 'verified' | 'unverified' | 'partial'
+  expectedChapters?: number
+  warnings: Array<{ code: ChapterSourceWarningCode; errorCode?: string }>
+}
+
 export type ChapterCatalog = {
   title: string
   sourceUrl: string
   chapters: ChapterLink[]
   pages: string[]
   truncated: boolean
+  diagnostics?: ChapterSourceDiagnostics
 }
 
 export const MAX_BATCH_CHAPTERS = 500
 export const MAX_CATALOG_CHAPTERS = 10_000
-export const MAX_CATALOG_PAGES = 40
+export const MAX_CATALOG_PAGES = 80
 export const MAX_BATCH_HTML_BYTES = 50 * 1024 * 1024
 import { HttpsImportError, publicationUrl } from './httpsPublication.ts'
 

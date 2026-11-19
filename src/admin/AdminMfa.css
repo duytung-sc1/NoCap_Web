@@ -1,0 +1,8 @@
+.admin-mfa{margin:24px 0;padding:20px;border:1px solid var(--site-line);border-radius:12px;background:var(--site-panel);color:var(--site-text);min-width:0}
+.admin-mfa h3{margin-top:0}.admin-mfa p{line-height:1.7;overflow-wrap:anywhere}
+.admin-mfa-form{display:grid;gap:14px;max-width:620px}.admin-mfa-form>label{display:grid;gap:8px}
+.admin-mfa-form input:not([type=checkbox]){width:100%;min-height:44px;border:1px solid var(--site-line);border-radius:8px;padding:10px 12px;background:var(--site-bg);color:var(--site-text);font:inherit}
+.admin-mfa-form button{justify-self:start;white-space:normal}.admin-mfa-qr{display:block;max-width:100%;height:auto;background:#fff}
+.admin-mfa-key{display:block;overflow-wrap:anywhere;margin-top:8px;letter-spacing:.04em;font-weight:600}
+.admin-mfa-recovery ul{padding-left:22px}.admin-mfa-recovery li{overflow-wrap:anywhere;line-height:2}
+@media(max-width:500px){.admin-mfa{padding:14px}.admin-mfa-form button{width:100%}}

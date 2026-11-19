@@ -36,6 +36,19 @@ describe('publication detection and naming', () => {
 })
 
 describe('HTTPS client download', () => {
+  it('distinguishes explicit access screens delivered with HTTP 200 from readable HTML', async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(new Response('<html><title>Just a moment...</title><div id="challenge-running">Verify you are human</div></html>', { headers: { 'Content-Type': 'text/html' } }))
+      .mockResolvedValueOnce(new Response('<html><title>Sign in</title><form><input type="password"></form></html>', { headers: { 'Content-Type': 'text/html' } }))
+    vi.stubGlobal('fetch', fetcher)
+    try {
+      await expect(downloadHttpsHtml('https://books.example.org/catalog')).rejects.toMatchObject({ code: 'SOURCE_BLOCKED' })
+      await expect(downloadHttpsHtml('https://books.example.org/catalog')).rejects.toMatchObject({ code: 'SOURCE_AUTH_REQUIRED' })
+      for (const code of ['SOURCE_BLOCKED', 'SOURCE_AUTH_REQUIRED', 'SOURCE_NOT_FOUND', 'SOURCE_RATE_LIMITED', 'CHAPTER_DYNAMIC_UNSUPPORTED']) {
+        expect(httpsImportMessage(new (await import('../shared/httpsPublication')).HttpsImportError(code), 'vi')).not.toBe(httpsImportMessage(new Error(), 'vi'))
+        expect(httpsImportMessage(new (await import('../shared/httpsPublication')).HttpsImportError(code), 'en')).not.toBe(httpsImportMessage(new Error(), 'en'))
+      }
+    } finally { vi.unstubAllGlobals() }
+  })
   it('downloads public index metadata through the bounded proxy without accepting arbitrary JSON sources', async () => {
     const fetcher = vi.fn().mockResolvedValueOnce(Response.json({ chapters: [{ id: 77, name: 'Chapter 1', slug: 'chuong-1' }] }))
       .mockResolvedValueOnce(new Response('not JSON'))

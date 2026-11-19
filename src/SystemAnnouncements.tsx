@@ -1,3 +1,4 @@
+import { contentLanguage } from './typography'
 import { useEffect, useState } from 'react'
 import { CircleAlert, Info, Wrench, X } from 'lucide-react'
 import { ANNOUNCEMENTS_UPDATED_EVENT, getAnnouncements, type PublicAnnouncement } from './api'
@@ -125,7 +126,7 @@ export default function SystemAnnouncements({ lang }: { lang: Lang }) {
       const Icon = item.type === 'warning' ? CircleAlert : item.type === 'maintenance' ? Wrench : Info
       return <article key={revision(item)} className={`system-announcement system-announcement-${item.type}`} role="status">
         <Icon className="system-announcement-icon" size={20} aria-hidden="true" />
-        <div className="system-announcement-copy"><h2>{item.title}</h2><p>{item.message}</p></div>
+        <div className="system-announcement-copy"><h2 lang={contentLanguage(item.title, undefined, lang)}>{item.title}</h2><p lang={contentLanguage(item.message, undefined, lang)}>{item.message}</p></div>
         <button type="button" className="system-announcement-close" onClick={() => dismiss(item)} aria-label={lang === 'vi' ? `Đóng thông báo: ${item.title}` : `Dismiss announcement: ${item.title}`}><X size={18} aria-hidden="true" /></button>
       </article>
     })}

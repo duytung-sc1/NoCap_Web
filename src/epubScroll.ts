@@ -25,6 +25,42 @@ export function synchronizeEpubScroll(manager: EpubScrollManager) {
   }
 }
 
+type EpubFillManager = {
+  container: { clientWidth: number; clientHeight: number }
+  q: { enqueue: (task: () => unknown) => Promise<unknown> }
+  check: () => unknown
+}
+
+/** epub.js fills before its asynchronous content/font hooks finish. A cover can
+ * then shrink below the viewport, leaving no scrollbar to trigger another fill.
+ * Remeasure the settled frame and check for adjacent chapters on the manager's
+ * own queue, also when later short chapters finish rendering. */
+export function refillEpubAfterRender(view: Pick<Rendition, 'on' | 'off'> & { manager: EpubFillManager }) {
+  let disposed = false
+  let scheduled: number | null = null
+  let queued = false
+  function rendered(_section: unknown, frame: { expand?: () => void }) {
+    if (disposed) return
+    frame?.expand?.()
+    if (scheduled !== null || queued) return
+    scheduled = requestAnimationFrame(() => {
+      scheduled = null
+      if (disposed) return
+      queued = true
+      void view.manager.q.enqueue(() => {
+        queued = false
+        if (!disposed && view.manager.container.clientWidth > 0 && view.manager.container.clientHeight > 0) return view.manager.check()
+      }).catch(() => { queued = false })
+    })
+  }
+  view.on('rendered', rendered)
+  return () => {
+    disposed = true
+    if (scheduled !== null) cancelAnimationFrame(scheduled)
+    view.off('rendered', rendered)
+  }
+}
+
 /** Offscreen spine documents may be destroyed while their fonts are loading. */
 export async function waitForEpubTargetFonts<T extends object>(contents: Array<{ sectionIndex: number; document: T }>, sectionIndex: number | undefined, readiness: WeakMap<T, Promise<void>>) {
   const content = contents.find(value => value.sectionIndex === sectionIndex)

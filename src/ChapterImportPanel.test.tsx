@@ -5,13 +5,15 @@ import type { ChapterCatalog, ChapterLink } from '../shared/chapterImport'
 import type { ChapterBatchDraft } from './chapterBatch'
 import { ChapterImportPanel } from './ChapterImportPanel'
 import { ImportDocumentDialog } from './ImportDocumentDialog'
+import type { ChapterContentPreview } from './chapterContentPreview'
 
 const fixtures = vi.hoisted(() => ({
-  discover: vi.fn(), load: vi.fn(), create: vi.fn(), run: vi.fn(), build: vi.fn(), discard: vi.fn(), singleDownload: vi.fn(),
+  discover: vi.fn(), load: vi.fn(), create: vi.fn(), run: vi.fn(), build: vi.fn(), discard: vi.fn(), singleDownload: vi.fn(), sample: vi.fn(),
 }))
 vi.mock('./chapterDiscovery', () => ({ discoverChapters: fixtures.discover }))
 vi.mock('./chapterBatch', () => ({ loadChapterBatch: fixtures.load, createChapterBatch: fixtures.create, runChapterBatch: fixtures.run, buildChapterEpub: fixtures.build, discardChapterBatch: fixtures.discard }))
 vi.mock('./httpsImport', async original => ({ ...await original<typeof import('./httpsImport')>(), downloadHttpsPublication: fixtures.singleDownload }))
+vi.mock('./chapterContentPreview', () => ({ previewChapterContents: fixtures.sample }))
 
 function catalog(count = 1200): ChapterCatalog {
   return {
@@ -54,6 +56,7 @@ beforeEach(() => {
   fixtures.run.mockImplementation(async (value: ChapterBatchDraft) => ({ ...value, chapters: value.chapters.map(chapter => ({ ...chapter, status: 'done' })) }))
   fixtures.build.mockResolvedValue(new File(['epub'], 'story.epub', { type: 'application/epub+zip' }))
   fixtures.discard.mockResolvedValue(undefined)
+  fixtures.sample.mockResolvedValue([])
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
@@ -72,6 +75,7 @@ it('selects positions 501–700 from 1200 chapters and previews real titles with
   await screen.findByText('All chapters downloaded. Add the book to your library to start reading.')
   const input = fixtures.create.mock.calls[0][0]
   expect(input.profile).toBe('reader-1')
+  expect(input.expectedDraftId).toBeNull()
   expect(input.title).toBe('Middle volume')
   expect(input.chapters).toHaveLength(200)
   expect(input.chapters[0].url).toContain('chapter-500')
@@ -197,6 +201,23 @@ it('pauses an active batch without discarding completed chapters or saving a par
   expect(props.onImport).not.toHaveBeenCalled()
 })
 
+it('locks the destination through chapter download while keeping pause available', async () => {
+  fixtures.load.mockResolvedValue(draft())
+  const running = deferred<ChapterBatchDraft>()
+  fixtures.run.mockReturnValue(running.promise)
+  const lock = vi.fn()
+  const { props } = show({ onDestinationLockChange: lock })
+  await restoreSaved()
+  fireEvent.click(screen.getByRole('button', { name: 'Continue download' }))
+  await waitFor(() => expect(lock).toHaveBeenLastCalledWith(true))
+  expect((screen.getByRole('button', { name: 'Pause and keep progress' }) as HTMLButtonElement).disabled).toBe(false)
+  expect(props.onBusyChange).not.toHaveBeenCalledWith(true)
+  fireEvent.click(screen.getByRole('button', { name: 'Pause and keep progress' }))
+  await act(async () => { running.resolve(draft()); await running.promise })
+  await waitFor(() => expect(lock).toHaveBeenLastCalledWith(false))
+  expect(props.onImport).not.toHaveBeenCalled()
+})
+
 it('aborts when the panel unmounts and ignores late progress callbacks', async () => {
   fixtures.load.mockResolvedValue(draft())
   const running = deferred<ChapterBatchDraft>()
@@ -232,8 +253,22 @@ it('asks before replacing an earlier batch with a new chapter selection', async 
   const confirmation = screen.getByRole('group', { name: 'Confirm action' })
   fireEvent.click(within(confirmation).getByRole('button', { name: 'Replace progress and download' }))
   await waitFor(() => expect(fixtures.create).toHaveBeenCalledTimes(1))
-  expect(fixtures.discard).toHaveBeenCalledWith('reader-1', 'batch-1')
-  expect(fixtures.discard.mock.invocationCallOrder[0]).toBeLessThan(fixtures.create.mock.invocationCallOrder[0])
+  expect(fixtures.discard).not.toHaveBeenCalled()
+  expect(fixtures.create.mock.calls[0][0].expectedDraftId).toBe('batch-1')
+})
+
+it('keeps the earlier download available when creating its replacement fails', async () => {
+  fixtures.load.mockResolvedValue(draft())
+  fixtures.create.mockRejectedValue(new Error('Browser storage is full'))
+  show()
+  await findCatalog()
+  fireEvent.click(screen.getByRole('button', { name: 'Download 200 chapters' }))
+  fireEvent.click(within(screen.getByRole('group', { name: 'Confirm action' })).getByRole('button', { name: 'Replace progress and download' }))
+  await screen.findByRole('alert')
+  expect(fixtures.discard).not.toHaveBeenCalled()
+  expect(fixtures.run).not.toHaveBeenCalled()
+  await restoreSaved()
+  expect(screen.getByRole('button', { name: 'Continue download' })).toBeTruthy()
 })
 
 it('keeps cancellation quiet and lets the user search again', async () => {
@@ -292,4 +327,160 @@ it('clears an old profile draft and cancels its request when the active profile 
   await act(async () => { options.onProgress(draft()); running.resolve(draft()); await running.promise })
   expect(screen.queryByRole('heading', { name: 'Saved story' })).toBeNull()
   expect(screen.getByLabelText('Story contents URL')).toBeTruthy()
+})
+
+it('keeps a new profile save busy when the previous profile save finishes late', async () => {
+  fixtures.load.mockResolvedValue(draft(['done']))
+  const oldSave = deferred<boolean>(), newSave = deferred<boolean>()
+  const onImport = vi.fn().mockReturnValueOnce(oldSave.promise).mockReturnValueOnce(newSave.promise)
+  const view = show({ onImport })
+  await restoreSaved()
+  fireEvent.click(screen.getByRole('button', { name: 'Add EPUB to library' }))
+  await waitFor(() => expect(onImport).toHaveBeenCalledTimes(1))
+  fixtures.load.mockResolvedValue({ ...draft(['done']), id: 'batch-2', profile: 'reader-2' })
+  view.rerender(<ChapterImportPanel {...view.props} profile="reader-2" />)
+  await restoreSaved()
+  fireEvent.click(screen.getByRole('button', { name: 'Add EPUB to library' }))
+  await waitFor(() => expect(onImport).toHaveBeenCalledTimes(2))
+  expect(view.props.onBusyChange).toHaveBeenLastCalledWith(true)
+  await act(async () => { oldSave.resolve(true); await oldSave.promise })
+  expect(view.props.onBusyChange).toHaveBeenLastCalledWith(true)
+  expect(view.props.onClose).not.toHaveBeenCalled()
+  await act(async () => { newSave.resolve(true); await newSave.promise })
+  expect(view.props.onBusyChange).toHaveBeenLastCalledWith(false)
+  expect(view.props.onClose).toHaveBeenCalledTimes(1)
+})
+
+it('reports identified pages honestly when the source total has not been verified', async () => {
+  show()
+  await findCatalog()
+  const check = screen.getByRole('region', { name: 'Source check' })
+  expect(within(check).getByText('Contents recognized')).toBeTruthy()
+  expect(check.textContent).toContain('total chapter count could not be verified')
+  expect(check.textContent).not.toContain('Matches the source chapter count')
+  expect(fixtures.sample).not.toHaveBeenCalled()
+})
+
+it('distinguishes verified counts from a failed contents page without blaming the scan limit', async () => {
+  fixtures.discover.mockResolvedValueOnce({ ...catalog(50), diagnostics: { format: 'public-index', completeness: 'verified', expectedChapters: 50, warnings: [] } })
+  show()
+  await findCatalog()
+  let check = screen.getByRole('region', { name: 'Source check' })
+  expect(within(check).getByText('Matches the source chapter count')).toBeTruthy()
+  expect(within(check).getByText('50 / 50')).toBeTruthy()
+  fixtures.discover.mockResolvedValueOnce({ ...catalog(25), truncated: true, diagnostics: { format: 'html', completeness: 'partial', expectedChapters: 50, warnings: [{ code: 'page-failed', errorCode: 'DOWNLOAD_TIMEOUT' }] } })
+  fireEvent.click(screen.getByRole('button', { name: 'Find chapters' }))
+  await screen.findByRole('heading', { name: '25 chapters found' })
+  check = screen.getByRole('region', { name: 'Source check' })
+  expect(within(check).getByText('Partial chapter list')).toBeTruthy()
+  expect(within(check).getByText('25 / 50')).toBeTruthy()
+  expect(check.textContent).toContain('Some contents pages could not be loaded')
+  expect(check.textContent).toContain('timed out')
+  expect(check.textContent).not.toContain('reached its contents-page limit')
+})
+
+it('downloads only requested sample chapters on click and escapes Vietnamese content independently of the English UI', async () => {
+  fixtures.sample.mockImplementation(async (chapters: ChapterLink[]) => chapters.map(chapter => ({ url: chapter.url, title: chapter.title, sourceTitle: 'Chương tiếng Việt', status: 'ready', excerpt: 'Tiếng Việt: quyền riêng tư. <img src=x onerror="bad()">', characters: 1234 })))
+  const view = show()
+  await findCatalog()
+  expect(fixtures.sample).not.toHaveBeenCalled()
+  fireEvent.change(screen.getByLabelText('From position'), { target: { value: '501' } })
+  fireEvent.change(screen.getByLabelText('To position'), { target: { value: '700' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Preview chapter content' }))
+  const excerpt = await screen.findAllByText('Tiếng Việt: quyền riêng tư. <img src=x onerror="bad()">')
+  expect(fixtures.sample.mock.calls[0][0].map((chapter: ChapterLink) => chapter.title)).toEqual(['Chapter 500', 'Chapter 501'])
+  expect(excerpt).toHaveLength(2)
+  expect(excerpt.every(element => element.lang === 'vi')).toBe(true)
+  expect(view.container.querySelector('img')).toBeNull()
+  expect(fixtures.create).not.toHaveBeenCalled()
+  expect(fixtures.run).not.toHaveBeenCalled()
+  expect(view.props.onImport).not.toHaveBeenCalled()
+  expect(view.props.onBusyChange).not.toHaveBeenCalledWith(true)
+})
+
+it('cancels stale samples when the selected range changes and ignores a late result', async () => {
+  const pending = deferred<ChapterContentPreview[]>()
+  fixtures.sample.mockReturnValueOnce(pending.promise).mockResolvedValueOnce([{ url: 'https://books.example.org/story/chapter-99', title: 'New sample', status: 'ready', excerpt: 'Current selected content.' }])
+  show()
+  await findCatalog()
+  fireEvent.click(screen.getByRole('button', { name: 'Preview chapter content' }))
+  const options = fixtures.sample.mock.calls[0][1]
+  fireEvent.change(screen.getByLabelText('From position'), { target: { value: '100' } })
+  expect(options.signal.aborted).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: 'Preview chapter content' }))
+  await screen.findByText('Current selected content.')
+  await act(async () => { pending.resolve([{ url: 'https://books.example.org/story/chapter-0', title: 'Old sample', status: 'ready', excerpt: 'Obsolete sample content.' }]); await pending.promise })
+  expect(screen.queryByText('Obsolete sample content.')).toBeNull()
+  expect(screen.getByText('Current selected content.')).toBeTruthy()
+})
+
+it('keeps sample cancellation quiet and allows downloading while a sample was still pending', async () => {
+  const first = deferred<ChapterContentPreview[]>(), second = deferred<ChapterContentPreview[]>()
+  fixtures.sample.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+  show()
+  await findCatalog()
+  fireEvent.click(screen.getByRole('button', { name: 'Preview chapter content' }))
+  const canceled = fixtures.sample.mock.calls[0][1]
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel preview' }))
+  expect(canceled.signal.aborted).toBe(true)
+  await act(async () => { first.reject(new DOMException('Canceled', 'AbortError')); await first.promise.catch(() => {}) })
+  expect(screen.queryByRole('alert')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Preview chapter content' }))
+  const inFlight = fixtures.sample.mock.calls[1][1]
+  fireEvent.click(screen.getByRole('button', { name: 'Download 200 chapters' }))
+  expect(inFlight.signal.aborted).toBe(true)
+  await screen.findByText('All chapters downloaded. Add the book to your library to start reading.')
+  await act(async () => { second.resolve([{ url: 'https://books.example.org/story/chapter-0', title: 'Old sample', status: 'ready', excerpt: 'Late content.' }]); await second.promise })
+  expect(screen.queryByText('Late content.')).toBeNull()
+  expect(fixtures.create).toHaveBeenCalledTimes(1)
+})
+
+it('shows per-chapter sample failures and can retry without changing the saved batch', async () => {
+  fixtures.sample.mockResolvedValueOnce([{ url: 'https://books.example.org/story/chapter-0', title: 'First sample', status: 'error', errorCode: 'DOWNLOAD_TIMEOUT' }])
+    .mockResolvedValueOnce([{ url: 'https://books.example.org/story/chapter-0', title: 'First sample', status: 'ready', excerpt: 'Readable sample after retry.' }])
+  show()
+  await findCatalog()
+  fireEvent.click(screen.getByRole('button', { name: 'Preview chapter content' }))
+  expect((await screen.findByRole('alert')).textContent).toContain('timed out')
+  fireEvent.click(screen.getByRole('button', { name: 'Retry content preview' }))
+  await screen.findByText('Readable sample after retry.')
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(fixtures.create).not.toHaveBeenCalled()
+  expect(fixtures.discard).not.toHaveBeenCalled()
+})
+
+it.each(['url', 'profile', 'unmount'])('aborts preview work when its %s changes', async change => {
+  const pending = deferred<ChapterContentPreview[]>()
+  fixtures.sample.mockReturnValue(pending.promise)
+  const view = show()
+  await findCatalog()
+  fireEvent.click(screen.getByRole('button', { name: 'Preview chapter content' }))
+  const options = fixtures.sample.mock.calls[0][1]
+  if (change === 'url') fireEvent.change(screen.getByLabelText('Story contents URL'), { target: { value: 'https://other.example.org/story' } })
+  else if (change === 'profile') view.rerender(<ChapterImportPanel {...view.props} profile="reader-2" />)
+  else view.unmount()
+  expect(options.signal.aborted).toBe(true)
+  await act(async () => { pending.resolve([{ url: 'https://books.example.org/story/chapter-0', title: 'Stale source', status: 'ready', excerpt: 'Stale source excerpt.' }]); await pending.promise })
+  expect(screen.queryByText('Stale source excerpt.')).toBeNull()
+})
+
+it('uses Vietnamese source diagnostics and preview actions in the Vietnamese interface', async () => {
+  fixtures.discover.mockResolvedValue({ ...catalog(2), truncated: true, diagnostics: { format: 'streamed-html', completeness: 'partial', warnings: [{ code: 'dynamic-pagination' }] } })
+  fixtures.sample.mockResolvedValue([{ url: 'https://books.example.org/story/chapter-0', title: 'English chapter', status: 'ready', excerpt: 'An English opening.' }])
+  show({ lang: 'vi' })
+  const input = screen.getByLabelText('Liên kết mục lục truyện')
+  await waitFor(() => expect((input as HTMLInputElement).disabled).toBe(false))
+  fireEvent.change(input, { target: { value: 'https://books.example.org/story/contents' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Tìm chương' }))
+  await screen.findByRole('heading', { name: 'Tìm thấy 2 chương' })
+  expect(screen.getByLabelText('Tên sách trong thư viện').lang).toBe('en')
+  expect(screen.getByText('Prologue', { selector: 'strong' }).lang).toBe('en')
+  expect(screen.getByText('Chapter 1', { selector: '.chapter-preview-title' }).lang).toBe('en')
+  fireEvent.change(screen.getByLabelText('Tên sách trong thư viện'), { target: { value: 'Truyện tiếng Việt' } })
+  expect(screen.getByLabelText('Tên sách trong thư viện').lang).toBe('vi')
+  const check = screen.getByRole('region', { name: 'Kiểm tra nguồn' })
+  expect(check.textContent).toContain('Cách chuyển trang của nguồn chưa được hỗ trợ đầy đủ')
+  fireEvent.click(screen.getByRole('button', { name: 'Xem thử nội dung' }))
+  expect((await screen.findByText('An English opening.')).lang).toBe('en')
+  expect(fixtures.create).not.toHaveBeenCalled()
 })

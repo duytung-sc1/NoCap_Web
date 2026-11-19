@@ -1,3 +1,4 @@
+import { automaticTypefaceLabel, contentLanguage } from './typography'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Bookmark, BookOpen, ChevronLeft, ChevronRight, FilePenLine, List, RefreshCw, Search, Settings2, X } from 'lucide-react'
@@ -80,12 +81,12 @@ function initialNavigation(locatorJson?: string): { locatorJson: string; request
 }
 
 function initialComfort(records: SyncRecord[], profile: string, bookId: string): Comfort {
-  const defaults: Comfort = { fontSize: 100, fontFamily: 'serif', theme: 'paper', lineHeight: 1.65, textAlignment: 'left', readerWidth: 'standard' }
+  const defaults: Comfort = { fontSize: 100, fontFamily: 'sans', theme: 'paper', lineHeight: 1.65, textAlignment: 'left', readerWidth: 'standard' }
   try {
     const stored = JSON.parse(localStorage.getItem('nocap-reader-comfort-v1') || 'null')
     if (stored) {
       if (Number.isFinite(stored.fontSize)) defaults.fontSize = Math.max(80, Math.min(170, stored.fontSize))
-      if (['serif', 'sans', 'mono'].includes(stored.fontFamily)) defaults.fontFamily = stored.fontFamily
+      defaults.fontFamily = 'sans'
       if (['paper', 'sepia', 'night'].includes(stored.theme)) defaults.theme = stored.theme
       if ([1.4, 1.65, 1.9].includes(stored.lineHeight)) defaults.lineHeight = stored.lineHeight
       if (stored.textAlignment === 'justify') defaults.textAlignment = 'justify'
@@ -94,7 +95,7 @@ function initialComfort(records: SyncRecord[], profile: string, bookId: string):
   } catch { /* retain the default reading comfort */ }
   const saved = records.find(record => record.profile === profile && !record.deleted && record.kind === 'per_book_preferences' && record.payload.book_id === bookId)?.payload
   if (!saved || saved.use_book_override === 0 || saved.use_book_override === false) return defaults
-  return { fontSize: Math.max(80, Math.min(170, Math.round((Number(saved.font_size) || 1) * 100))), fontFamily: saved.font_family === 'SANS_SERIF' || saved.font_family === 'ROBOTO' ? 'sans' : saved.font_family === 'CUSTOM' ? 'mono' : 'serif', theme: saved.theme === 'DARK' ? 'night' : saved.theme === 'SEPIA' ? 'sepia' : 'paper', lineHeight: Math.max(1.2, Math.min(2, Number(saved.line_height) || defaults.lineHeight)), textAlignment: saved.text_alignment === 'JUSTIFY' ? 'justify' : 'left', readerWidth: defaults.readerWidth }
+  return { fontSize: Math.max(80, Math.min(170, Math.round((Number(saved.font_size) || 1) * 100))), fontFamily: 'sans', theme: saved.theme === 'DARK' ? 'night' : saved.theme === 'SEPIA' ? 'sepia' : 'paper', lineHeight: Math.max(1.2, Math.min(2, Number(saved.line_height) || defaults.lineHeight)), textAlignment: saved.text_alignment === 'JUSTIFY' ? 'justify' : 'left', readerWidth: defaults.readerWidth }
 }
 
 function Contents({ items, onNavigate, depth = 0 }: { items: TocItem[]; onNavigate: (href: string) => void; depth?: number }) {
@@ -346,14 +347,14 @@ function ComparisonPane({ profile, lang, book, initial, records, loadBook, index
   return <section className={`comparison-source reader-shell ${comfort.theme}${active ? ' is-active' : ''}`} hidden={!renderDocument} aria-label={text(`Nguồn ${index + 1}: ${book.title}`, `Source ${index + 1}: ${book.title}`)} onPointerDownCapture={activateContent} onFocusCapture={activateContent} onWheelCapture={activateContent}>
     <header className="comparison-source-heading"><div><span>{text('NGUỒN', 'SOURCE')} {String(index + 1).padStart(2, '0')}</span><h2 title={book.title}>{book.title}</h2><p>{book.author}</p></div><button type="button" className="comparison-active-label" aria-pressed={active} onClick={onActivate}>{active ? text('Đang đọc', 'Active') : text('Chọn nguồn', 'Activate')}</button></header>
     {toolbarHost && active && createPortal(<div className="comparison-toolbar" role="toolbar" aria-label={text('Công cụ đọc đối chiếu', 'Comparison reading tools')}>
-      <span className="comparison-toolbar-source"><span>{text('Nguồn', 'Source')} {String(index + 1).padStart(2, '0')}</span><strong lang={book.language} title={book.title}>{book.title}</strong></span>
+      <span className="comparison-toolbar-source"><span>{text('Nguồn', 'Source')} {String(index + 1).padStart(2, '0')}</span><strong lang={contentLanguage(book.title, book.language, lang)} title={book.title}>{book.title}</strong></span>
       <button ref={contentsButton} type="button" disabled={!ready} aria-expanded={tocOpen} aria-controls={`${prefix}-contents`} onClick={() => setPanel(tocOpen ? null : 'contents')}><List size={15} />{text('Mục lục', 'Contents')}</button>
       <button ref={searchButton} type="button" disabled={!ready} aria-expanded={panel === 'search'} aria-controls={`${prefix}-search-panel`} onClick={() => { if (panel === 'search') closeTool(); else openSearch() }}><Search size={15} />{text('Tìm', 'Search')}</button>
       <button ref={noteButton} type="button" disabled={!ready} aria-expanded={panel === 'notes'} aria-controls={`${prefix}-notes-panel`} onClick={() => setPanel(panel === 'notes' ? null : 'notes')}><FilePenLine size={15} />{text('Ghi chú', 'Notes')}</button>
       <button type="button" disabled={!ready || !location || bookmarkSaving} aria-pressed={bookmarked} aria-busy={bookmarkSaving} aria-label={bookmarked ? text('Bỏ dấu trang', 'Remove bookmark') : text('Đánh dấu vị trí', 'Bookmark position')} onClick={() => { onActivate(); void toggleBookmark() }}><Bookmark size={15} fill={bookmarked ? 'currentColor' : 'none'} />{text('Dấu trang', 'Bookmark')}</button>
       <button ref={appearanceButton} type="button" aria-expanded={settings} aria-controls={`${prefix}-comfort`} onClick={() => setPanel(settings ? null : 'appearance')}><Settings2 size={15} />{text('Giao diện', 'Appearance')}</button>
     </div>, toolbarHost)}
-    {settings && <div className="comparison-comfort" id={`${prefix}-comfort`}><label>{text('Cỡ chữ', 'Text size')}<select value={comfort.fontSize} onChange={event => setComfort(value => ({ ...value, fontSize: Number(event.target.value) }))}>{[...new Set([80, 90, 100, 110, 120, 140, 160, 170, 180, 200, comfort.fontSize])].sort((a, b) => a - b).map(size => <option key={size} value={size}>{size}%</option>)}</select></label><label>{text('Kiểu chữ', 'Typeface')}<select value={comfort.fontFamily} onChange={event => setComfort(value => ({ ...value, fontFamily: event.target.value as FontFamily }))}><option value="serif">Literata</option><option value="sans">{text('Không chân · Dễ đọc', 'Sans · Accessible')}</option><option value="mono">{text('Đơn cách', 'Monospace')}</option></select></label><label>{text('Màu nền', 'Theme')}<select value={comfort.theme} onChange={event => setComfort(value => ({ ...value, theme: event.target.value as Comfort['theme'] }))}><option value="paper">{text('Giấy sáng', 'Paper')}</option><option value="sepia">{text('Vàng dịu', 'Sepia')}</option><option value="night">{text('Ban đêm', 'Night')}</option></select></label></div>}
+    {settings && <div className="comparison-comfort" id={`${prefix}-comfort`}><label>{text('Cỡ chữ', 'Text size')}<select value={comfort.fontSize} onChange={event => setComfort(value => ({ ...value, fontSize: Number(event.target.value) }))}>{[...new Set([80, 90, 100, 110, 120, 140, 160, 170, 180, 200, comfort.fontSize])].sort((a, b) => a - b).map(size => <option key={size} value={size}>{size}%</option>)}</select></label><label>{text('Kiểu chữ', 'Typeface')}<span>{automaticTypefaceLabel(lang)}</span></label><label>{text('Màu nền', 'Theme')}<select value={comfort.theme} onChange={event => setComfort(value => ({ ...value, theme: event.target.value as Comfort['theme'] }))}><option value="paper">{text('Giấy sáng', 'Paper')}</option><option value="sepia">{text('Vàng dịu', 'Sepia')}</option><option value="night">{text('Ban đêm', 'Night')}</option></select></label></div>}
     {notice && <div className="comparison-notice" role="status"><span>{notice}</span><button type="button" aria-label={text('Đóng thông báo', 'Dismiss message')} onClick={() => setNotice('')}><X size={14} /></button></div>}
     <div className="comparison-document" ref={host}>
       {!ready && !load.error && <div className="comparison-loading" role="status">{text('Đang mở tài liệu…', 'Opening document…')}</div>}

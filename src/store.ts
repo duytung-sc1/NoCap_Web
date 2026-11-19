@@ -464,6 +464,7 @@ export function readSession(): Session | null {
   if (raw !== undefined && raw !== null) {
     clearLegacySession()
     const value = parseSession(raw)
+    if(value?.privileged===true){saveSession(value,false);return value}
     if (!value && raw !== 'null') saveSession(null)
     return value
   }
@@ -476,6 +477,8 @@ export function readSession(): Session | null {
 }
 
 export function saveSession(value: Session | null, remember?: boolean) {
+  // This flag controls storage only; authorization always comes from the server.
+  if(value?.privileged===true)remember=false
   const raw = JSON.stringify(value)
   if (value && remember === undefined) {
     try {

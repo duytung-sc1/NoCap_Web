@@ -1,5 +1,6 @@
-import { useRef, useState } from 'react'
-import { ArrowUpRight, Check, FilePenLine, Pencil, Search, Trash2, X } from 'lucide-react'
+import { contentLanguage } from './typography'
+import { useEffect, useRef, useState } from 'react'
+import { ArrowUpRight, Check, FilePenLine, Maximize2, Minimize2, Pencil, Search, Trash2, X } from 'lucide-react'
 import { highlightColors, type AnnotationChanges, type HighlightColor } from './annotations'
 import { DrawingEditor, DrawingPreview } from './DrawingEditor'
 import { hasDrawing, parseDrawing, type Drawing } from './drawing'
@@ -84,7 +85,7 @@ function ReadingNote({ record, lang, onNavigate, onUpdate, onDelete }: Pick<Read
     <div className="reader-note-meta"><span>{chapter || (vi ? 'Ghi chú trong sách' : 'Book note')}</span>
       <button type="button" className="reader-note-source" onClick={() => onNavigate(record)}>{vi ? 'Về đoạn gốc' : 'Go to source'}<ArrowUpRight size={14} aria-hidden="true" /></button>
     </div>
-    {text && <blockquote>{text}</blockquote>}
+    {text && <blockquote lang={contentLanguage(text, undefined, lang)}>{text}</blockquote>}
     {editing ? <form className="reader-note-edit" onSubmit={event => { event.preventDefault(); void submit(false) }}>
       <div className="reader-note-input-mode" role="group" aria-label={vi ? 'Cách ghi chú' : 'Note input method'}>
         <button type="button" aria-pressed={mode === 'type'} disabled={busy} onClick={() => setMode('type')}>{vi ? 'Gõ' : 'Type'}</button>
@@ -92,12 +93,12 @@ function ReadingNote({ record, lang, onNavigate, onUpdate, onDelete }: Pick<Read
       </div>
       {mode === 'draw' && <><DrawingEditor value={drawing} onChange={value => { setDrawing(value); setDrawingChanged(true) }} lang={lang} disabled={busy} /><p className="reader-note-drawing-hint">{vi ? 'Có thể thêm chú thích bên dưới. Nhấn Lưu thay đổi để lưu cả nét vẽ và ghi chú.' : 'Add an optional caption below. Save changes to keep both your drawing and note.'}</p></>}
       {mode === 'type' && <DrawingPreview drawing={drawing} label={vi ? 'Bản vẽ trong ghi chú' : 'Note drawing'} />}
-      <label>{vi ? 'Sửa ghi chú' : 'Edit note'}<textarea value={draft} onChange={event => setDraft(event.target.value)} rows={4} maxLength={10000} disabled={busy} /></label>
+      <label>{vi ? 'Sửa ghi chú' : 'Edit note'}<textarea lang={contentLanguage(draft, undefined, lang)} value={draft} onChange={event => setDraft(event.target.value)} rows={4} maxLength={10000} disabled={busy} /></label>
       <NoteColors lang={lang} color={color} disabled={busy} onChange={setColor} />
       <div className="reader-note-edit-actions"><button type="button" className="reader-note-quiet" disabled={busy} onClick={() => { setEditing(false); setError('') }}>{vi ? 'Hủy' : 'Cancel'}</button><button className="reader-note-save" disabled={busy}>{busy ? (vi ? 'Đang lưu…' : 'Saving…') : (vi ? 'Lưu thay đổi' : 'Save changes')}</button></div>
     </form> : <>
       <DrawingPreview drawing={record.payload.drawing} label={vi ? 'Bản vẽ đã lưu' : 'Saved drawing'} />
-      {savedNote && <p className="reader-note-saved-text">{savedNote}</p>}
+      {savedNote && <p className="reader-note-saved-text" lang={contentLanguage(savedNote, undefined, lang)}>{savedNote}</p>}
       {!confirmingDelete && <div className="reader-note-card-actions">
         <button type="button" onClick={() => { setDraft(savedNote); setColor(recordColor(record)); setDrawing(parseDrawing(record.payload.drawing)); setDrawingChanged(false); setMode(hasDrawing(record.payload.drawing) ? 'draw' : 'type'); setEditing(true); setError('') }}><Pencil size={13} aria-hidden="true" />{vi ? 'Sửa' : 'Edit'}</button>
         <button type="button" onClick={() => { setConfirmingDelete(true); setError('') }}><Trash2 size={13} aria-hidden="true" />{vi ? 'Xóa' : 'Delete'}</button>
@@ -119,16 +120,48 @@ export function ReaderNotesPanel(props: ReaderNotesPanelProps) {
   const panelId = props.idPrefix ? `${props.idPrefix}-notes-panel` : 'reader-notes-panel'
   const draftId = props.idPrefix ? `${props.idPrefix}-note-draft` : 'reader-note-draft'
   const [mode, setMode] = useState<'type' | 'draw'>('type')
+  const [expanded, setExpanded] = useState(false)
+  const panel = useRef<HTMLElement>(null)
   const notes = records.filter(record => !record.deleted && record.kind === 'highlights')
   const needle = search.trim().toLocaleLowerCase(lang)
   const filtered = notes.filter(record => !needle || [record.payload.text, record.payload.note, record.payload.chapter_title].some(value => String(value || '').toLocaleLowerCase(lang).includes(needle)))
 
-  return <aside id={panelId} className="reader-notes-panel" role="complementary" aria-label={vi ? 'Ghi chú khi đọc' : 'Reading notes'} hidden={!open}>
-    <header className="reader-notes-heading"><div><span className="reader-notes-kicker">{vi ? 'Đọc & lưu ý tưởng' : 'Read & collect ideas'}</span><h2>{vi ? 'Ghi chú khi đọc' : 'Reading notes'}</h2><p title={bookTitle}>{bookTitle}</p></div><button type="button" className="reader-notes-close" onClick={onClose} aria-label={vi ? 'Đóng bảng ghi chú' : 'Close notes panel'}><X size={19} aria-hidden="true" /></button></header>
+  useEffect(() => {
+    if (!open) return
+    const viewport = window.visualViewport
+    const updateViewport = () => {
+      const height = viewport?.height ?? window.innerHeight
+      const bottom = Math.max(0, window.innerHeight - height - (viewport?.offsetTop ?? 0))
+      panel.current?.style.setProperty('--notes-visible-height', `${height}px`)
+      panel.current?.style.setProperty('--notes-bottom-inset', `${bottom}px`)
+    }
+    updateViewport()
+    viewport?.addEventListener('resize', updateViewport)
+    viewport?.addEventListener('scroll', updateViewport)
+    window.addEventListener('resize', updateViewport)
+    return () => {
+      viewport?.removeEventListener('resize', updateViewport)
+      viewport?.removeEventListener('scroll', updateViewport)
+      window.removeEventListener('resize', updateViewport)
+    }
+  }, [open])
+
+  return <aside ref={panel} id={panelId} className="reader-notes-panel" data-expanded={expanded} role="complementary" aria-label={vi ? 'Ghi chú khi đọc' : 'Reading notes'} hidden={!open}>
+    <header className="reader-notes-heading">
+      <div><span className="reader-notes-kicker">{vi ? 'Đọc & lưu ý tưởng' : 'Read & collect ideas'}</span><h2>{vi ? 'Ghi chú khi đọc' : 'Reading notes'}</h2><p lang={contentLanguage(bookTitle, undefined, lang)} title={bookTitle}>{bookTitle}</p></div>
+      <div className="reader-notes-heading-actions">
+        <button type="button" className="reader-notes-expand" aria-expanded={expanded} aria-controls={panelId} onClick={() => setExpanded(value => !value)} aria-label={expanded ? (vi ? 'Thu gọn bảng ghi chú' : 'Collapse notes panel') : (vi ? 'Mở rộng bảng ghi chú' : 'Expand notes panel')}>
+          {expanded ? <Minimize2 size={18} aria-hidden="true" /> : <Maximize2 size={18} aria-hidden="true" />}
+        </button>
+        <button type="button" className="reader-notes-close" onClick={onClose} aria-label={vi ? 'Đóng bảng ghi chú' : 'Close notes panel'}><X size={19} aria-hidden="true" /></button>
+      </div>
+    </header>
     <div className="reader-notes-content">
-      <form className="reader-note-composer" onSubmit={event => { event.preventDefault(); if (!saving && canSave) onSave() }}>
+      <form className="reader-note-composer" onFocusCapture={event => {
+        if (window.innerWidth <= 760 && event.target instanceof HTMLTextAreaElement) setExpanded(true)
+      }} onSubmit={event => { event.preventDefault(); if (!saving && canSave) onSave() }}>
         <h3><FilePenLine size={16} aria-hidden="true" />{vi ? 'Ý tưởng mới' : 'New thought'}</h3>
-        {quote ? <div className="reader-note-selection"><div><span>{vi ? 'Đoạn trích đã chọn' : 'Selected passage'}</span><button type="button" disabled={saving} onClick={onClearQuote} aria-label={vi ? 'Bỏ đoạn trích đã chọn' : 'Clear selected passage'}><X size={14} aria-hidden="true" /></button></div><blockquote>{quote}</blockquote></div> : <p className="reader-note-hint">{vi ? 'Bôi đen một đoạn trong sách để trích dẫn, hoặc viết ý tưởng tại vị trí đang đọc.' : 'Select a passage to quote it, or write a thought at your current reading position.'}</p>}
+        {quote ? <div className="reader-note-selection"><div><span>{vi ? 'Đoạn trích đã chọn' : 'Selected passage'}</span><button type="button" disabled={saving} onClick={onClearQuote} aria-label={vi ? 'Bỏ đoạn trích đã chọn' : 'Clear selected passage'}><X size={14} aria-hidden="true" /></button></div><blockquote lang={contentLanguage(quote, undefined, lang)}>{quote}</blockquote></div> : <p className="reader-note-hint">{vi ? 'Bôi đen một đoạn trong sách để trích dẫn, hoặc viết ý tưởng tại vị trí đang đọc.' : 'Select a passage to quote it, or write a thought at your current reading position.'}</p>}
         {onDrawingChange && <div className="reader-note-input-mode" role="group" aria-label={vi ? 'Cách ghi chú' : 'Note input method'}>
           <button type="button" aria-pressed={mode === 'type'} disabled={saving} onClick={() => setMode('type')}>{vi ? 'Gõ' : 'Type'}</button>
           <button type="button" aria-pressed={mode === 'draw'} disabled={saving} onClick={() => setMode('draw')}>{vi ? 'Vẽ' : 'Draw'}</button>
@@ -136,7 +169,7 @@ export function ReaderNotesPanel(props: ReaderNotesPanelProps) {
         {onDrawingChange && mode === 'draw' && <><DrawingEditor value={drawing} onChange={onDrawingChange} lang={lang} disabled={saving} /><p className="reader-note-drawing-hint">{vi ? 'Bản nháp được giữ trên trình duyệt này. Bấm Lưu ghi chú để lưu vào thư viện. Chú thích bên dưới là tùy chọn.' : 'Your draft stays in this browser. Save your note to add it to your library. The caption below is optional.'}</p></>}
         {mode === 'type' && hasDrawing(drawing) && <DrawingPreview drawing={drawing} label={vi ? 'Bản vẽ nháp' : 'Draft drawing'} />}
         <label htmlFor={draftId}>{vi ? 'Ghi chú của bạn' : 'Your note'}</label>
-        <textarea id={draftId} value={note} rows={4} maxLength={10000} disabled={saving} placeholder={vi ? 'Điều gì khiến bạn muốn ghi nhớ?' : 'What would you like to remember?'} onChange={event => onNoteChange(event.target.value)} />
+        <textarea id={draftId} lang={contentLanguage(note, undefined, lang)} value={note} rows={4} maxLength={10000} disabled={saving} placeholder={vi ? 'Điều gì khiến bạn muốn ghi nhớ?' : 'What would you like to remember?'} onChange={event => onNoteChange(event.target.value)} />
         <div className="reader-note-composer-bottom"><NoteColors lang={lang} color={color} disabled={saving} onChange={onColorChange} /><button type="submit" className="reader-note-save" disabled={saving || !canSave}>{saving ? (vi ? 'Đang lưu…' : 'Saving…') : (vi ? 'Lưu ghi chú' : 'Save note')}</button></div>
       </form>
       <section className="reader-notes-saved" aria-label={vi ? 'Ghi chú của sách này' : 'Notes in this book'}>

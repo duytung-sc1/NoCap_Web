@@ -4,6 +4,11 @@ import regularUrl from './assets/pdf-fonts/BeVietnamPro-Regular.ttf?url'
 import boldUrl from './assets/pdf-fonts/BeVietnamPro-Bold.ttf?url'
 import italicUrl from './assets/pdf-fonts/BeVietnamPro-Italic.ttf?url'
 import boldItalicUrl from './assets/pdf-fonts/BeVietnamPro-BoldItalic.ttf?url'
+import englishRegularUrl from './assets/pdf-fonts/PlusJakartaSans-Regular.ttf?url'
+import englishBoldUrl from './assets/pdf-fonts/PlusJakartaSans-Bold.ttf?url'
+import englishItalicUrl from './assets/pdf-fonts/PlusJakartaSans-Italic.ttf?url'
+import englishBoldItalicUrl from './assets/pdf-fonts/PlusJakartaSans-BoldItalic.ttf?url'
+import { contentLanguage } from './typography'
 import { formattedPdfText } from './notesPdfFormatting'
 import { drawingSvg, hasDrawing, parseDrawing } from './drawing'
 import type { Lang } from './i18n'
@@ -23,9 +28,11 @@ async function fontBase64(url: string) {
 }
 
 function loadFonts() {
-  if (!fontsReady) fontsReady = Promise.all([fontBase64(regularUrl), fontBase64(boldUrl), fontBase64(italicUrl), fontBase64(boldItalicUrl)]).then(([regular, bold, italic, boldItalic]) => {
-    pdfMake.addVirtualFileSystem({ 'BeVietnamPro-Regular.ttf': regular, 'BeVietnamPro-Bold.ttf': bold, 'BeVietnamPro-Italic.ttf': italic, 'BeVietnamPro-BoldItalic.ttf': boldItalic })
-    pdfMake.addFonts({ BeVietnamPro: { normal: 'BeVietnamPro-Regular.ttf', bold: 'BeVietnamPro-Bold.ttf', italics: 'BeVietnamPro-Italic.ttf', bolditalics: 'BeVietnamPro-BoldItalic.ttf' } })
+  if (!fontsReady) fontsReady = Promise.all([regularUrl, boldUrl, italicUrl, boldItalicUrl, englishRegularUrl, englishBoldUrl, englishItalicUrl, englishBoldItalicUrl].map(fontBase64)).then(([regular, bold, italic, boldItalic, enRegular, enBold, enItalic, enBoldItalic]) => {
+    pdfMake.addVirtualFileSystem({ 'BeVietnamPro-Regular.ttf': regular, 'BeVietnamPro-Bold.ttf': bold, 'BeVietnamPro-Italic.ttf': italic, 'BeVietnamPro-BoldItalic.ttf': boldItalic,
+      'PlusJakartaSans-Regular.ttf': enRegular, 'PlusJakartaSans-Bold.ttf': enBold, 'PlusJakartaSans-Italic.ttf': enItalic, 'PlusJakartaSans-BoldItalic.ttf': enBoldItalic })
+    pdfMake.addFonts({ BeVietnamPro: { normal: 'BeVietnamPro-Regular.ttf', bold: 'BeVietnamPro-Bold.ttf', italics: 'BeVietnamPro-Italic.ttf', bolditalics: 'BeVietnamPro-BoldItalic.ttf' },
+      PlusJakartaSans: { normal: 'PlusJakartaSans-Regular.ttf', bold: 'PlusJakartaSans-Bold.ttf', italics: 'PlusJakartaSans-Italic.ttf', bolditalics: 'PlusJakartaSans-BoldItalic.ttf' } })
   }).catch(error => { fontsReady = undefined; throw error })
   return fontsReady
 }
@@ -33,6 +40,7 @@ function loadFonts() {
 /** Immutable snapshot; prose is formatted text and drawings use validated vectors. */
 export function notesPdfDefinition(annotations: SyncRecord[], books: Book[], lang: Lang, date = new Date()): TDocumentDefinitions {
   const vi = lang === 'vi'
+  const font = (value: string, language?: string) => contentLanguage(value, language, lang) === 'vi' ? 'BeVietnamPro' : 'PlusJakartaSans'
   const title = vi ? 'Trích dẫn và ghi chú' : 'Highlights and notes'
   const entries = annotations.filter(item => !item.deleted && ['highlights', 'bookmarks'].includes(item.kind))
   const grouped = new Map<string, SyncRecord[]>()
@@ -48,7 +56,7 @@ export function notesPdfDefinition(annotations: SyncRecord[], books: Book[], lan
   ]
   for (const [id, items] of grouped) {
     const book = books.find(item => item.id === id)
-    content.push({ text: text(book?.title) || (vi ? 'Tài liệu không tên' : 'Untitled document'), style: 'book', headlineLevel: 1 })
+    content.push({ text: text(book?.title) || (vi ? 'Tài liệu không tên' : 'Untitled document'), font: font(text(book?.title), book?.language), style: 'book', headlineLevel: 1 })
     if (book?.author) content.push({ text: `${vi ? 'Tác giả' : 'Author'}: ${text(book.author)}`, style: 'metadata', margin: [0, 0, 0, 6] })
     for (const item of items) {
       const quote = text(item.payload.text) || text(item.payload.snippet)
@@ -58,21 +66,31 @@ export function notesPdfDefinition(annotations: SyncRecord[], books: Book[], lan
       const drawingOnly = !quote && !note && drawing && hasDrawing(drawing)
       const entryLabel: Content = { text: item.kind === 'bookmarks' ? (vi ? 'DẤU TRANG' : 'BOOKMARK') : (vi ? 'TRÍCH DẪN' : 'HIGHLIGHT'), style: 'label', margin: [0, 12, 0, 5] }
       if (!drawingOnly) content.push(entryLabel)
-      if (quote) content.push({ stack: formattedPdfText(quote), style: 'quote', margin: [12, 0, 0, 8] })
-      if (note) content.push({ text: `${vi ? 'Ghi chú' : 'Note'}:`, bold: true, margin: [0, 0, 0, 4] }, { stack: formattedPdfText(note), margin: [0, 0, 0, 8] })
+      if (quote) content.push({ stack: formattedPdfText(quote), font: font(quote, book?.language), style: 'quote', margin: [12, 0, 0, 8] })
+      if (note) content.push({ text: `${vi ? 'Ghi chú' : 'Note'}:`, bold: true, margin: [0, 0, 0, 4] }, { stack: formattedPdfText(note), font: font(note), margin: [0, 0, 0, 8] })
       if (drawing && hasDrawing(drawing)) content.push({ unbreakable: true, stack: [
         ...(drawingOnly ? [entryLabel] : []),
         { text: vi ? 'Bản vẽ:' : 'Drawing:', bold: true, margin: [0, 0, 0, 4] },
         { svg: drawingSvg(drawing), fit: [499.28, 349.5], margin: [0, 0, 0, 8] },
       ] })
-      if (chapter) content.push({ text: `${vi ? 'Vị trí' : 'Location'}: ${chapter}`, style: 'metadata', margin: [0, 0, 0, 8] })
+      if (chapter) content.push({ text: `${vi ? 'Vị trí' : 'Location'}: ${chapter}`, font: font(`${vi ? 'Vị trí' : 'Location'}: ${chapter}`), style: 'metadata', margin: [0, 0, 0, 8] })
       content.push({ canvas: [{ type: 'line', x1: 0, y1: 0, x2: 499.28, y2: 0, lineWidth: 0.5, lineColor: '#dce4e8' }], margin: [0, 2, 0, 4] })
     }
   }
+  // Saved names, author metadata and individual formatted spans can be Vietnamese
+  // even when the export UI is English. Correct the family before PDF shaping.
+  const protectVietnamese = (node: unknown): void => {
+    if (Array.isArray(node)) { node.forEach(protectVietnamese); return }
+    if (!node || typeof node !== 'object') return
+    const record = node as Record<string, unknown>
+    if (typeof record.text === 'string' && contentLanguage(record.text, 'en') === 'vi') record.font = 'BeVietnamPro'
+    Object.values(record).forEach(protectVietnamese)
+  }
+  protectVietnamese(content)
   return {
     pageSize: 'A4', pageMargins: [48, 48, 48, 50], language: vi ? 'vi-VN' : 'en-US',
     info: { title: `NoCap - ${title}`, author: 'NoCap', creator: 'NoCap Web', creationDate: date, modDate: date },
-    defaultStyle: { font: 'BeVietnamPro', fontSize: 10, lineHeight: 1.3, color: '#172b3a' },
+    defaultStyle: { font: vi ? 'BeVietnamPro' : 'PlusJakartaSans', fontSize: 10, lineHeight: 1.3, color: '#172b3a' },
     styles: {
       brand: { fontSize: 10, bold: true, color: '#0f766e', characterSpacing: 2, margin: [0, 0, 0, 12] },
       title: { fontSize: 24, bold: true, color: '#0b172d', margin: [0, 0, 0, 12] },

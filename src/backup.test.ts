@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import 'fake-indexeddb/auto'
 import { createLibraryBackup, restoreLibraryBackup } from './backup'
 import { folderPath, getLibraryFolderState } from './libraryFolders'
-import { saveFile, saveRecord, getRecords, getFile, getPending, saveOfflineBook, getOfflineBook } from './store'
+import { saveFile, saveRecord, getRecords, getFile, getPending, saveOfflineBook, getOfflineBook, saveCachedCatalog, getCachedCatalog } from './store'
 import { androidRecordId } from './sync'
 import type { Book, SyncRecord } from './types'
 
@@ -106,6 +106,75 @@ describe('createLibraryBackup & restoreLibraryBackup', () => {
     await expect(restoreLibraryBackup(target, backup)).rejects.toThrow('không đúng định dạng')
     expect(await getRecords(target)).toHaveLength(0)
     expect(await getFile(target, 'bk-1')).toBeUndefined()
+  })
+
+  it.each(['records', 'books', 'offlineBooks'] as const)('rejects conflicting duplicate %s before overwriting target data', async collection => {
+    const target = `ACCOUNT:${crypto.randomUUID()}`, backup = await createLibraryBackup(profile)
+    const existing: SyncRecord = { key: `${target}:bookmarks:b1`, profile: target, kind: 'bookmarks', id: 'b1', version: 7, deleted: false, payload: { note: 'Keep existing note' } }
+    await saveRecord(existing)
+    if (collection === 'records') backup.records.push({ ...backup.records[0], deleted: true })
+    else if (collection === 'books') backup.books.push({ ...backup.books[0], title: 'Conflicting title' })
+    else {
+      const book = { id: `duplicate-offline-${crypto.randomUUID()}`, title: 'Public', author: '', source: 'public', fileUrl: 'https://books.example.org/public.epub' }
+      await saveOfflineBook('PUBLIC_OFFLINE', book.id, new Blob(['Keep original bytes']))
+      backup.offlineBooks!.push(...['First conflicting bytes', 'Last conflicting bytes'].map(value => ({ book, dataBase64: btoa(value), mimeType: 'text/plain', addedAt: 1 })))
+    }
+    await expect(restoreLibraryBackup(target, backup)).rejects.toThrow('không đúng định dạng')
+    expect(await getRecords(target)).toEqual([existing])
+    expect(await getPending(target)).toEqual([])
+    expect(await getFile(target, 'bk-1')).toBeUndefined()
+    if (collection === 'offlineBooks') expect(await (await getOfflineBook('PUBLIC_OFFLINE', backup.offlineBooks!.at(-1)!.book.id))?.data.text()).toBe('Keep original bytes')
+  })
+
+  it.each(['both', 'account-only', 'public-only'] as const)('exports a public document once using its reading scope with %s caches', async scope => {
+    const owner = `ACCOUNT:${crypto.randomUUID()}`, target = `ACCOUNT:${crypto.randomUUID()}`
+    const book: Book = { id: `dual-cache-${crypto.randomUUID()}`, title: 'Public document', author: '', source: 'public', fileUrl: 'https://books.example.org/public.epub' }
+    const previousCatalog = await getCachedCatalog()
+    try {
+      await saveCachedCatalog([...(previousCatalog?.books || []), book], previousCatalog?.categories || [])
+      if (scope !== 'public-only') await saveOfflineBook(owner, book.id, new Blob(['Legacy account cache bytes']))
+      if (scope !== 'account-only') await saveOfflineBook('PUBLIC_OFFLINE', book.id, new Blob(['Current public cache bytes']))
+      const backup = await createLibraryBackup(owner)
+      expect(backup.offlineBooks!.filter(file => file.book.id === book.id)).toHaveLength(1)
+      await restoreLibraryBackup(target, backup)
+      expect(await (await getOfflineBook('PUBLIC_OFFLINE', book.id))?.data.text()).toBe(scope === 'account-only' ? 'Legacy account cache bytes' : 'Current public cache bytes')
+    } finally { await saveCachedCatalog(previousCatalog?.books || [], previousCatalog?.categories || []) }
+  })
+
+  it.each(['both', 'account-only', 'public-only'] as const)('exports a private document once using its reading scope with %s caches', async scope => {
+    const owner = `ACCOUNT:${crypto.randomUUID()}`, target = `ACCOUNT:${crypto.randomUUID()}`, bookId = `private-dual-cache-${crypto.randomUUID()}`
+    const id = androidRecordId('catalog_books', bookId)
+    await saveRecord({ key: `${owner}:catalog_books:${id}`, profile: owner, kind: 'catalog_books', id, version: 1, deleted: false,
+      payload: { id: bookId, title: 'Private document', author: '', file_url: 'nocap-private:original' } })
+    if (scope !== 'public-only') await saveOfflineBook(owner, bookId, new Blob(['Current account cache bytes']))
+    if (scope !== 'account-only') await saveOfflineBook('PUBLIC_OFFLINE', bookId, new Blob(['Legacy public cache bytes']))
+    const backup = await createLibraryBackup(owner)
+    expect(backup.files!.filter(file => file.book.id === bookId)).toHaveLength(1)
+    expect(backup.offlineBooks!.some(file => file.book.id === bookId)).toBe(false)
+    await restoreLibraryBackup(target, backup)
+    expect(await (await getFile(target, bookId))?.data.text()).toBe(scope === 'public-only' ? 'Legacy public cache bytes' : 'Current account cache bytes')
+  })
+
+  it('restores identical duplicate offline rows emitted by the earlier v2 exporter', async () => {
+    const target = `ACCOUNT:${crypto.randomUUID()}`, book = { id: `legacy-v2-${crypto.randomUUID()}`, title: 'Public document', author: '', source: 'public', fileUrl: 'https://books.example.org/public.epub' }
+    const file = { book, dataBase64: btoa('Original document bytes'), mimeType: 'text/plain', addedAt: 10 }
+    const oldV2 = { version: 2, app: 'NoCap-Web', exportedAt: new Date().toISOString(), profile, records: [], books: [], files: [],
+      offlineBooks: [file, { ...file, addedAt: 20 }] }
+    await restoreLibraryBackup(target, JSON.parse(JSON.stringify(oldV2)))
+    expect(await (await getOfflineBook('PUBLIC_OFFLINE', book.id))?.data.text()).toBe('Original document bytes')
+    expect((await createLibraryBackup(target)).offlineBooks!.filter(file => file.book.id === book.id)).toHaveLength(1)
+  })
+
+  it.each(['metadata', 'MIME type'] as const)('rejects duplicate offline bytes with conflicting %s before replacing an existing cache', async conflict => {
+    const target = `ACCOUNT:${crypto.randomUUID()}`, book = { id: `ambiguous-v2-${crypto.randomUUID()}`, title: 'Original title', author: '', source: 'public' }
+    await saveOfflineBook('PUBLIC_OFFLINE', book.id, new Blob(['Keep existing cached document']))
+    const file = { book, dataBase64: btoa('Archived document bytes'), mimeType: 'text/plain', addedAt: 10 }
+    const duplicate = conflict === 'metadata' ? { ...file, book: { ...book, title: 'Different title' } } : { ...file, mimeType: 'application/epub+zip' }
+    const backup = { version: 2, app: 'NoCap-Web', records: [], books: [], files: [], offlineBooks: [file, duplicate] }
+    await expect(restoreLibraryBackup(target, backup)).rejects.toThrow('không đúng định dạng')
+    expect(await (await getOfflineBook('PUBLIC_OFFLINE', book.id))?.data.text()).toBe('Keep existing cached document')
+    expect(await getRecords(target)).toEqual([])
+    expect(await getPending(target)).toEqual([])
   })
 
   it('recreates only a tombstone already observed in the target account', async () => {

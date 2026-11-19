@@ -1,0 +1,83 @@
+.pdf-reader {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.pdf-reader-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  padding: 5px 14px;
+  border-bottom: 1px solid var(--site-line);
+  background: var(--site-panel);
+  color: var(--site-text);
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+
+.pdf-zoom-controls,
+.pdf-page-navigation,
+.pdf-page-navigation label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pdf-reader-controls button,
+.pdf-reader-controls input {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 6px 10px;
+  border: 1px solid var(--site-line);
+  border-radius: 8px;
+  background: var(--site-raised);
+  color: var(--site-text);
+  font: inherit;
+  box-sizing: border-box;
+}
+
+.pdf-reader-controls button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.pdf-reader-controls button:disabled { opacity: .45; cursor: default; }
+.pdf-reader-controls button:hover:not(:disabled),
+.pdf-reader-controls button[aria-pressed=true] { background: var(--site-tint); color: var(--site-accent); }
+.pdf-reader-controls :is(button, input):focus-visible { outline: 2px solid var(--site-accent); outline-offset: 2px; }
+.pdf-zoom-value { min-width: 42px; text-align: center; font-variant-numeric: tabular-nums; }
+.pdf-reader-controls input { width: 65px; text-align: center; font-variant-numeric: tabular-nums; }
+.pdf-page-total { min-width: 36px; white-space: nowrap; }
+
+.pdf-reader > .pdf-host {
+  position: relative;
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  height: auto;
+  overflow: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+
+.pdf-scroll-stage { position: relative; min-width: 100%; }
+.pdf-reader .pdf-scroll-stage .pdf-page-container { display: block; margin: 0 auto; }
+.pdf-reader .pdf-page-container canvas { max-width: none; }
+
+@media (max-width: 520px) {
+  .pdf-reader-controls { gap: 5px; padding: 5px 10px; }
+  .pdf-zoom-controls { width: 100%; }
+  .pdf-fit-width { flex: 1; }
+  .pdf-page-navigation { margin-left: auto; }
+  .pdf-reader-controls input { font-size: 16px; }
+  .pdf-reader > .pdf-host { padding: 12px; }
+}

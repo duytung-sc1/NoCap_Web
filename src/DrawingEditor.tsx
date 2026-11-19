@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState, type PointerEvent as ReactPointerEv
 import { createPortal } from 'react-dom'
 import { Eraser, Maximize2, Minimize2, Pencil, Redo2, Trash2, Undo2, X } from 'lucide-react'
 import type { Lang } from './i18n'
-import { appendDrawingStroke, DRAWING_COLORS, DRAWING_MAX_STROKES, emptyDrawing, parseDrawing, segmentDistanceSquared, simplifyDrawingPoints, type Drawing, type DrawingStroke } from './drawing'
+import { appendDrawingStroke, DRAWING_COLORS, DRAWING_MAX_STROKES, drawingDisplayColor, emptyDrawing, parseDrawing, segmentDistanceSquared, simplifyDrawingPoints, type Drawing, type DrawingStroke } from './drawing'
 import './DrawingEditor.css'
 
 export type DrawingEditorProps = { value: Drawing | null; onChange: (value: Drawing | null) => void; lang: Lang; disabled?: boolean }
@@ -14,8 +14,8 @@ const signature = (drawing: Drawing) => drawing.strokes.length ? JSON.stringify(
 
 function StrokeShapes({ strokes }: { strokes: DrawingStroke[] }) {
   return <>{strokes.map((stroke, index) => stroke.points.length === 1
-    ? <circle key={index} cx={stroke.points[0][0]} cy={stroke.points[0][1]} r={stroke.width / 2} fill={stroke.color} />
-    : <polyline key={index} points={stroke.points.map(point => point.join(',')).join(' ')} fill="none" stroke={stroke.color} strokeWidth={stroke.width} strokeLinecap="round" strokeLinejoin="round" />)}</>
+    ? <circle key={index} cx={stroke.points[0][0]} cy={stroke.points[0][1]} r={stroke.width / 2} fill={drawingDisplayColor(stroke.color)} />
+    : <polyline key={index} points={stroke.points.map(point => point.join(',')).join(' ')} fill="none" stroke={drawingDisplayColor(stroke.color)} strokeWidth={stroke.width} strokeLinecap="round" strokeLinejoin="round" />)}</>
 }
 
 export function DrawingPreview({ drawing: value, label = 'Drawing' }: { drawing: unknown; label?: string }) {
@@ -200,7 +200,7 @@ export function DrawingEditor({ value, onChange, lang, disabled = false }: Drawi
     <fieldset className="drawing-editor-controls" disabled={disabled}>
       <legend>{text('Vẽ tay', 'Drawing')}</legend>
       <div className="drawing-editor-tools"><button type="button" aria-pressed={tool === 'pen'} onClick={() => chooseTool('pen')}><Pencil size={15} aria-hidden="true" />{text('Bút', 'Pen')}</button><button type="button" aria-pressed={tool === 'eraser'} onClick={() => chooseTool('eraser')}><Eraser size={15} aria-hidden="true" />{text('Tẩy nét', 'Stroke eraser')}</button><button type="button" disabled={!currentHistory.past.length} onClick={() => travel('undo')} aria-label={text('Hoàn tác nét vẽ', 'Undo drawing')}><Undo2 size={16} aria-hidden="true" /></button><button type="button" disabled={!currentHistory.future.length} onClick={() => travel('redo')} aria-label={text('Làm lại nét vẽ', 'Redo drawing')}><Redo2 size={16} aria-hidden="true" /></button><button ref={expandButton} type="button" aria-label={expanded ? text('Thu nhỏ vùng vẽ', 'Shrink drawing') : text('Phóng lớn vùng vẽ', 'Expand drawing')} onClick={() => { cancelGesture(); setExpanded(previous => !previous) }}>{expanded ? <Minimize2 size={16} aria-hidden="true" /> : <Maximize2 size={16} aria-hidden="true" />}</button></div>
-      <div className="drawing-editor-options"><div className="drawing-editor-palette" role="group" aria-label={text('Màu bút', 'Pen color')}>{DRAWING_COLORS.map((option, index) => <button key={option} type="button" aria-label={names[index]} aria-pressed={color === option} className="drawing-editor-swatch" style={{ backgroundColor: option }} onClick={() => { cancelGesture(); setColor(option); setTool('pen') }} />)}</div><label className="drawing-editor-width">{text('Nét', 'Width')}<select aria-label={text('Độ dày bút', 'Pen width')} value={width} onChange={event => { cancelGesture(); setWidth(Number(event.target.value)) }}><option value={2}>{text('Mảnh', 'Fine')}</option><option value={4}>{text('Vừa', 'Medium')}</option><option value={7}>{text('Đậm', 'Bold')}</option></select></label></div>
+      <div className="drawing-editor-options"><div className="drawing-editor-palette" role="group" aria-label={text('Màu bút', 'Pen color')}>{DRAWING_COLORS.map((option, index) => <button key={option} type="button" aria-label={names[index]} aria-pressed={color === option} className="drawing-editor-swatch" style={{ backgroundColor: drawingDisplayColor(option) }} onClick={() => { cancelGesture(); setColor(option); setTool('pen') }} />)}</div><label className="drawing-editor-width">{text('Nét', 'Width')}<select aria-label={text('Độ dày bút', 'Pen width')} value={width} onChange={event => { cancelGesture(); setWidth(Number(event.target.value)) }}><option value={2}>{text('Mảnh', 'Fine')}</option><option value={4}>{text('Vừa', 'Medium')}</option><option value={7}>{text('Đậm', 'Bold')}</option></select></label></div>
       <div className="drawing-editor-paper-options"><label><input type="checkbox" checked={grid} onChange={event => setGrid(event.target.checked)} />{text('Giấy ô vuông', 'Grid paper')}</label><button type="button" disabled={!current.strokes.length} onClick={() => { cancelGesture(); setConfirmClear(true) }}><Trash2 size={14} aria-hidden="true" />{text('Xóa hết', 'Clear')}</button></div>
     </fieldset>
     {confirmClear && !disabled && <div className="drawing-editor-clear-confirm" role="group" aria-label={text('Xác nhận xóa bản vẽ', 'Confirm clearing drawing')}><p>{text('Xóa toàn bộ nét vẽ? Bạn vẫn có thể hoàn tác.', 'Clear all strokes? You can still undo this.')}</p><div><button type="button" onClick={() => setConfirmClear(false)}>{text('Giữ bản vẽ', 'Keep drawing')}</button><button type="button" onClick={() => { commit(emptyDrawing()); setConfirmClear(false) }}>{text('Xóa bản vẽ', 'Clear drawing')}</button></div></div>}

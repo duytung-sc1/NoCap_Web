@@ -8,6 +8,7 @@ import {
   Table2, Underline, Undo2, WrapText, X,
 } from 'lucide-react'
 import type { Lang } from '../i18n'
+import { contentLanguage } from '../typography'
 import type { StealthTranslations } from './StealthReader'
 import type { StealthRow } from './textExtractor'
 import { findWorksheetCell, WORKSHEET_COLUMNS, worksheetCellValue, worksheetRowNumber, type WorksheetColumn } from './worksheet'
@@ -29,6 +30,7 @@ interface Props {
   loading: boolean
   curT: StealthTranslations
   lang?: Lang
+  documentLanguage?: string
   search: string
   onSearchChange: (value: string) => void
   onOpenSettings: () => void
@@ -53,9 +55,9 @@ const CELL_CLASSES = ['id-col', 'cat-col', 'text-col', 'status-col', 'var-col', 
 export function ExcelView({ rows, currentRow, activeRowIndex, activeRowRef, onSelectRow, fontSize,
   onFontSizeChange, panic, loading, curT, lang = 'vi', search, onSearchChange, onOpenSettings,
   onToggleFullscreen, onClose, fullscreen, onViewportChange, initialRowOffset = 0,
-  lastReadRowIndex, checkpointError }: Props) {
+  lastReadRowIndex, checkpointError, documentLanguage }: Props) {
   const [column, setColumn] = useState<WorksheetColumn>('C')
-  const [fontFamily, setFontFamily] = useState('Calibri')
+  const [fontFamily, setFontFamily] = useState(lang === 'vi' ? 'Be Vietnam Pro' : 'Plus Jakarta Sans')
   const [bold, setBold] = useState(false)
   const [italic, setItalic] = useState(false)
   const [underline, setUnderline] = useState(false)
@@ -143,7 +145,7 @@ export function ExcelView({ rows, currentRow, activeRowIndex, activeRowRef, onSe
   }, [clipboardStatus])
 
   const resetFormatting = () => {
-    setFontFamily('Calibri'); onFontSizeChange(12); setBold(false); setItalic(false)
+    setFontFamily(lang === 'vi' ? 'Be Vietnam Pro' : 'Plus Jakarta Sans'); onFontSizeChange(12); setBold(false); setItalic(false)
     setUnderline(false); setAlignment('left'); setWrap(true)
   }
 
@@ -201,8 +203,8 @@ export function ExcelView({ rows, currentRow, activeRowIndex, activeRowRef, onSe
       <div className="excel-ribbon-group font-group">
         <div className="excel-font-controls">
           <div className="excel-command-row">
-            <select className="excel-font-select" aria-label="Font" value={fontFamily} onChange={event => setFontFamily(event.target.value)}>
-              <option>Calibri</option><option>Aptos</option><option>Arial</option><option>Segoe UI</option>
+            <select className="excel-font-select" aria-label="Font" value={lang === 'vi' ? 'Be Vietnam Pro' : 'Plus Jakarta Sans'} disabled>
+              <option>{lang === 'vi' ? 'Be Vietnam Pro' : 'Plus Jakarta Sans'}</option>
             </select>
             <select className="excel-size-select" aria-label={curT.fontSizeLabel} value={fontSize} onChange={event => onFontSizeChange(Number(event.target.value))}>
               {[10, 11, 12, 13, 14, 15, 16].map(size => <option key={size}>{size}</option>)}
@@ -282,7 +284,7 @@ export function ExcelView({ rows, currentRow, activeRowIndex, activeRowRef, onSe
     </div>
 
     <div ref={gridRef} className="excel-grid-container" onScroll={event => trackScroll(event.currentTarget)}>
-      <table ref={tableRef} className={`excel-table ${wrap ? '' : 'no-wrap'}`} style={{ fontSize: `${fontSize}px`, fontFamily: `${fontFamily}, 'Segoe UI', Arial, sans-serif`, zoom: zoom / 100 }}>
+      <table ref={tableRef} className={`excel-table ${wrap ? '' : 'no-wrap'}`} style={{ fontSize: `${fontSize}px`, fontFamily: 'var(--font-ui)', zoom: zoom / 100 }}>
         <colgroup><col className="excel-number-column" /><col className="excel-id-column" /><col className="excel-category-column" /><col /><col className="excel-status-column" /><col className="excel-variance-column" />{['F', 'G', 'H', 'I'].map(key => <col className="excel-empty-column" key={key} />)}</colgroup>
         <thead><tr><th className="excel-th excel-corner" aria-label="Worksheet"><span /></th>{WORKSHEET_COLUMNS.map(key => <th key={key} scope="col" className={`excel-th ${column === key ? 'selected' : ''}`}>{key}</th>)}</tr></thead>
         <tbody>
@@ -294,7 +296,7 @@ export function ExcelView({ rows, currentRow, activeRowIndex, activeRowRef, onSe
               const lastRead = !panic && index === lastReadRowIndex
               return <tr key={`${index}-${row.id}`} data-display-index={index} className={`excel-tr ${selected ? 'selected' : ''} ${lastRead ? 'last-read' : ''}`} ref={selected ? activeRowRef as RefObject<HTMLTableRowElement> : null}>
                 <th className="excel-row-num" scope="row" title={lastRead ? (lang === 'vi' ? 'Vị trí lần đọc trước' : 'Last reading position') : undefined} onClick={() => selectCell('C', index)}>{worksheetRowNumber(row)}{lastRead && <span className="excel-last-read-dot" aria-label={lang === 'vi' ? 'Vị trí lần đọc trước' : 'Last reading position'} />}</th>
-                {WORKSHEET_COLUMNS.map((key, cellIndex) => <td key={key} className={`excel-td ${CELL_CLASSES[cellIndex]} ${selected && column === key ? 'selected-cell' : ''}`}
+                {WORKSHEET_COLUMNS.map((key, cellIndex) => <td key={key} lang={contentLanguage(worksheetCellValue(row, key), key === 'C' ? documentLanguage : 'en', lang)} className={`excel-td ${CELL_CLASSES[cellIndex]} ${selected && column === key ? 'selected-cell' : ''}`}
                   style={key === 'C' ? { fontWeight: bold ? 700 : 400, fontStyle: italic ? 'italic' : 'normal', textDecoration: underline ? 'underline' : 'none', textAlign: alignment } : undefined}
                   onClick={() => selectCell(key, index)}>{worksheetCellValue(row, key)}</td>)}
               </tr>

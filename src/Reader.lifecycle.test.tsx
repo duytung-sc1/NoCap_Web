@@ -51,7 +51,95 @@ afterEach(() => {
   else delete (Range.prototype as unknown as { getClientRects?: unknown }).getClientRects
 })
 
+describe('PDF zoom and page controls', () => {
+  it('renders sharp zoomed pages without reloading and preserves both scroll coordinates', async () => {
+    vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(800)
+    const { container } = render(<ReaderPane {...base} book={{ id: 'zoom-pdf', title: 'QA', author: 'QA', format: 'PDF' }} bytes={new ArrayBuffer(20)} />)
+    await screen.findByText('PDF page 1')
+    const host = container.querySelector<HTMLElement>('.pdf-host')!
+    const canvas = container.querySelector('canvas')!
+    expect(canvas.width).toBe(800)
+    fireEvent.click(screen.getByRole('button', { name: 'Phóng to PDF' }))
+    await waitFor(() => expect(canvas.width).toBe(1000))
+    await screen.findByText('PDF page 1')
+    await act(async () => { await new Promise<void>(resolve => requestAnimationFrame(() => resolve())) })
+    host.scrollTop = 550
+    host.scrollLeft = 100
+    fireEvent.click(screen.getByRole('button', { name: 'Phóng to PDF' }))
+    await waitFor(() => expect(canvas.width).toBe(1200))
+    await waitFor(() => expect(host.scrollTop).toBe(660))
+    // Keep the page point at the viewport center while its width grows.
+    expect(host.scrollLeft).toBe(200)
+    expect(canvas.height).toBe(1650)
+    expect(fixture.loadPdf).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Vừa chiều rộng' }))
+    await waitFor(() => expect(canvas.width).toBe(800))
+    expect(fixture.loadPdf).toHaveBeenCalledTimes(1)
+  })
+
+  it('jumps to an entered page and rejects invalid submissions before requesting a PDF page', async () => {
+    render(<ReaderPane {...base} book={{ id: 'jump-pdf', title: 'QA', author: 'QA', format: 'PDF' }} bytes={new ArrayBuffer(20)} />)
+    await screen.findByText('PDF page 1')
+    const input = screen.getByRole('spinbutton', { name: 'Số trang PDF' }) as HTMLInputElement
+    fireEvent.change(input, { target: { value: '3' } })
+    fireEvent.submit(input.closest('form')!)
+    await screen.findByText('PDF page 3')
+    expect(JSON.parse(base.onLocation.mock.calls.at(-1)![0].locatorJson).pageNumber).toBe(3)
+    const requests = fixture.getPage.mock.calls.length
+    for (const value of ['0', '-1', '4', '2.7', '']) {
+      fireEvent.change(input, { target: { value } })
+      fireEvent.submit(input.closest('form')!)
+      expect(fixture.getPage).toHaveBeenCalledTimes(requests)
+      expect(screen.getByText('PDF page 3')).toBeTruthy()
+    }
+    expect(fixture.loadPdf).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the newest zoom render when a canceled render resolves late', async () => {
+    vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(800)
+    const older = deferred<void>(), latest = deferred<void>()
+    const cancel = vi.fn()
+    fixture.renderPage.mockReset()
+      .mockImplementationOnce(() => ({ promise: Promise.resolve(), cancel: vi.fn() }))
+      .mockImplementationOnce(() => ({ promise: older.promise, cancel }))
+      .mockImplementationOnce(() => ({ promise: latest.promise, cancel: vi.fn() }))
+    const { container } = render(<ReaderPane {...base} book={{ id: 'rapid-zoom-pdf', title: 'QA', author: 'QA', format: 'PDF' }} bytes={new ArrayBuffer(20)} />)
+    await screen.findByText('PDF page 1')
+    const plus = screen.getByRole('button', { name: 'Phóng to PDF' })
+    fireEvent.click(plus)
+    await waitFor(() => expect(fixture.renderPage).toHaveBeenCalledTimes(2))
+    fireEvent.click(plus)
+    await waitFor(() => expect(fixture.renderPage).toHaveBeenCalledTimes(3))
+    expect(cancel).toHaveBeenCalledTimes(1)
+    act(() => { latest.resolve() })
+    await screen.findByText('PDF page 1')
+    const canvas = container.querySelector('canvas')!
+    expect(canvas.width).toBe(1200)
+    const layers = container.querySelectorAll('.pdf-text-layer span').length
+    act(() => { older.resolve() })
+    await older.promise
+    expect(canvas.width).toBe(1200)
+    expect(container.querySelectorAll('.pdf-text-layer span')).toHaveLength(layers)
+    expect(fixture.loadPdf).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('document reader restoration', () => {
+  it('keeps a PDF rendered when its location callback changes and reports future pages to the latest callback', async () => {
+    const bytes = new ArrayBuffer(20)
+    const book = { id: 'callback-pdf', title: 'QA', author: 'QA', format: 'PDF' }
+    const { rerender } = render(<ReaderPane {...base} book={book} bytes={bytes} />)
+    await screen.findByText('PDF page 1')
+    const renders = fixture.renderPage.mock.calls.length
+    const latest = vi.fn()
+    rerender(<ReaderPane {...base} book={book} bytes={bytes} onLocation={latest} />)
+    expect(fixture.renderPage).toHaveBeenCalledTimes(renders)
+    expect(latest).not.toHaveBeenCalled()
+    act(() => { base.onControls.mock.calls.at(-1)![0].next() })
+    await screen.findByText('PDF page 2')
+    expect(JSON.parse(latest.mock.calls.at(-1)![0].locatorJson)).toMatchObject({ pageNumber: 2 })
+  })
+
   it('publishes current text for speech without saving progress, and invalidates replaced book sources', async () => {
     const ready = vi.fn<(source: ReaderSpeechSource | null) => void>()
     const bytes = new TextEncoder().encode('First source text.').buffer as ArrayBuffer
@@ -74,6 +162,20 @@ describe('document reader restoration', () => {
     unmount(); expect(ready).toHaveBeenLastCalledWith(null)
   })
 
+  it('keeps the speech source valid when its publication callback changes', async () => {
+    const first = vi.fn<(source: ReaderSpeechSource | null) => void>()
+    const next = vi.fn<(source: ReaderSpeechSource | null) => void>()
+    const bytes = new TextEncoder().encode('Current source text.').buffer as ArrayBuffer
+    const book = { id: 'speech-callback', title: 'QA', author: 'QA', format: 'TXT' }
+    const { rerender } = render(<ReaderPane {...base} book={book} bytes={bytes} onSpeechReady={first} />)
+    await screen.findByText('Current source text.')
+    const source = first.mock.calls.at(-1)![0]!
+    rerender(<ReaderPane {...base} book={book} bytes={bytes} onSpeechReady={next} />)
+    expect(first).toHaveBeenLastCalledWith(null)
+    expect(next).toHaveBeenLastCalledWith(source)
+    expect((await source(new AbortController().signal)).text).toBe('Current source text.')
+  })
+
   it('never reads a stale PDF page while the next page text is being prepared', async () => {
     const pending = deferred<Awaited<ReturnType<typeof fixture.getPage>>>()
     const original = fixture.getPage.getMockImplementation()!, pageTwo = await original(2)
@@ -82,12 +184,12 @@ describe('document reader restoration', () => {
     render(<ReaderPane {...base} book={{ id: 'speech-pdf', title: 'QA', author: 'QA', format: 'PDF' }} bytes={new ArrayBuffer(20)} onSpeechReady={ready} />)
     await screen.findByText('PDF page 1')
     const source = ready.mock.calls.at(-1)![0]!
-    expect((await source(new AbortController().signal)).text).toBe('PDF page 1')
+    await waitFor(async () => expect((await source(new AbortController().signal)).text).toBe('PDF page 1'))
     act(() => { base.onControls.mock.calls.at(-1)![0].next() })
     await expect(source(new AbortController().signal)).rejects.toThrow('preparing')
     act(() => { pending.resolve(pageTwo) })
     await screen.findByText('PDF page 2')
-    expect((await source(new AbortController().signal)).text).toBe('PDF page 2')
+    await waitFor(async () => expect((await source(new AbortController().signal)).text).toBe('PDF page 2'))
   })
 
   it('publishes search only after DOCX decoding and keeps its engine stable while notes or comfort settings change', async () => {
@@ -228,11 +330,11 @@ describe('document reader restoration', () => {
   })
 
   it.each([
-    { language: 'vi-VN', ui: 'en' as const, expected: 'Be Vietnam Pro' },
-    { language: 'en-US', ui: 'vi' as const, expected: 'Atkinson Hyperlegible' },
-    { language: undefined, ui: 'en' as const, expected: 'Be Vietnam Pro' },
-  ])('uses document language $language for sans reading with $ui controls', async ({ language, ui, expected }) => {
-    const text = 'Tiếng Việt: Nguyễn, trường, quyền riêng tư, ĐỖ. English text.'
+    { language: 'vi-VN', ui: 'en' as const, expected: 'Be Vietnam Pro', text: 'Tiếng Việt: Nguyễn, trường, quyền riêng tư, ĐỖ.' },
+    { language: 'en-US', ui: 'vi' as const, expected: 'Plus Jakarta Sans Variable', text: 'Research, reading and knowledge connections.' },
+    { language: 'en-US', ui: 'en' as const, expected: 'Be Vietnam Pro', text: 'Tiếng Việt: Nguyễn, trường, quyền riêng tư, ĐỖ. English text.' },
+    { language: undefined, ui: 'en' as const, expected: 'Be Vietnam Pro', text: 'Tiếng Việt: Nguyễn, trường, quyền riêng tư, ĐỖ.' },
+  ])('uses document language $language for sans reading with $ui controls', async ({ language, ui, expected, text }) => {
     const bytes = new TextEncoder().encode(text).buffer as ArrayBuffer
     const book = { id: 'qa-text', title: 'QA', author: 'QA', format: 'TXT', language }
     const { rerender } = render(<ReaderPane {...base} book={book} bytes={bytes} lang={ui} fontFamily="sans" />)

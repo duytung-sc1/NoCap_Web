@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import 'fake-indexeddb/auto'
 import { Blob as NodeBlob, File as NodeFile } from 'node:buffer'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import JSZip from 'jszip'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MAX_BATCH_CHAPTERS } from '../shared/chapterImport'
@@ -18,10 +20,20 @@ const chapter = (number: number, title = `Chapter ${number}`) => ({ number, titl
 const prose = 'A quiet reader follows the story and remembers its important ideas. '.repeat(5)
 const page = (url: string, extra = '') => ({ url, html: `<!doctype html><html><head><title>Source title</title></head><body><article><p>${prose}</p>${extra}</article></body></html>` })
 const create = (owner = profile(), numbers = [501, 502, 503]) => createChapterBatch({ profile: owner, title: 'A selected middle volume', sourceUrl, chapters: numbers.map(number => chapter(number)) })
+const fontBytes = (name: string) => new Uint8Array(readFileSync(resolve(process.cwd(), 'src/assets/pdf-fonts', name)))
+const bundledFontFetch = vi.fn(async (input: string, options?: RequestInit) => {
+  options?.signal?.throwIfAborted()
+  const match = String(input).match(/\/(BeVietnamPro|PlusJakartaSans)-(Regular|Bold|Italic|BoldItalic)\.ttf(?:\?|$)/)
+  if (!match) throw new Error(`Only bundled font assets may be fetched while exporting: ${input}`)
+  const bytes = fontBytes(`${match[1]}-${match[2]}.ttf`)
+  return { ok: true, arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) } as Response
+})
 
 beforeEach(() => {
   download.mockReset()
   download.mockImplementation(async (url: string) => page(url))
+  bundledFontFetch.mockClear()
+  vi.stubGlobal('fetch', bundledFontFetch)
 })
 
 describe('persistent selected-chapter batches', () => {
@@ -131,6 +143,35 @@ describe('persistent selected-chapter batches', () => {
     expect(download).not.toHaveBeenCalled()
   })
 
+  it('rolls back chapter deletion when replacing the job fails synchronously', async () => {
+    const completed = await runChapterBatch(await create(profile(), [1]))
+    const originalPut = IDBObjectStore.prototype.put
+    const put = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (this: IDBObjectStore, value, key) {
+      if (this.name === 'jobs') throw new DOMException('Browser storage is full', 'QuotaExceededError')
+      return key === undefined ? originalPut.call(this, value) : originalPut.call(this, value, key)
+    })
+    try {
+      await expect(create(completed.profile, [501])).rejects.toMatchObject({ code: 'BATCH_STORAGE_FAILED' })
+    } finally { put.mockRestore() }
+    expect(await loadChapterBatch(completed.profile)).toEqual(completed)
+    const zip = await JSZip.loadAsync(await (await buildChapterEpub(completed)).arrayBuffer())
+    expect(await zip.file('EPUB/chapter-1.xhtml')!.async('string')).toContain(prose.trim())
+  })
+
+  it('rejects stale replacement confirmations and simultaneous starts without erasing a newer batch', async () => {
+    const owner = profile(), first = await create(owner, [1])
+    const replacement = await createChapterBatch({ profile: owner, title: 'New selection', sourceUrl, chapters: [chapter(501)], expectedDraftId: first.id })
+    for (const expectedDraftId of [first.id, null]) {
+      await expect(createChapterBatch({ profile: owner, title: 'Stale selection', sourceUrl, chapters: [chapter(700)], expectedDraftId })).rejects.toMatchObject({ code: 'BATCH_STALE' })
+      expect(await loadChapterBatch(owner)).toEqual(replacement)
+    }
+    const emptyOwner = profile()
+    const attempts = await Promise.allSettled([1, 2].map(number => createChapterBatch({ profile: emptyOwner, title: `Selection ${number}`, sourceUrl, chapters: [chapter(number)], expectedDraftId: null })))
+    expect(attempts.filter(result => result.status === 'fulfilled')).toHaveLength(1)
+    expect(attempts.filter(result => result.status === 'rejected')).toMatchObject([{ reason: { code: 'BATCH_STALE' } }])
+    expect((await loadChapterBatch(emptyOwner))?.id).toBe((attempts.find(result => result.status === 'fulfilled') as PromiseFulfilledResult<Awaited<ReturnType<typeof createChapterBatch>>>).value.id)
+  })
+
   it('does not commit an old response after a newer batch replaces it during a request', async () => {
     const owner = profile(), old = await create(owner, [1])
     let release: (() => void) | undefined
@@ -148,6 +189,92 @@ describe('persistent selected-chapter batches', () => {
 })
 
 describe('selected-chapter EPUB output', () => {
+  it('bundles both complete sans font families and their licenses with offline CSS and content-based mixed-language markers', async () => {
+    const title = 'A research collection'
+    const viText = 'Tiếng Việt cần giữ đầy đủ dấu và đọc rõ ràng.'.normalize('NFD')
+    const draft = await createChapterBatch({ profile: profile(), title, sourceUrl, chapters: [chapter(1, 'Chương mở đầu'.normalize('NFD')), chapter(2, 'An English chapter')] })
+    download.mockImplementation(async (url: string) => ({ url, html: `<html lang="en"><body><article lang="en" style="font-family:serif"><p>${prose}</p>${url.includes('chapter-1') ? `<p lang="en">${viText} <em>English emphasis</em></p><pre style="font-family:monospace">Đoạn mã có dấu</pre><code>English code</code>` : ''}</article></body></html>` }))
+    const completed = await runChapterBatch(draft)
+    const zip = await JSZip.loadAsync(await (await buildChapterEpub(completed)).arrayBuffer())
+    const parse = async (path: string) => new DOMParser().parseFromString(await zip.file(path)!.async('string'), 'application/xml')
+    const packageDoc = await parse('EPUB/package.opf')
+    const items = Array.from(packageDoc.querySelectorAll('manifest > item'))
+    const fonts = items.filter(item => item.getAttribute('media-type') === 'font/ttf')
+    expect(fonts).toHaveLength(8)
+    for (const font of fonts) {
+      const path = font.getAttribute('href')!
+      expect(await zip.file(`EPUB/${path}`)!.async('uint8array')).toEqual(fontBytes(path.split('/').pop()!))
+    }
+    const cssItem = items.find(item => item.getAttribute('media-type') === 'text/css')!
+    const cssPath = `EPUB/${cssItem.getAttribute('href')}`
+    const css = await zip.file(cssPath)!.async('string')
+    expect(css.match(/@font-face/g)).toHaveLength(8)
+    expect(css).toContain(':lang(vi) { font-family: "Be Vietnam Pro", sans-serif; }')
+    expect(css).toContain(':lang(en) { font-family: "Plus Jakarta Sans", sans-serif; }')
+    expect(css).toContain('html, body, pre, code')
+    expect(css).not.toMatch(/monospace|https?:|@import|local\(/)
+    const xmlNs = 'http://www.w3.org/XML/1998/namespace'
+    const first = await parse('EPUB/chapter-1.xhtml'), second = await parse('EPUB/chapter-2.xhtml'), nav = await parse('EPUB/nav.xhtml')
+    expect(first.documentElement.getAttribute('lang')).toBe('vi')
+    expect(first.documentElement.getAttributeNS(xmlNs, 'lang')).toBe('vi')
+    expect(second.documentElement.getAttribute('lang')).toBe('en')
+    const paragraph = Array.from(first.querySelectorAll('p')).find(node => node.textContent?.includes(viText))!
+    expect(paragraph.getAttribute('lang')).toBe('vi')
+    expect(paragraph.getAttributeNS(xmlNs, 'lang')).toBe('vi')
+    expect(paragraph.querySelector('em')?.getAttribute('lang')).toBe('en')
+    expect(first.querySelector('pre')?.getAttribute('lang')).toBe('vi')
+    expect(first.querySelector('code')?.getAttribute('lang')).toBe('en')
+    expect(first.querySelector('title')?.getAttribute('lang')).toBe('vi')
+    expect(first.querySelector('body > p:last-child a')?.getAttribute('lang')).toBe('en')
+    expect(first.querySelector('body > p:last-child a')?.getAttribute('href')).toBe('https://novels.example.org/story/chapter-1')
+    expect(first.querySelector('[style], [face]')).toBeNull()
+    expect(nav.documentElement.getAttribute('lang')).toBe('vi')
+    expect(nav.querySelector('h1')?.getAttribute('lang')).toBe('en')
+    expect(Array.from(nav.querySelectorAll('nav a')).map(node => node.getAttribute('lang'))).toEqual(['vi', 'en'])
+    expect(Array.from(packageDoc.getElementsByTagNameNS('http://purl.org/dc/elements/1.1/', 'language')).map(node => node.textContent)).toEqual(['vi', 'en'])
+    expect(packageDoc.getElementsByTagNameNS('http://purl.org/dc/elements/1.1/', 'source')[0].textContent).toBe('https://novels.example.org/story')
+    expect(items.filter(item => item.id.startsWith('license-'))).toHaveLength(2)
+    for (const item of items.filter(item => item.getAttribute('media-type') === 'application/xhtml+xml')) {
+      const path = `EPUB/${item.getAttribute('href')}`, doc = await parse(path)
+      expect(doc.querySelector('parsererror'), path).toBeNull()
+      const href = doc.querySelector('link[rel="stylesheet"]')?.getAttribute('href')
+      expect(href, path).toBeTruthy()
+      expect(new URL(href!, `https://epub.invalid/${path}`).pathname).toBe(`/${cssPath}`)
+      if (item.id.startsWith('license-')) expect(doc.documentElement.textContent).toContain('SIL OPEN FONT LICENSE')
+    }
+    expect(bundledFontFetch).toHaveBeenCalledTimes(8)
+    for (const [, options] of bundledFontFetch.mock.calls) expect(options).toMatchObject({ credentials: 'omit' })
+  })
+
+  it('keeps downloaded chapters when bundled fonts fail, rejects HTML masquerading as a font and allows export retry', async () => {
+    const completed = await runChapterBatch(await create(profile(), [1]))
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false })))
+    await expect(buildChapterEpub(completed)).rejects.toMatchObject({ code: 'EPUB_FONT_UNAVAILABLE' })
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, arrayBuffer: async () => new TextEncoder().encode('<html>not a font</html>').buffer })))
+    await expect(buildChapterEpub(completed)).rejects.toMatchObject({ code: 'EPUB_FONT_UNAVAILABLE' })
+    expect((await loadChapterBatch(completed.profile))?.chapters[0].status).toBe('done')
+    vi.stubGlobal('fetch', bundledFontFetch)
+    expect((await buildChapterEpub(completed)).type).toBe('application/epub+zip')
+  })
+
+  it('cancels an in-progress bundled font fetch without downloading source pages or losing saved chapters', async () => {
+    const completed = await runChapterBatch(await create(profile(), [1])), controller = new AbortController()
+    download.mockClear()
+    const pendingFont = vi.fn((_url: string, options: RequestInit) => new Promise((_resolve, reject) => {
+      options.signal?.addEventListener('abort', () => reject(options.signal?.reason), { once: true })
+    }))
+    vi.stubGlobal('fetch', pendingFont)
+    const output = buildChapterEpub(completed, { signal: controller.signal })
+    const aborted = expect(output).rejects.toMatchObject({ name: 'AbortError' })
+    await vi.waitFor(() => expect(pendingFont).toHaveBeenCalledTimes(1))
+    controller.abort(new DOMException('Export cancelled', 'AbortError'))
+    await aborted
+    expect(download).not.toHaveBeenCalled()
+    expect((await loadChapterBatch(completed.profile))?.chapters[0].status).toBe('done')
+    vi.stubGlobal('fetch', bundledFontFetch)
+    expect((await buildChapterEpub(completed)).type).toBe('application/epub+zip')
+  })
+
   it('exports persisted successes in selection order as safe, valid EPUB with navigation and escaped titles', async () => {
     const draft = await createChapterBatch({ profile: profile(), title: 'Research & <Reading> "Notes"', sourceUrl, chapters: [chapter(501, '501: A & B'), chapter(502), chapter(503, '503: <The End>')] })
     download.mockImplementation(async (url: string) => {

@@ -7,6 +7,8 @@ same-origin Pages Function; deploying the web does not deploy the backend or And
 
 ## Run locally
 
+Typography is mandatory: all product text is sans-serif; Vietnamese uses Be Vietnam Pro and English uses Plus Jakarta Sans as separate bundled families. See [the typography policy](docs/typography-policy.md) and `AGENTS.md` before changing text styles.
+
 Requires Node.js 22+.
 
 ```powershell
@@ -381,3 +383,7 @@ Renewal/repeat-purchase metrics are intentionally omitted. See
   and [Worker streams](https://developers.cloudflare.com/workers/runtime-apis/streams/).
 - Browser sessions and cached files are scoped to the origin and account. Files
   under localhost or a temporary tunnel do not automatically appear on production.
+
+### Android download callout
+
+On the home page, Android browsers can open the store page provided for the Android app. The current default is `https://apkpure.com/p/com.nocap.app`; it is a link to the existing listing and does not indicate that a new build has been published. Set `VITE_ANDROID_DOWNLOAD_URL` at build time to override it with a verified HTTPS page. An explicitly empty, malformed, non-HTTPS, or credential-bearing value hides the callout. The app does not assume that a visitor is using Android based on viewport width.

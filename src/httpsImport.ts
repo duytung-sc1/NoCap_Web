@@ -1,6 +1,8 @@
 import type { Lang } from './i18n'
 import { HttpsImportError, IMPORT_TIMEOUT_MS, MAX_HTML_BYTES, MAX_PUBLICATION_BYTES, publicationMediaTypes, publicationUrl, safePublicationName, suggestedPublicationName } from '../shared/httpsPublication'
 import { chapterIndexUrl, MAX_CHAPTER_INDEX_BYTES } from '../shared/chapterImport'
+import { restoreStreamedHtml } from './streamedHtml'
+import { checkSourceAccess } from './sourceAccess'
 
 export type ImportProgress = { received: number; total?: number }
 
@@ -8,7 +10,11 @@ const messages: Record<string, [string, string]> = {
   INVALID_URL: ['Liên kết không hợp lệ. Hãy nhập địa chỉ HTTPS đầy đủ.', 'Invalid link. Enter a complete HTTPS URL.'],
   HTTPS_REQUIRED: ['Chỉ hỗ trợ liên kết HTTPS.', 'Only HTTPS links are supported.'],
   PUBLIC_URL_REQUIRED: ['Hãy dùng link HTTPS công khai, không chứa tài khoản, mật khẩu hoặc địa chỉ mạng nội bộ.', 'Use a public HTTPS link without a username, password or internal network address.'],
-  SOURCE_UNAVAILABLE: ['Không tải được từ nguồn này. Hãy dùng link tải trực tiếp, công khai, không yêu cầu đăng nhập.', 'Could not download from this source. Use a public direct link that does not require signing in.'],
+  SOURCE_UNAVAILABLE: ['Không kết nối hoặc tải được trang nguồn. Kiểm tra liên kết và mạng rồi thử lại.', 'Could not connect to or download the source page. Check the link and connection, then retry.'],
+  SOURCE_AUTH_REQUIRED: ['Nguồn yêu cầu đăng nhập trước khi đọc. Hãy dùng nguồn hoặc tệp công khai mà bạn có quyền truy cập.', 'The source requires signing in before reading. Use an accessible public source or a file you can access.'],
+  SOURCE_BLOCKED: ['Nguồn từ chối yêu cầu tải hoặc đang yêu cầu xác minh trình duyệt. NoCap chưa đọc được nguồn này.', 'The source rejected the download or requires browser verification. NoCap cannot read this source.'],
+  SOURCE_NOT_FOUND: ['Trang nguồn không còn tồn tại hoặc liên kết không đúng. Hãy kiểm tra lại địa chỉ mục lục hoặc chương.', 'The source page was not found. Check the table of contents or chapter URL.'],
+  SOURCE_RATE_LIMITED: ['Nguồn đang giới hạn lượt truy cập. Hãy đợi một lúc rồi thử lại.', 'The source is limiting requests. Wait before retrying.'],
   TOO_MANY_REDIRECTS: ['Liên kết chuyển hướng quá nhiều lần. Hãy dùng link tải trực tiếp.', 'Too many redirects. Use a direct download link.'],
   DOWNLOAD_TIMEOUT: ['Tải quá lâu. Kiểm tra mạng hoặc thử lại với tệp nhỏ hơn.', 'Download timed out. Check your connection or try a smaller file.'],
   FILE_TOO_LARGE: ['Tệp vượt giới hạn 250 MB.', 'The file exceeds the 250 MB limit.'],
@@ -16,15 +22,17 @@ const messages: Record<string, [string, string]> = {
   UNSUPPORTED_FORMAT: ['Không nhận diện được tài liệu. Hỗ trợ EPUB, PDF, CBZ, DOCX, TXT, Markdown, HTML, JPG, PNG và WebP.', 'Unrecognized document. Supported: EPUB, PDF, CBZ, DOCX, TXT, Markdown, HTML, JPG, PNG and WebP.'],
   HTML_TOO_LARGE: ['Trang HTML vượt giới hạn 8 MB để trích xuất nội dung.', 'The HTML page exceeds the 8 MB article extraction limit.'],
   HTML_REQUIRED: ['Liên kết này không trả về trang HTML. Hãy dùng đường dẫn trang mục lục hoặc chương truyện.', 'This link does not return an HTML page. Use a table of contents or chapter page URL.'],
-  CHAPTER_CATALOG_EMPTY: ['Không tìm thấy liên kết chương công khai trong mục lục. Trang có thể cần JavaScript hoặc đăng nhập; hãy thử link mục lục khác.', 'No public chapter links were found. The page may require JavaScript or signing in; try another table of contents URL.'],
+  CHAPTER_CATALOG_EMPTY: ['Đã tải được trang nhưng không tìm thấy danh sách chương. Hãy kiểm tra đây có phải trang mục lục hoặc thử liên kết mục lục khác.', 'The page downloaded, but no chapter list was found. Check that this is a table of contents page or try another contents URL.'],
+  CHAPTER_DYNAMIC_UNSUPPORTED: ['Trang dùng điều khiển JavaScript để tải mục lục, nhưng NoCap chưa nhận diện được danh sách chương của nguồn này.', 'The page loads its contents through JavaScript controls, but NoCap does not yet recognize this source chapter list.'],
   CHAPTER_INDEX_INVALID: ['Danh sách chương từ nguồn không khớp hoặc đã thay đổi. Hãy quét lại mục lục.', 'The source chapter index is inconsistent or has changed. Scan the table of contents again.'],
   BATCH_TOO_LARGE: ['Nội dung các chương vượt tổng giới hạn 50 MB. Hãy chia thành nhiều tập nhỏ hơn.', 'The selected chapters exceed the combined 50 MB limit. Split them into smaller volumes.'],
   BATCH_STALE: ['Đợt tải đã được thay thế hoặc cập nhật ở cửa sổ khác. Hãy mở lại phần nhập truyện.', 'This download was replaced or changed in another window. Reopen chapter import.'],
   BATCH_STORAGE_FAILED: ['Không lưu được tiến độ tải trong trình duyệt. Kiểm tra dung lượng và quyền lưu trữ rồi thử lại.', 'Could not save download progress in this browser. Check available storage and storage permissions, then retry.'],
   BATCH_EMPTY: ['Chưa tải xong chương nào để tạo sách. Hãy tải hoặc thử lại các chương trước.', 'No chapters have completed. Download or retry chapters before creating a book.'],
+  EPUB_FONT_UNAVAILABLE: ['Không tải được phông chữ đi kèm để tạo EPUB. Kiểm tra kết nối rồi thử tạo sách lại; các chương đã tải vẫn được giữ.', 'Could not load the bundled fonts for EPUB. Check your connection and try creating the book again; downloaded chapters are kept.'],
   BATCH_TOO_MANY: ['Hãy chọn từ 1 đến 500 chương trong mỗi đợt tải.', 'Select between 1 and 500 chapters per download.'],
   BATCH_INVALID: ['Danh sách chương hoặc khoảng đã chọn không hợp lệ. Hãy quét lại mục lục và chọn lại.', 'The chapter list or selected range is invalid. Scan the table of contents and select again.'],
-  NO_ARTICLE: ['Không tìm thấy nội dung chính để đọc. Trang có thể chỉ chứa liên kết hoặc yêu cầu đăng nhập.', 'No readable article found. The page may contain only links or require signing in.'],
+  NO_ARTICLE: ['Đã tải được trang nhưng không tách được nội dung chính để đọc. Hãy kiểm tra liên kết có trỏ tới một chương hoặc bài viết.', 'The page downloaded, but no readable main content could be extracted. Check that the link points to a chapter or article.'],
   SAVE_FAILED: ['Không lưu được tài liệu. Kiểm tra bộ nhớ trình duyệt rồi thử lại.', 'Could not save the document. Check browser storage and try again.'],
   ORIGIN_REJECTED: ['Không tải được từ trang này. Hãy mở lại NoCap rồi thử lại.', 'Download unavailable from this page. Reopen NoCap and try again.'],
 }
@@ -38,12 +46,14 @@ export function httpsImportMessage(error: unknown, lang: Lang): string {
 export async function extractArticle(file: Blob): Promise<{ html: string; title: string }> {
   if (file.size > MAX_HTML_BYTES) throw new HttpsImportError('HTML_TOO_LARGE')
   const { default: DOMPurify } = await import('dompurify')
-  const clean = DOMPurify.sanitize(await file.text(), {
-    ALLOWED_TAGS: ['title', 'main', 'article', 'section', 'div', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'pre', 'code', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'br', 'hr', 'strong', 'b', 'em', 'i', 'u', 'a', 'nav', 'aside', 'header', 'footer'],
+  const source = await file.text()
+  const clean = DOMPurify.sanitize(source, {
+    ALLOWED_TAGS: ['title', 'main', 'article', 'section', 'div', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'pre', 'code', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'br', 'hr', 'strong', 'b', 'em', 'i', 'u', 'a', 'nav', 'aside', 'header', 'footer', 'template'],
     ALLOWED_ATTR: ['id', 'class', 'itemprop', 'role', 'hidden', 'aria-hidden'],
     WHOLE_DOCUMENT: true,
   })
   const document = new DOMParser().parseFromString(clean, 'text/html')
+  restoreStreamedHtml(document, source)
   const title = document.title.trim()
   const noise = /(^|[-_\s])(ads?|advert(?:isement|ising)?|banner|promo|related|recommend(?:ed|ations)?|comments?|social|share|breadcrumb|pagination|chapter-nav|menu|sidebar|cookie|popup|modal)([-_\s]|$)/i
   document.querySelectorAll('nav, aside, header, footer, [hidden], [aria-hidden="true"]').forEach(node => node.remove())
@@ -195,6 +205,7 @@ export async function downloadHttpsHtml(raw: string, options: { signal?: AbortSi
   options.signal?.throwIfAborted()
   if (!['text/html', 'application/xhtml+xml', 'text/plain', 'application/octet-stream', ''].includes(mediaType)
     || !/<(?:!doctype\s+html|html|head|body|title|main|article|div|ul|ol|a)\b/i.test(html.slice(0, 8192))) throw new HttpsImportError('HTML_REQUIRED')
+  checkSourceAccess(html)
   return { html, url: response.url }
 }
 

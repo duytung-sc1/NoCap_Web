@@ -31,6 +31,24 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
 
 describe('persistent web login', () => {
+  it('keeps administrator tokens out of persistent storage even when Remember me is requested', () => {
+    const admin = { ...session, privileged: true }
+    saveSession(admin, true)
+    expect(persistent.getItem(SESSION_STORAGE_KEY)).toBe('null')
+    expect(readSession()).toEqual(admin)
+    saveSession({ ...admin, user: { ...admin.user, displayName: 'Administrator' } })
+    expect(persistent.getItem(SESSION_STORAGE_KEY)).toBe('null')
+    expect(readSession()?.privileged).toBe(true)
+  })
+
+  it('moves a previously persisted privileged session to tab-only storage', () => {
+    const admin = { ...session, privileged: true }
+    persistent.setItem(SESSION_STORAGE_KEY, JSON.stringify(admin))
+    expect(readSession()).toEqual(admin)
+    expect(persistent.getItem(SESSION_STORAGE_KEY)).toBe('null')
+    tab.clear()
+    expect(readSession()).toBeNull()
+  })
   it('restores the same account and expiry after the old tab storage is gone', () => {
     saveSession(session)
     tab.clear()

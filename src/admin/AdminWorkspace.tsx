@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { BarChart3, BookOpen, CreditCard, Database, History, LayoutDashboard, Megaphone, Plus, RefreshCw, Tags, Users } from 'lucide-react'
+import { BarChart3, BookOpen, CreditCard, Database, History, LayoutDashboard, Megaphone, Plus, RefreshCw, ShieldCheck, Tags, Users } from 'lucide-react'
 import { ANNOUNCEMENTS_UPDATED_EVENT, ApiError } from '../api'
 import type { Lang } from '../i18n'
 import { adminRequest, type AdminCategory, type AdminIdentity, type AdminUser, type Announcement, type AuditEntry, type CatalogRow, type Conflict, type Overview, type PageResult, type StorageScan } from './api'
@@ -8,8 +8,9 @@ import { adminError } from './errors'
 import { AdminTransactions } from './AdminTransactions'
 import { AdminAnalytics } from './AdminAnalytics'
 import { AdminPayments } from './AdminPayments'
+import { AdminSecurity } from './AdminSecurity'
 
-type View = 'overview' | 'analytics' | 'payments' | 'catalog' | 'categories' | 'users' | 'announcements' | 'storage' | 'audit'
+type View = 'overview' | 'analytics' | 'payments' | 'catalog' | 'categories' | 'users' | 'announcements' | 'storage' | 'audit' | 'security'
 type Dataset = { overview?: Overview; catalog?: PageResult<CatalogRow>; categories?: PageResult<AdminCategory>; users?: PageResult<AdminUser>; announcements?: PageResult<Announcement>; audit?: PageResult<AuditEntry> }
 type Modal = { kind: 'book'; row?: CatalogRow } | { kind: 'category'; item?: AdminCategory }
   | { kind: 'announcement'; item?: Announcement } | { kind: 'conflicts'; user: AdminUser } | { kind: 'transactions'; user: AdminUser } | { kind: 'avatar' }
@@ -88,12 +89,13 @@ export default function AdminWorkspace({ token, admin, lang, onSignIn, onCatalog
     { id: 'announcements' as const, label: text('Thông báo', 'Announcements'), icon: Megaphone },
     { id: 'storage' as const, label: text('Dung lượng R2', 'R2 storage'), icon: Database },
     { id: 'audit' as const, label: text('Lịch sử thao tác', 'Audit log'), icon: History },
+    { id: 'security' as const, label: text('Bảo mật admin', 'Administrator security'), icon: ShieldCheck },
   ]
   const title = sections.find(section => section.id === view)!.label
   const date = (value?: string | number | null) => value ? new Date(value).toLocaleString(lang === 'vi' ? 'vi-VN' : 'en-US') : '—'
   const button = (label: string, onClick: () => void, disabled = false) => <button type="button" className="secondary" disabled={disabled || busy} onClick={onClick}>{label}</button>
   const handleFailure = (error: unknown) => {
-    if (error instanceof ApiError && error.status === 401) setReauth(true)
+    if (error instanceof ApiError && error.status === 401 && !['INVALID_PASSWORD','MFA_INVALID'].includes(error.code || '')) setReauth(true)
     if (error instanceof ApiError && error.status === 403 && ['ADMIN_REQUIRED', 'FORBIDDEN', 'EMAIL_NOT_VERIFIED'].includes(error.code || '')) { setModal(null); onAccessLost() }
     return adminError(error, lang)
   }
@@ -103,7 +105,7 @@ export default function AdminWorkspace({ token, admin, lang, onSignIn, onCatalog
   }, [token])
   useEffect(() => {
     const controller = new AbortController()
-    const paths: Record<View, string> = { overview: 'overview', analytics: '', payments: '', catalog: `catalog?page=${page}&q=${encodeURIComponent(search)}`, categories: 'categories', users: `users?page=${page}&q=${encodeURIComponent(search)}`, announcements: 'announcements', storage: '', audit: `audit?page=${page}` }
+    const paths: Record<View, string> = { overview: 'overview', analytics: '', payments: '', security: '', catalog: `catalog?page=${page}&q=${encodeURIComponent(search)}`, categories: 'categories', users: `users?page=${page}&q=${encodeURIComponent(search)}`, announcements: 'announcements', storage: '', audit: `audit?page=${page}` }
     const path = paths[view]
     void (path ? adminRequest<unknown>(token, path, controller.signal) : Promise.resolve(null)).then(value => {
       if (!controller.signal.aborted) { setResource({ key, data: path ? { [view]: value } : {} }); setAnnouncementNow(Date.now()) }
@@ -221,6 +223,7 @@ export default function AdminWorkspace({ token, admin, lang, onSignIn, onCatalog
       {loading && view !== 'analytics' && view !== 'payments' && <p role="status">{text('Đang tải dữ liệu…', 'Loading data…')}</p>}
       {view === 'analytics' && <AdminAnalytics token={token} lang={lang} onError={handleFailure} onSignIn={signInAgain} />}
       {view === 'payments' && <AdminPayments token={token} lang={lang} onError={handleFailure} onSignIn={signInAgain} />}
+      {view === 'security' && <AdminSecurity key={`${token}:${lang}:${revision}`} token={token} lang={lang} onFailure={handleFailure} />}
       {loaded?.error && <div role="alert" className="admin-notice"><p>{loaded.error}</p>{button(text('Thử lại', 'Retry'), () => setRevision(n => n + 1))}</div>}
       {data?.overview && <><div className="admin-metrics">{[
         [text('Sách', 'Books'), data.overview.books], [text('Thể loại', 'Categories'), data.overview.categories], [text('Người dùng', 'Users'), data.overview.users],

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { discoverChapters } from './chapterDiscovery'
 import { downloadHttpsChapterIndex, downloadHttpsHtml } from './httpsImport'
 import { MAX_CATALOG_PAGES } from '../shared/chapterImport'
+import { HttpsImportError } from '../shared/httpsPublication'
 
 vi.mock('./httpsImport', async importOriginal => ({ ...await importOriginal<typeof import('./httpsImport')>(), downloadHttpsHtml: vi.fn(), downloadHttpsChapterIndex: vi.fn() }))
 const downloader = vi.mocked(downloadHttpsHtml)
@@ -14,6 +15,12 @@ beforeEach(() => { downloader.mockReset(); indexDownloader.mockReset() })
 afterEach(() => { vi.useRealTimers() })
 
 describe('chapter catalog discovery', () => {
+  it('recovers delivered suspense links and reads numbers split from chapter titles', async () => {
+    downloader.mockResolvedValue({ url: base, html: '<h1>Example</h1><template id="B:0"></template><div hidden id="S:0"><a href="/story/chapter-201"><span>201</span><span>First title</span></a><a href="/story/chapter-202">Second title</a></div><div hidden><a href="/story/chapter-999">Hidden chapter</a></div><script>$RC("B:0","S:0")</script>' })
+    const result = await discoverChapters(base)
+    expect(result.chapters.map(chapter => chapter.number)).toEqual([201, 202])
+    expect(result.chapters[0].title).toBe('201 First title')
+  })
   it('collects all 1,200 actual links in reading order so any middle range can be selected', async () => {
     const numbers = Array.from({ length: 1200 }, (_, index) => 1200 - index)
     downloader.mockResolvedValue({ html: `<title>A long novel</title><h1>A long novel</h1>${chapters(...numbers)}`, url: base })
@@ -26,6 +33,7 @@ describe('chapter catalog discovery', () => {
     expect(middle[199]).toMatchObject({ number: 700, url: `${base}/chapter-700` })
     expect(downloader).toHaveBeenCalledTimes(1)
     expect(catalog.truncated).toBe(false)
+    expect(catalog.diagnostics).toEqual({ format: 'html', completeness: 'unverified', warnings: [] })
   })
 
   it('resolves relative links against the final redirected URL and removes hostile or unrelated links', async () => {
@@ -80,7 +88,17 @@ describe('chapter catalog discovery', () => {
       .mockRejectedValueOnce(new Error('source unavailable'))
     const result = discoverChapters(base)
     await vi.runAllTimersAsync()
-    expect((await result)).toMatchObject({ truncated: true, chapters: [{ number: 1 }, { number: 2 }] })
+    expect((await result)).toMatchObject({ truncated: true, chapters: [{ number: 1 }, { number: 2 }], diagnostics: { completeness: 'partial', warnings: [{ code: 'page-failed', errorCode: 'SOURCE_UNAVAILABLE' }] } })
+  })
+
+  it('distinguishes a later rate-limited page from a scan limit while preserving the usable list', async () => {
+    vi.useFakeTimers()
+    downloader.mockResolvedValueOnce({ url: base, html: `${chapters(1, 2)}<nav class="pagination"><a href="?page=2">2</a><a href="?page=3">3</a></nav>` })
+      .mockRejectedValueOnce(new HttpsImportError('SOURCE_RATE_LIMITED'))
+    const result = discoverChapters(base)
+    await vi.runAllTimersAsync()
+    expect((await result).diagnostics).toEqual({ format: 'html', completeness: 'partial', warnings: [{ code: 'page-failed', errorCode: 'SOURCE_RATE_LIMITED' }] })
+    expect(downloader).toHaveBeenCalledTimes(2)
   })
 
   it('caps catalog traversal and reports truncation', async () => {
@@ -95,6 +113,7 @@ describe('chapter catalog discovery', () => {
     expect(catalog.pages).toHaveLength(MAX_CATALOG_PAGES)
     expect(downloader).toHaveBeenCalledTimes(MAX_CATALOG_PAGES)
     expect(catalog.truncated).toBe(true)
+    expect(catalog.diagnostics?.warnings).toContainEqual({ code: 'page-limit' })
   })
 
   it('stops pagination promptly when canceled and rejects instead of returning a partial catalog', async () => {
@@ -117,7 +136,86 @@ describe('chapter catalog discovery', () => {
     const catalog = await discoverChapters(base)
     expect(catalog.chapters).toHaveLength(4)
     expect(catalog.truncated).toBe(true)
+    expect(catalog.diagnostics).toMatchObject({ completeness: 'partial', warnings: [{ code: 'dynamic-pagination' }] })
     expect(indexDownloader).not.toHaveBeenCalled()
+  })
+
+  it('reports unsupported client-side controls separately from a plain page without chapter links', async () => {
+    downloader.mockResolvedValue({ url: base, html: '<h1>A book</h1><button aria-label="Trang 2">2</button>' })
+    await expect(discoverChapters(base)).rejects.toMatchObject({ code: 'CHAPTER_DYNAMIC_UNSUPPORTED' })
+  })
+})
+
+describe('TruyenDich public catalog pages', () => {
+  const source = 'https://truyendich.space/doc-truyen/example-novel'
+  function page(current: number, total = 101, editionPrefix = '') {
+    const root = `/doc-truyen${editionPrefix}/example-novel`
+    const items = Array.from({ length: Math.min(50, Math.max(0, total - (current - 1) * 50)) }, (_, index) => ({ chapter_number: (current - 1) * 50 + index + 1, title: `Synthetic title ${index}` }))
+    const props = { slug: 'example-novel', editionPrefix, novelTitle: 'Synthetic novel', initialData: { page: current, size: 50, total, items } }
+    const record = '2c:' + JSON.stringify(['$', 'div', null, props]) + '\n'
+    return `<h1>Synthetic novel</h1><template id="B:0"></template><div hidden id="S:0"><section><a href="${root}/chuong-9999">9999 Latest chapter</a></section><section>${items.map(item => `<a href="${root}/chuong-${item.chapter_number}"><span>${item.chapter_number}</span><span>${item.title}</span></a>`).join('')}<button>1 - 200</button></section></div><script>$RC("B:0","S:0")</script><script>self.__next_f.push(${JSON.stringify([1, record])})</script>`
+  }
+
+  it('starts from a middle page, follows catalog controls and excludes the separate latest-chapter list', async () => {
+    vi.useFakeTimers()
+    downloader.mockImplementation(async url => ({ url, html: page(Number(url.match(/trang-(\d+)/)?.[1] || 1)) }))
+    const work = discoverChapters(`${source}/trang-2`)
+    await vi.runAllTimersAsync()
+    const catalog = await work
+    expect(catalog.title).toBe('Synthetic novel')
+    expect(catalog.chapters).toHaveLength(101)
+    expect(catalog.chapters[0].number).toBe(1)
+    expect(catalog.chapters.at(-1)!.number).toBe(101)
+    expect(catalog.chapters.some(chapter => chapter.number === 9999)).toBe(false)
+    expect(catalog.truncated).toBe(false)
+    expect(catalog.diagnostics).toEqual({ format: 'streamed-html', completeness: 'verified', expectedChapters: 101, warnings: [] })
+    expect(downloader.mock.calls.map(([url]) => url)).toEqual([`${source}/trang-2`, source, `${source}/trang-3`])
+    expect(indexDownloader).not.toHaveBeenCalled()
+  })
+
+  it('keeps the selected translation edition when following page controls', async () => {
+    vi.useFakeTimers()
+    const edition = source.replace('/doc-truyen/', '/doc-truyen/ai/')
+    downloader.mockImplementation(async url => ({ url, html: page(Number(url.match(/trang-(\d+)/)?.[1] || 1), 51, '/ai') }))
+    const work = discoverChapters(edition)
+    await vi.runAllTimersAsync()
+    const catalog = await work
+    expect(catalog.chapters).toHaveLength(51)
+    expect(catalog.chapters.every(chapter => chapter.url.startsWith(edition + '/'))).toBe(true)
+    expect(downloader.mock.calls.map(([url]) => url)).toEqual([edition, `${edition}/trang-2`])
+  })
+
+  it('can start at a last page with a single chapter and verifies the full expected count', async () => {
+    vi.useFakeTimers()
+    downloader.mockImplementation(async url => ({ url, html: page(Number(url.match(/trang-(\d+)/)?.[1] || 1)) }))
+    const work = discoverChapters(`${source}/trang-3`)
+    await vi.runAllTimersAsync()
+    const catalog = await work
+    expect(catalog.chapters).toHaveLength(101)
+    expect(catalog.diagnostics).toMatchObject({ completeness: 'verified', expectedChapters: 101, warnings: [] })
+  })
+
+  it('keeps earlier chapters and reports a changed source total instead of claiming verification', async () => {
+    vi.useFakeTimers()
+    downloader.mockResolvedValueOnce({ url: source, html: page(1) }).mockResolvedValueOnce({ url: `${source}/trang-2`, html: page(2, 102) })
+    const work = discoverChapters(source)
+    await vi.runAllTimersAsync()
+    const catalog = await work
+    expect(catalog.chapters).toHaveLength(50)
+    expect(catalog.diagnostics).toEqual({ format: 'streamed-html', completeness: 'partial', expectedChapters: 101, warnings: [{ code: 'catalog-changed' }] })
+  })
+
+  it('rejects metadata without real delivered links instead of inventing chapter URLs', async () => {
+    downloader.mockResolvedValue({ url: source, html: page(1).replace('href="/doc-truyen/example-novel/chuong-1"', 'href="/unrelated"') })
+    await expect(discoverChapters(source)).rejects.toMatchObject({ code: 'CHAPTER_INDEX_INVALID' })
+  })
+
+  it('marks a catalog partial when a later page fails', async () => {
+    vi.useFakeTimers()
+    downloader.mockResolvedValueOnce({ url: source, html: page(1) }).mockRejectedValueOnce(new Error('unavailable'))
+    const work = discoverChapters(source)
+    await vi.runAllTimersAsync()
+    expect(await work).toMatchObject({ truncated: true, chapters: expect.arrayContaining([expect.objectContaining({ number: 1 })]) })
   })
 })
 
@@ -148,6 +246,7 @@ describe('SSTruyen public chapter index adapter', () => {
     expect(catalog.chapters.at(-1)).toMatchObject({ number: 53, url: href(entry(53)) })
     expect(catalog.chapters.find(chapter => chapter.number === 25)).toBeUndefined()
     expect(catalog.truncated).toBe(false)
+    expect(catalog.diagnostics).toEqual({ format: 'public-index', completeness: 'verified', expectedChapters: 52, warnings: [] })
     expect(indexDownloader.mock.calls.map(([url]) => url)).toEqual([
       'https://api.sstruyen.pics/novels/77/chapters?page=1&keyword=&limit=50&sort=asc',
       'https://api.sstruyen.pics/novels/77/chapters?page=2&keyword=&limit=50&sort=asc',
@@ -173,6 +272,29 @@ describe('SSTruyen public chapter index adapter', () => {
     expect(await result).toMatchObject({ truncated: true, chapters: expect.arrayContaining([{ url: href(pageOne[0]), title: pageOne[0].name, number: 1 }]) })
   })
 
+  it('keeps an explicitly partial static fallback when the public index is blocked at its first page', async () => {
+    vi.useFakeTimers()
+    downloader.mockResolvedValue({ url: source, html: html() })
+    indexDownloader.mockRejectedValueOnce(new HttpsImportError('SOURCE_BLOCKED'))
+    const work = discoverChapters(source)
+    await vi.runAllTimersAsync()
+    const catalog = await work
+    expect(catalog.chapters.length).toBeGreaterThan(0)
+    expect(catalog.diagnostics).toEqual({ format: 'public-index', completeness: 'partial', warnings: [{ code: 'page-failed', errorCode: 'SOURCE_BLOCKED' }] })
+  })
+
+  it('retains earlier index pages when later metadata becomes inconsistent', async () => {
+    vi.useFakeTimers()
+    downloader.mockResolvedValue({ url: source, html: html() })
+    indexDownloader.mockResolvedValueOnce({ chapters: pageOne, total: 52, page: 1, totalPages: 2, hasNext: true })
+      .mockResolvedValueOnce({ chapters: pageTwo, total: 53, page: 2, totalPages: 2, hasNext: false })
+    const work = discoverChapters(source)
+    await vi.runAllTimersAsync()
+    const catalog = await work
+    expect(catalog.chapters).toHaveLength(50)
+    expect(catalog.diagnostics).toEqual({ format: 'public-index', completeness: 'partial', expectedChapters: 52, warnings: [{ code: 'catalog-changed' }] })
+  })
+
   it('never evaluates non-JSON flight expressions or enables the adapter for an unrelated host', async () => {
     const malicious = '<script>self.__next_f.push((window.compromised = true, [1,"anything"]))</script>'
     downloader.mockResolvedValue({ url: source, html: `<h1>Example</h1>${chapters(1, 2)}${malicious}<button aria-label="Trang 2">2</button>` })
@@ -180,7 +302,7 @@ describe('SSTruyen public chapter index adapter', () => {
     expect((window as unknown as { compromised?: boolean }).compromised).toBeUndefined()
     expect(indexDownloader).not.toHaveBeenCalled()
     downloader.mockResolvedValue({ url: base, html: html() })
-    await expect(discoverChapters(base)).rejects.toMatchObject({ code: 'CHAPTER_CATALOG_EMPTY' })
+    await expect(discoverChapters(base)).rejects.toMatchObject({ code: 'CHAPTER_DYNAMIC_UNSUPPORTED' })
     expect(indexDownloader).not.toHaveBeenCalled()
   })
 })

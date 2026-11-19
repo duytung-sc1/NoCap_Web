@@ -12,13 +12,11 @@
     "deploy": "npm run build && wrangler pages deploy dist --project-name nocap-web --branch main --commit-dirty=true"
   },
   "dependencies": {
-    "@fontsource-variable/literata": "^5.3.0",
     "@fontsource-variable/plus-jakarta-sans": "5.3.0",
-    "@fontsource/atkinson-hyperlegible": "^5.3.0",
     "@fontsource/be-vietnam-pro": "5.3.0",
     "@noble/hashes": "^2.4.0",
     "@types/jszip": "^3.4.0",
-    "dompurify": "^3.4.16",
+    "dompurify": "3.4.17",
     "epubjs": "^0.3.93",
     "idb": "^8.0.3",
     "jszip": "^3.10.2",
@@ -27,6 +25,7 @@
     "marked": "18.1.1",
     "pdfjs-dist": "^6.3.289",
     "pdfmake": "0.3.11",
+    "qrcode": "1.5.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
@@ -34,6 +33,7 @@
     "@testing-library/react": "^16.3.3",
     "@types/node": "^24.13.3",
     "@types/pdfmake": "0.3.3",
+    "@types/qrcode": "1.5.6",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",

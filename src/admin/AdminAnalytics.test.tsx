@@ -31,6 +31,19 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('Web analytics administrator dashboard', () => {
+  it.each([
+    { lang: 'vi' as const, totalLabel: 'Tổng thời gian tương tác', total: '2 giờ 10 phút 5 giây', averageLabel: 'Tương tác trung bình / phiên', average: '1 phút 1 giây', cohortHint: 'Mới: lần đầu được ghi nhận trong kỳ. Quay lại: đã được ghi nhận trước kỳ và có hoạt động trong kỳ.' },
+    { lang: 'en' as const, totalLabel: 'Total active time', total: '2 hr 10 min 5 sec', averageLabel: 'Average active time / session', average: '1 min 1 sec', cohortHint: 'New: first recorded within this range. Returning: recorded before this range and active within it.' },
+  ])('keeps total-duration seconds visible alongside the exact rounded average in $lang', async ({ lang, totalLabel, total, averageLabel, average, cohortHint }) => {
+    request.mockResolvedValueOnce({ ...report, summary: { ...report.summary, activeMs: 7_805_344, sessions: 129 } })
+    setup({ lang })
+    const totalCard = (await screen.findByText(totalLabel)).closest('article')!
+    expect(within(totalCard).getByText(total)).toBeTruthy()
+    const averageCard = screen.getByText(averageLabel).closest('article')!
+    expect(within(averageCard).getByText(average)).toBeTruthy()
+    expect(screen.getByText(cohortHint)).toBeTruthy()
+  })
+
   it('uses deduplicated server totals, honest browser labels and active time rather than summing the daily series', async () => {
     setup()
     expect(await screen.findByText('Estimated visitors')).toBeTruthy()

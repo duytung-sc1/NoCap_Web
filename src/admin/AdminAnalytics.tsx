@@ -4,6 +4,7 @@ import { ApiError } from '../api'
 import type { Lang } from '../i18n'
 import { adminRequest, type AdminAnalytics as AnalyticsReport, type AdminAnalyticsDays } from './api'
 import { analyticsCsv } from './analyticsCsv'
+import { analyticsDuration } from './analyticsDuration'
 import { AdminAcquisition } from './AdminAcquisition'
 import './AdminAnalytics.css'
 
@@ -55,14 +56,7 @@ function AnalyticsDashboard({ token, lang, onError, onSignIn }: AdminAnalyticsPr
   const loading = !loaded
   const refresh = () => setRevision(value => value + 1)
   const number = (value: number) => numeric(value).toLocaleString(lang === 'vi' ? 'vi-VN' : 'en-US')
-  const duration = (value: number) => {
-    const seconds = Math.round(numeric(value) / 1000)
-    if (seconds < 60) return `${number(seconds)} ${text('giây', 'sec')}`
-    const minutes = Math.floor(seconds / 60), remainder = seconds % 60
-    if (minutes < 60) return `${number(minutes)} ${text('phút', 'min')}${remainder ? ` ${number(remainder)} ${text('giây', 'sec')}` : ''}`
-    const hours = Math.floor(minutes / 60)
-    return `${number(hours)} ${text('giờ', 'hr')}${minutes % 60 ? ` ${number(minutes % 60)} ${text('phút', 'min')}` : ''}`
-  }
+  const duration = (value: number) => analyticsDuration(value, lang)
   const date = (value: string) => new Date(`${value}T00:00:00Z`).toLocaleDateString(lang === 'vi' ? 'vi-VN' : 'en-US', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' })
   const stamp = (value: number) => new Date(value).toLocaleString(lang === 'vi' ? 'vi-VN' : 'en-US', { timeZone: data?.timezone || 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 
@@ -100,7 +94,7 @@ function AnalyticsDashboard({ token, lang, onError, onSignIn }: AdminAnalyticsPr
           [text('Lượt xem trang', 'Page views'), number(data.summary.pageViews), text('Một trình duyệt có thể xem nhiều trang.', 'A browser can generate multiple page views.')],
           [text('Tổng thời gian tương tác', 'Total active time'), duration(data.summary.activeMs), text('Thời gian tab hiển thị, được chọn và có tương tác.', 'Time while the tab is visible, focused and active.')],
           [text('Tương tác trung bình / phiên', 'Average active time / session'), duration(data.summary.sessions > 0 ? data.summary.activeMs / data.summary.sessions : 0), text('Tổng thời gian tương tác chia số phiên.', 'Total active time divided by sessions.')],
-          [text('Trình duyệt mới / quay lại', 'New / returning browsers'), `${number(data.summary.newVisitors)} / ${number(data.summary.returningVisitors)}`, text('Mới: lần đầu trong kỳ. Quay lại: đã ghi nhận trước kỳ.', 'New: first seen within this range. Returning: seen before it.')],
+          [text('Trình duyệt mới / quay lại', 'New / returning browsers'), `${number(data.summary.newVisitors)} / ${number(data.summary.returningVisitors)}`, text('Mới: lần đầu được ghi nhận trong kỳ. Quay lại: đã được ghi nhận trước kỳ và có hoạt động trong kỳ.', 'New: first recorded within this range. Returning: recorded before this range and active within it.')],
         ].map(([label, value, hint]) => <article className="admin-analytics-metric" key={label}><h3>{label}</h3><strong>{value}</strong><p>{hint}</p></article>)}
       </div>
       <p className="admin-analytics-method">{text('Thời gian tương tác tạm dừng khi tab bị ẩn, mất tiêu điểm hoặc không có thao tác trong 60 giây; không phải tổng thời gian mở trang. Chặn theo dõi, xóa dữ liệu trình duyệt và đổi thiết bị có thể ảnh hưởng kết quả.', 'Active time pauses when the tab is hidden, unfocused or has no interaction for 60 seconds; it is not total elapsed time. Tracking protection, clearing browser data and changing devices can affect these estimates.')}</p>

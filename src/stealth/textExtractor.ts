@@ -340,7 +340,8 @@ export async function extractFromEpub(bytes: ArrayBuffer): Promise<string[]> {
 export async function extractFromPdf(bytes: ArrayBuffer): Promise<string[]> {
   try {
     const { getDocument } = await import('pdfjs-dist')
-    const pdf = await getDocument({ data: bytes.slice(0) }).promise
+    const { pdfDocumentOptions } = await import('../pdfResources')
+    const pdf = await getDocument(pdfDocumentOptions(bytes)).promise
     const chunks: string[] = []
     const maxPages = Math.min(pdf.numPages, 100)
 

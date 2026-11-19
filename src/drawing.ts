@@ -1,4 +1,10 @@
 export const DRAWING_COLORS = ['#243c3b', '#167e70', '#2563eb', '#b53f43'] as const
+// Keep the stored palette identifiers compatible with existing drawings and sync.
+// Display the validated stored colors without changing existing drawing data.
+export function drawingDisplayColor(color: string): string {
+  const index = (DRAWING_COLORS as readonly string[]).indexOf(color)
+  return DRAWING_COLORS[index] ?? DRAWING_COLORS[0]
+}
 export const DRAWING_MAX_JSON_LENGTH = 20000
 export const DRAWING_MAX_STROKES = 96
 export const DRAWING_MAX_POINTS = 1800
@@ -61,8 +67,8 @@ export function drawingSvg(value: Drawing): string {
   const drawing = parseDrawing(value)
   if (!drawing?.strokes.length) return ''
   const shapes = drawing.strokes.map(stroke => stroke.points.length === 1
-    ? `<circle cx="${stroke.points[0][0]}" cy="${stroke.points[0][1]}" r="${stroke.width / 2}" fill="${stroke.color}"/>`
-    : `<polyline points="${stroke.points.map(point => point.join(',')).join(' ')}" fill="none" stroke="${stroke.color}" stroke-width="${stroke.width}" stroke-linecap="round" stroke-linejoin="round"/>`).join('')
+    ? `<circle cx="${stroke.points[0][0]}" cy="${stroke.points[0][1]}" r="${stroke.width / 2}" fill="${drawingDisplayColor(stroke.color)}"/>`
+    : `<polyline points="${stroke.points.map(point => point.join(',')).join(' ')}" fill="none" stroke="${drawingDisplayColor(stroke.color)}" stroke-width="${stroke.width}" stroke-linecap="round" stroke-linejoin="round"/>`).join('')
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="700" viewBox="0 0 1000 700"><rect width="1000" height="700" fill="#fffefa"/>${shapes}</svg>`
 }
 

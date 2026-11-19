@@ -1,12 +1,13 @@
 <!doctype html>
 <html lang="en">
 <head>
+<link rel="stylesheet" href="/typography.css">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0b172d">
   <meta name="color-scheme" content="light dark">
   <meta name="description" content="Privacy Policy for the NoCap reading app and connected services.">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'sha256-dhT8rOIoH7KVhJIKv0be+9ADR1dOjK3Ta90W/bnudGY='; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'none'">
   <meta name="referrer" content="no-referrer">
   <title>Privacy Policy · NoCap</title>
   <style>
@@ -23,7 +24,7 @@
       --accent-soft: #e4f5f0;
       --focus: #0d7666;
       --warning: #9b5c25;
-      font-family: "Times New Roman", Times, serif;
+      font-family: var(--font-ui);
       font-synthesis: none;
       text-rendering: optimizeLegibility;
     }
@@ -37,8 +38,8 @@
     p, li { color: var(--muted); }
     strong { color: var(--text); }
     h1, h2, h3 { color: var(--text); line-height: 1.2; text-wrap: balance; }
-    h1 { margin: .45rem 0 1rem; font: 700 clamp(2.35rem, 7vw, 4.4rem)/1.08 "Times New Roman", Times, serif; letter-spacing: -.02em; }
-    h2 { margin: 2.8rem 0 .75rem; font: 700 clamp(1.35rem, 3vw, 1.7rem)/1.25 "Times New Roman", Times, serif; }
+    h1 { margin: .45rem 0 1rem; font: 700 clamp(2.35rem, 7vw, 4.4rem)/1.08 var(--font-ui); letter-spacing: -.02em; }
+    h2 { margin: 2.8rem 0 .75rem; font: 700 clamp(1.35rem, 3vw, 1.7rem)/1.25 var(--font-ui); }
     h3 { margin: 1.7rem 0 .4rem; font-size: 1.05rem; }
     ul { padding-left: 1.3rem; }
     li + li { margin-top: .5rem; }
@@ -104,6 +105,18 @@
       footer { background: #091523; }
     }
   </style>
+<link rel="stylesheet" href="/site-theme.css">
+<link rel="stylesheet" href="/legal-theme.css">
+<script id="nocap-legal-theme">(() => {
+  const key = 'nocap-site-theme-v1';
+  const apply = value => {
+    const theme = value === 'dark' || value === 'sage' ? value : 'light';
+    document.documentElement.dataset.siteTheme = theme;
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', {light:'#fdfcf8',dark:'#111b19',sage:'#edf2e8'}[theme]);
+  };
+  try { apply(localStorage.getItem(key)); } catch { apply('light'); }
+  window.addEventListener('storage', event => { if (event.key === key || event.key === null) apply(event.newValue); });
+})();</script>
 </head>
 <body>
   <header class="topbar">

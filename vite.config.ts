@@ -3,6 +3,8 @@ import { VitePWA } from 'vite-plugin-pwa'
 import { defineConfig, type Plugin } from 'vite'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { localHttpsImport } from './server/localHttpsImport.ts'
+import { pdfResources } from './server/pdfResources.ts'
+import { seoExplore } from './server/seoExplore.ts'
 
 const apiBase = 'https://nocap-ebook-api.buiminhhien001.workers.dev'
 
@@ -50,12 +52,12 @@ function localCatalogBooks(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), localCatalogBooks(), localHttpsImport(), VitePWA({
+  plugins: [react(), localCatalogBooks(), localHttpsImport(), pdfResources(), seoExplore(), VitePWA({
     registerType: 'autoUpdate',
     includeAssets: ['nocap.svg', 'nocap-192.png', 'nocap-512.png'],
     manifest: {
       name: 'NoCap — Không gian đọc', short_name: 'NoCap', description: 'Đọc và lưu giữ kiến thức, kể cả khi không có mạng.',
-      start_url: '/', scope: '/', display: 'standalone', background_color: '#0b172d', theme_color: '#0b172d',
+      start_url: '/', scope: '/', display: 'standalone', background_color: '#fdfcf8', theme_color: '#fdfcf8',
       icons: [
         { src: '/nocap-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
         { src: '/nocap-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
@@ -63,7 +65,7 @@ export default defineConfig({
       ],
     },
     workbox: {
-      globPatterns: ['**/*.{js,css,html,svg,png,mjs,woff,woff2,ttf}'],
+      globPatterns: ['**/*.{js,css,html,svg,png,mjs,woff,woff2,ttf,wasm,bcmap,pfb,icc}'],
       maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
       navigateFallback: '/index.html',
       navigateFallbackDenylist: [/^\/api\//, /^\/dev-book\//, /^\/auth\/(reset|verify)(\/|$)/, /^\/(privacy|terms)(\/|$)/, /^\/(privacy-policy|terms-of-service)(\.html)?$/],
