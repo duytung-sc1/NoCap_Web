@@ -1,0 +1,2818 @@
+{
+  "completedAt": "2026-11-20T06:50:25.556Z",
+  "release": {
+    "url": "https://nocap.rest",
+    "deployment": "https://21dd3f7b.nocap-web.pages.dev",
+    "sourceCommit": "4e467ddfd90b2b980ece49e8fd2d0f3b7a0c447e",
+    "entry": "/assets/index-D_FMsQz3.js",
+    "assets": [
+      {
+        "file": "assets/index-D_FMsQz3.js",
+        "status": 200,
+        "bytes": 705931,
+        "sha256": "c3607d7cd0ae6f8934bba3f179aa337ff537d2ed33c6122d949769f795d4a677",
+        "matchesTestedBuild": true
+      },
+      {
+        "file": "assets/Reader-CKfXvr0b.js",
+        "status": 200,
+        "bytes": 63367,
+        "sha256": "564e270ca44be41f3c766d422f6b65235e7b2ae51ae5108cb5dcca728b5377d9",
+        "matchesTestedBuild": true
+      }
+    ],
+    "backendDeployment": false
+  },
+  "sourceFiles": {
+    "passed": 100,
+    "bytes": 176047253,
+    "originalsUnchanged": 100,
+    "spineItems": 2998,
+    "resources": {
+      "books": 100,
+      "passed": 100,
+      "textResources": 3195,
+      "imageResources": 1565,
+      "fontResources": 1,
+      "cssResources": 357,
+      "cssLocalReferences": 2,
+      "replacementCharacters": 0,
+      "invalidControls": 0,
+      "errors": [],
+      "identityWarnings": [],
+      "identicalTextDocumentGroups": []
+    }
+  },
+  "covers": {
+    "passed": 100,
+    "restoredOriginalCovers": 50
+  },
+  "metadata": {
+    "titleCorrections": 1,
+    "changedFields": 51
+  },
+  "frozenSourceBrowserChecks": {
+    "booksPerViewport": 100,
+    "viewports": [
+      {
+        "width": 1366,
+        "height": 900,
+        "lang": "en"
+      },
+      {
+        "width": 390,
+        "height": 844,
+        "lang": "vi"
+      }
+    ],
+    "checks": 794,
+    "pageErrors": 0,
+    "clippedTextOrImages": 0,
+    "unchangedProductModules": 150
+  },
+  "productionBrowserChecks": {
+    "booksPerViewport": 100,
+    "viewports": [
+      {
+        "width": 1366,
+        "height": 900,
+        "lang": "en"
+      },
+      {
+        "width": 390,
+        "height": 844,
+        "lang": "vi"
+      }
+    ],
+    "checks": 800,
+    "pageErrors": 0,
+    "warnings": 0,
+    "readingNavigation": 596
+  },
+  "featureFlows": {
+    "passed": 8,
+    "checks": 66,
+    "manualScrollAndResizePassed": 2,
+    "pageErrors": 0
+  },
+  "automatedTests": {
+    "total": 1097,
+    "files": 117,
+    "initialPassed": 1096,
+    "initialFailed": 1,
+    "recheckFile": "src/App.lifecycle.test.tsx",
+    "recheckPassed": 102,
+    "sourceOrTestChangesForRecheck": false,
+    "note": "Mocked Escape-origin case failed once during combined workload; whole lifecycle file and bounded Escape reruns passed unchanged. Actual browser Escape also passed on all five desktop feature cases."
+  },
+  "build": {
+    "typescript": "PASS",
+    "productionBuild": "PASS",
+    "lintErrors": 0,
+    "existingLintWarnings": 4
+  },
+  "scope": [
+    "All source files/resources structurally validated; authentic first/middle/last reading targets inspected in every book on both production viewport sizes.",
+    "Representative feature workflows tested on eight books; phone viewport emulation is not a physical-device test.",
+    "No human proofreading claim for every page; original front matter, legal pages and image pixels are preserved.",
+    "Guest test contexts opt out of analytics; no private account data or authenticated backend user writes."
+  ],
+  "perBook": [
+    {
+      "id": "gutenberg-100",
+      "title": "The Complete Works of William Shakespeare",
+      "author": "Shakespeare, William",
+      "sourceStatus": "PASS",
+      "bytes": 2880260,
+      "sha256": "72397ff2459a5948eda764bae9b036c0037ccbf3fd93c8aba610208815784e88",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "THE SONNETS",
+          "SCENE II. The same. Before the Princess’s pavilion",
+          "VENUS AND ADONIS"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "THE SONNETS",
+          "SCENE II. The same. Before the Princess’s pavilion",
+          "VENUS AND ADONIS"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-11",
+      "title": "Alice's Adventures in Wonderland",
+      "author": "Carroll, Lewis",
+      "sourceStatus": "PASS",
+      "bytes": 188960,
+      "sha256": "12cbc3610260503383ad7ecf800beb0d885a6011e15900b2bf61cecfc571d6c8",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Alice’s Adventures in Wonderland",
+          "CHAPTER VI. Pig and Pepper",
+          "CHAPTER XII. Alice’s Evidence"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Alice’s Adventures in Wonderland",
+          "CHAPTER VI. Pig and Pepper",
+          "CHAPTER XII. Alice’s Evidence"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-120",
+      "title": "Treasure Island",
+      "author": "Stevenson, Robert Louis",
+      "sourceStatus": "PASS",
+      "bytes": 273475,
+      "sha256": "5f6027f3ca2597990d117c28e0acaf855daae8a3059b3088f727cbfc8a00fe67",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "TREASURE ISLAND",
+          "XVI Narrative Continued by the Doctor: How the Ship Was Abandoned",
+          "XXXIV And Last"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "TREASURE ISLAND",
+          "XVI Narrative Continued by the Doctor: How the Ship Was Abandoned",
+          "XXXIV And Last"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-1260",
+      "title": "Jane Eyre: An Autobiography",
+      "author": "Brontë, Charlotte",
+      "sourceStatus": "PASS",
+      "bytes": 3095830,
+      "sha256": "7dbcc5804e9875f4c15c4b54f14168a0d19ab5b155d42acbbfc3d309d889db0b",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "PREFACE",
+          "CHAPTER XIX",
+          "CHAPTER XXXVIII—CONCLUSION"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "PREFACE",
+          "CHAPTER XIX",
+          "CHAPTER XXXVIII—CONCLUSION"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-1342",
+      "title": "Pride and Prejudice",
+      "author": "Austen, Jane",
+      "sourceStatus": "PASS",
+      "bytes": 24835578,
+      "sha256": "bbd82efa5e3e8d8a302a39c5e20d7d6d250804c7003c63378946d85f1176ccb6",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "PRIDE. and PREJUDICE",
+          "CHAPTER XXXI.",
+          "CHAPTER LXI."
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "PRIDE. and PREJUDICE",
+          "CHAPTER XXXI.",
+          "CHAPTER LXI."
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-145",
+      "title": "Middlemarch",
+      "author": "Eliot, George",
+      "sourceStatus": "PASS",
+      "bytes": 1072344,
+      "sha256": "6e49e3e85a0a0aecfc074366e287240b236bc262bdd2bbb35693ecac7af0a1e2",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Middlemarch",
+          "CHAPTER XLII.",
+          "FINALE."
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Middlemarch",
+          "CHAPTER XLII.",
+          "FINALE."
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-1513",
+      "title": "Romeo and Juliet",
+      "author": "Shakespeare, William",
+      "sourceStatus": "PASS",
+      "bytes": 341144,
+      "sha256": "0dea6a849392a1e669f368f7ab7bd746fc4473418453fb956343ae297acf4412",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Dramatis Personæ",
+          "ACT III",
+          "SCENE III. A churchyard; in it a Monument belonging to the Capulets."
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Dramatis Personæ",
+          "ACT III",
+          "SCENE III. A churchyard; in it a Monument belonging to the Capulets."
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-1661",
+      "title": "The Adventures of Sherlock Holmes",
+      "author": "Doyle, Arthur Conan",
+      "sourceStatus": "PASS",
+      "bytes": 379177,
+      "sha256": "a5ec3affcc10d1b610545f7dbd650258989db4b892f9205b8787b802376a73a5",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "The Adventures of Sherlock Holmes",
+          "V. THE FIVE ORANGE PIPS",
+          "XII. THE ADVENTURE OF THE COPPER BEECHES"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "The Adventures of Sherlock Holmes",
+          "V. THE FIVE ORANGE PIPS",
+          "XII. THE ADVENTURE OF THE COPPER BEECHES"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-1727",
+      "title": "The Odyssey: Rendered into English prose for the use of those who cannot read the original",
+      "author": "Homer",
+      "sourceStatus": "PASS",
+      "bytes": 445840,
+      "sha256": "bb40f821e2866690daafd8e5ca044b12f60c70ffd449ba2fe1b2a91fa76a9930",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "PREFACE TO FIRST EDITION",
+          "BOOK XII",
+          "FOOTNOTES:"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "PREFACE TO FIRST EDITION",
+          "BOOK XII",
+          "FOOTNOTES:"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-17460",
+      "title": "Lorna Doone: A Romance of Exmoor",
+      "author": "Blackmore, R. D. (Richard Doddridge)",
+      "sourceStatus": "PASS",
+      "bytes": 12322274,
+      "sha256": "0b8edf92cacf13a08bfbb115d1b74fad7b4640aa5663feaa2f116dc9bb82195c",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "LORNA DOONE,",
+          "CHAPTER XXXVII",
+          "GIVE AWAY THE GRANDEUR"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "LORNA DOONE,",
+          "CHAPTER XXXVII",
+          "GIVE AWAY THE GRANDEUR"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-18459",
+      "title": "Hypnerotomachia: The Strife of Loue in a Dreame",
+      "author": "Colonna, Francesco",
+      "sourceStatus": "PASS",
+      "bytes": 1175352,
+      "sha256": "1c9a7cf8f903a67297590baef201a0e6d9a18e8d032c5c7f90bd079a259b43ff",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "THE ENGLISH EXPERIENCE",
+          "To the Right Honourable Robert",
+          "Technical Notes and further information"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "THE ENGLISH EXPERIENCE",
+          "To the Right Honourable Robert",
+          "Technical Notes and further information"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-18857",
+      "title": "A Journey to the Centre of the Earth",
+      "author": "Verne, Jules",
+      "sourceStatus": "PASS",
+      "bytes": 281966,
+      "sha256": "3704497d1f75c86f358b7086b59698e38491e1c9cdda3aa60a2edcfb44d603a6",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "A JOURNEY TO THE CENTRE OF THE EARTH",
+          "SUNDAY BELOW GROUND",
+          "THE JOURNEY ENDED"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "A JOURNEY TO THE CENTRE OF THE EARTH",
+          "SUNDAY BELOW GROUND",
+          "THE JOURNEY ENDED"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-19476",
+      "title": "A Honeymoon in Space",
+      "author": "Griffith, George Chetwynd",
+      "sourceStatus": "PASS",
+      "bytes": 692679,
+      "sha256": "d0ce23841efbb310d972671e634949dad79aa433f4e9d8e3364adb01f196260e",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "E-text prepared by the Project Gutenberg Online Distributed Proofreading Team (http://www.pgdp.net/)",
+          "CHAPTER IX",
+          "EPILOGUE"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "E-text prepared by the Project Gutenberg Online Distributed Proofreading Team (http://www.pgdp.net/)",
+          "CHAPTER IX",
+          "EPILOGUE"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-19771",
+      "title": "Henrietta Temple: A Love Story",
+      "author": "Disraeli, Benjamin, Earl of Beaconsfield",
+      "sourceStatus": "PASS",
+      "bytes": 2810858,
+      "sha256": "e478d25c0034b542c70ecc02d2e42b1da06fdd9399d7fb8999f729e5980dfdc0",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "HENRIETTA TEMPLE",
+          "CHAPTER VII.",
+          "CHAPTER XXV."
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "HENRIETTA TEMPLE",
+          "CHAPTER VII.",
+          "CHAPTER XXV."
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-20203",
+      "title": "Autobiography of Benjamin Franklin",
+      "author": "Franklin, Benjamin",
+      "sourceStatus": "PASS",
+      "bytes": 4914465,
+      "sha256": "6a24e47c32c36dc8dd845f51577d77eab58eaaa5226cdc2179249677e5e599f3",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "FRANKLIN ARMS",
+          "X POOR RICHARD'S ALMANAC AND OTHER ACTIVITIES",
+          "BIBLIOGRAPHY"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "FRANKLIN ARMS",
+          "X POOR RICHARD'S ALMANAC AND OTHER ACTIVITIES",
+          "BIBLIOGRAPHY"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-209",
+      "title": "The Turn of the Screw",
+      "author": "James, Henry",
+      "sourceStatus": "PASS",
+      "bytes": 387516,
+      "sha256": "903346eb55a86d58d66401bbcec8bc1305314981fb38f102d6cacfbfa557d620",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "THE TURN OF THE SCREW",
+          "XII",
+          "XXIV"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "THE TURN OF THE SCREW",
+          "XII",
+          "XXIV"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-21839",
+      "title": "Sense and Sensibility",
+      "author": "Austen, Jane",
+      "sourceStatus": "PASS",
+      "bytes": 2109097,
+      "sha256": "7ae75f00fb2357e77a96bd95f40f2c34822d8360485028125d8ce150454e1e60",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "SENSE & SENSIBILITY",
+          "CHAPTER XXV",
+          "CHAPTER L"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "SENSE & SENSIBILITY",
+          "CHAPTER XXV",
+          "CHAPTER L"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-22163",
+      "title": "The Rover Boys on the Farm; or, Last Days at Putnam Hall",
+      "author": "Stratemeyer, Edward",
+      "sourceStatus": "PASS",
+      "bytes": 266714,
+      "sha256": "b79d397c2169251d16f2682703ecb231cfc811559906fb693c1b75d258b84529",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "THE ROVER BOYS ON THE FARM",
+          "WHAT HAPPENED AT THE PARTY",
+          "BUDDY BOOKS FOR BOYS"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "THE ROVER BOYS ON THE FARM",
+          "WHAT HAPPENED AT THE PARTY",
+          "BUDDY BOOKS FOR BOYS"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-2465",
+      "title": "Carmen",
+      "author": "Mérimée, Prosper",
+      "sourceStatus": "PASS",
+      "bytes": 319992,
+      "sha256": "8e756845acc9aa4f47146aa14d11a70926bd3ded17b42d6a9384cf3298d8d6e7",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "CARMEN",
+          "CHAPTER II",
+          "CHAPTER IV"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "CARMEN",
+          "CHAPTER II",
+          "CHAPTER IV"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-2554",
+      "title": "Crime and Punishment",
+      "author": "Dostoyevsky, Fyodor",
+      "sourceStatus": "PASS",
+      "bytes": 784060,
+      "sha256": "958a29f42a2caed0b100874d61cb29af08815d9f8ba66af94daa115ae050aab9",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "CRIME AND PUNISHMENT",
+          "PART IV",
+          "II"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "CRIME AND PUNISHMENT",
+          "PART IV",
+          "II"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-26563",
+      "title": "The Crack of Doom",
+      "author": "Cromie, Robert",
+      "sourceStatus": "PASS",
+      "bytes": 183635,
+      "sha256": "ec534f57bb21511eea65572779cff3d33c2c730c910e60140a86b823c0f9c2dc",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "THE CRACK OF DOOM",
+          "CHAPTER IX. CUI BONO?",
+          "CHAPTER XX. CONCLUSION."
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "THE CRACK OF DOOM",
+          "CHAPTER IX. CUI BONO?",
+          "CHAPTER XX. CONCLUSION."
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-2680",
+      "title": "Meditations",
+      "author": "Marcus Aurelius, Emperor of Rome",
+      "sourceStatus": "PASS",
+      "bytes": 454954,
+      "sha256": "f0656010dd96d75ee09912d7c655fb144818a122102b18af78620034cb9c0898",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "INTRODUCTION",
+          "THE SEVENTH BOOK",
+          "Paragraphs with First Lines"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "INTRODUCTION",
+          "THE SEVENTH BOOK",
+          "Paragraphs with First Lines"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-2701",
+      "title": "Moby Dick; Or, The Whale",
+      "author": "Melville, Herman",
+      "sourceStatus": "PASS",
+      "bytes": 812415,
+      "sha256": "21078430c9d034326635f4d57ce436c278956b148357903973aaee949a4598ec",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "MOBY-DICK; or, THE WHALE.",
+          "CHAPTER 67. Cutting In.",
+          "“AND I ONLY AM ESCAPED ALONE TO TELL THEE” Job."
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "MOBY-DICK; or, THE WHALE.",
+          "CHAPTER 67. Cutting In.",
+          "“AND I ONLY AM ESCAPED ALONE TO TELL THEE” Job."
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-27997",
+      "title": "Robert Orange: Being a Continuation of the History of Robert Orange",
+      "author": "Hobbes, John Oliver",
+      "sourceStatus": "PASS",
+      "bytes": 335776,
+      "sha256": "9ef462a94d13dbb4f76fe3e019fe392bcb5af72572c05aa3a4d24826a152087f",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "ROBERT ORANGE",
+          "THE TALES OF JOHN OLIVER HOBBES",
+          "Illustrated. Large crown 8vo., cloth, 7s. 6d. Opinions of the Press."
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "ROBERT ORANGE",
+          "THE TALES OF JOHN OLIVER HOBBES",
+          "Illustrated. Large crown 8vo., cloth, 7s. 6d. Opinions of the Press."
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-28203",
+      "title": "Moods",
+      "author": "Alcott, Louisa May",
+      "sourceStatus": "PASS",
+      "bytes": 661539,
+      "sha256": "58813cc3ceaaa238ae1e870b31042ca9db2414800efebe62c29ff01a18245dfa",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "MOODS.",
+          "WOOING.",
+          "MARGARET AND HER BRIDESMAIDS."
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "MOODS.",
+          "WOOING.",
+          "MARGARET AND HER BRIDESMAIDS."
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-2852",
+      "title": "The Hound of the Baskervilles",
+      "author": "Doyle, Arthur Conan",
+      "sourceStatus": "PASS",
+      "bytes": 316979,
+      "sha256": "cbbcb3bc5f35207131567f55f5d065068ab81372ee5ed351bd13e532120557c2",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Chapter 1. Mr. Sherlock Holmes",
+          "Chapter 8. First Report of Dr. Watson",
+          "Chapter 15. A Retrospection"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Chapter 1. Mr. Sherlock Holmes",
+          "Chapter 8. First Report of Dr. Watson",
+          "Chapter 15. A Retrospection"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-31472",
+      "title": "Cynthia's Chauffeur",
+      "author": "Tracy, Louis",
+      "sourceStatus": "PASS",
+      "bytes": 738980,
+      "sha256": "2bc1ead3bbc569ca5e236a892ed5b50f6995d68f962fed2558edc62d4b9be325",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "E-text prepared by D Alexander and the Project Gutenberg Online Distributed Proofreading Team (http://www.pgdp.net) from page images generously made available by Internet Archive (http://www.archive.org)",
+          "CHAPTER X",
+          "Footnote:"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "E-text prepared by D Alexander and the Project Gutenberg Online Distributed Proofreading Team (http://www.pgdp.net) from page images generously made available by Internet Archive (http://www.archive.org)",
+          "CHAPTER X",
+          "Footnote:"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-31635",
+      "title": "The Silent Barrier",
+      "author": "Tracy, Louis",
+      "sourceStatus": "PASS",
+      "bytes": 2738012,
+      "sha256": "71f45dab5ea92f79a85a9642f47589e9eab380580dfe31d7903c647f0df97798",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "The Silent Barrier",
+          "SHADOWS",
+          "The Prodigal Judge"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "The Silent Barrier",
+          "SHADOWS",
+          "The Prodigal Judge"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-32155",
+      "title": "The Love Letters of Henry VIII to Anne Boleyn; With Notes",
+      "author": "Henry VIII, King of England",
+      "sourceStatus": "PASS",
+      "bytes": 973512,
+      "sha256": "7d69f5ea5f226dac77a21f327de3708756c2bb1175ef25ca50c1f151bac715ad",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Letter First",
+          "Letter Tenth",
+          "Notes"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Letter First",
+          "Letter Tenth",
+          "Notes"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-3268",
+      "title": "The Mysteries of Udolpho",
+      "author": "Radcliffe, Ann Ward",
+      "sourceStatus": "PASS",
+      "bytes": 981128,
+      "sha256": "7010a8e88943fc3c4b169c88827fe76968ee2fb1a2df7267a378a78437cd9d67",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "VOLUME 1",
+          "CHAPTER III",
+          "CHAPTER XIX"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "VOLUME 1",
+          "CHAPTER III",
+          "CHAPTER XIX"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-3296",
+      "title": "The Confessions of St. Augustine",
+      "author": "Augustine, of Hippo, Saint",
+      "sourceStatus": "PASS",
+      "bytes": 458087,
+      "sha256": "5c6bf0987a4b955650d047cb354d06032f3319a93b3295037ac4716c8125a9cf",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "THE CONFESSIONS OF SAINT AUGUSTINE",
+          "BOOK VII",
+          "BOOK XIII"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "THE CONFESSIONS OF SAINT AUGUSTINE",
+          "BOOK VII",
+          "BOOK XIII"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-34413",
+      "title": "The Love Letters of Mary Wollstonecraft to Gilbert Imlay",
+      "author": "Wollstonecraft, Mary",
+      "sourceStatus": "PASS",
+      "bytes": 561308,
+      "sha256": "b338bbb058325e384677fd6aada924887ef846fe71c8f94986c5976da4ea664a",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "The Love Letters of Mary Wollstonecraft TO GILBERT IMLAY",
+          "LETTER XXXV",
+          "LETTER LXXVII"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "The Love Letters of Mary Wollstonecraft TO GILBERT IMLAY",
+          "LETTER XXXV",
+          "LETTER LXXVII"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-345",
+      "title": "Dracula",
+      "author": "Stoker, Bram",
+      "sourceStatus": "PASS",
+      "bytes": 602902,
+      "sha256": "be5b12d762ceaacab5bfd0c1e510c8d36a0498cdde43790d6575d198fa9cd94d",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "D R A C U L A",
+          "CHAPTER XIV MINA HARKER’S JOURNAL",
+          "NOTE"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "D R A C U L A",
+          "CHAPTER XIV MINA HARKER’S JOURNAL",
+          "NOTE"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-35548",
+      "title": "Doctor Cupid: A Novel",
+      "author": "Broughton, Rhoda",
+      "sourceStatus": "PASS",
+      "bytes": 385966,
+      "sha256": "dc971dcaf608e1628c6f7d722a53576646498b68612f3218ec9e5bbe9c65a032",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "DOCTOR CUPID",
+          "CHAPTER XVIII",
+          "Printed by R. & R. Clark, Edinburgh."
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "DOCTOR CUPID",
+          "CHAPTER XVIII",
+          "Printed by R. & R. Clark, Edinburgh."
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-36462",
+      "title": "King Arthur and the Knights of the Round Table",
+      "author": "Malory, Thomas, Sir",
+      "sourceStatus": "PASS",
+      "bytes": 546345,
+      "sha256": "288c6b6dfa7970cbcc2ed34a55c7e1cbe15e40542f63382aefda176e5426c0d2",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "KING ARTHUR",
+          "VIII",
+          "THE WAR BETWEEN ARTHUR AND LANCELOT AND THE PASSING OF ARTHUR"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "KING ARTHUR",
+          "VIII",
+          "THE WAR BETWEEN ARTHUR AND LANCELOT AND THE PASSING OF ARTHUR"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-36725",
+      "title": "On the Cross: A Romance of the Passion Play at Oberammergau",
+      "author": "Hillern, Wilhelmine von",
+      "sourceStatus": "PASS",
+      "bytes": 815324,
+      "sha256": "0789228ca434a997030b2a38f1227adcffe4bea72a44ab1d4feb5147c431b787",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "ON THE CROSS",
+          "CHAPTER IX.",
+          "THE END."
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "ON THE CROSS",
+          "CHAPTER IX.",
+          "THE END."
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-37106",
+      "title": "Little Women; Or, Meg, Jo, Beth, and Amy",
+      "author": "Alcott, Louisa May",
+      "sourceStatus": "PASS",
+      "bytes": 16915356,
+      "sha256": "cb0c1bb289c284e68f3e7f6c6e45629c6614c09331cdf5f4f5a299a44d00180d",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "LITTLE WOMEN.",
+          "XXVI. Artistic Attempts.",
+          "The Children's Friend Series."
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "LITTLE WOMEN.",
+          "XXVI. Artistic Attempts.",
+          "The Children's Friend Series."
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-42389",
+      "title": "The Pirate: Andrew Lang Edition",
+      "author": "Scott, Walter",
+      "sourceStatus": "PASS",
+      "bytes": 1315634,
+      "sha256": "c5782eb9f853266a4e2e6ebb0305414e909c2351f00cad4ff80ba3e3d012cd93",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "THE PIRATE",
+          "CHAPTER XVIII.",
+          "GLOSSARY."
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "THE PIRATE",
+          "CHAPTER XVIII.",
+          "GLOSSARY."
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-42681",
+      "title": "The Hero of the People: A Historical Romance of Love, Liberty and Loyalty",
+      "author": "Dumas, Alexandre",
+      "sourceStatus": "PASS",
+      "bytes": 667516,
+      "sha256": "3d13716f8a9e9b160008acad78b670001f8fb7425ce98d065f48d2c07b92a17a",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "The Hero Of The People.",
+          "CHAPTER XIV. IN SEARCH OF THEIR SON.",
+          "CHAPTER XXX. UNDER THE WINDOW."
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "The Hero Of The People.",
+          "CHAPTER XIV. IN SEARCH OF THEIR SON.",
+          "CHAPTER XXX. UNDER THE WINDOW."
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-43",
+      "title": "The strange case of Dr. Jekyll and Mr. Hyde",
+      "author": "Stevenson, Robert Louis",
+      "sourceStatus": "PASS",
+      "bytes": 304737,
+      "sha256": "0bf449baafba3d997d97c434de1c2321942d9f719837d4f374784c41b98edce7",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "STORY OF THE DOOR",
+          "INCIDENT OF DR. LANYON",
+          "HENRY JEKYLL’S FULL STATEMENT OF THE CASE"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "STORY OF THE DOOR",
+          "INCIDENT OF DR. LANYON",
+          "HENRY JEKYLL’S FULL STATEMENT OF THE CASE"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-46276",
+      "title": "The Treasure of Pearls: A Romance of Adventures in California",
+      "author": "Aimard, Gustave",
+      "sourceStatus": "PASS",
+      "bytes": 404342,
+      "sha256": "368b33ea76c54935e2ffd889be3a6e63803fb6a8ade05d10642d22af5e455114",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "THE TREASURE OF PEARLS",
+          "CHAPTER XIV.",
+          "THE END."
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "THE TREASURE OF PEARLS",
+          "CHAPTER XIV.",
+          "THE END."
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-468",
+      "title": "Manon Lescaut",
+      "author": "Prévost, abbé",
+      "sourceStatus": "PASS",
+      "bytes": 210999,
+      "sha256": "012a09331e5c08c117dc3fe5f00966a536741be801f2f597b6ac6d1c4ad9187f",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "MANON LESCAUT",
+          "VI",
+          "XIII"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "MANON LESCAUT",
+          "VI",
+          "XIII"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-48296",
+      "title": "Linnet: A Romance",
+      "author": "Allen, Grant",
+      "sourceStatus": "PASS",
+      "bytes": 629896,
+      "sha256": "9e6d8433056af9cdbee4357ae21171cccfd50699806b06df07f36f0a30c94439",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "CHAPTER I",
+          "A WOMAN’S HEART",
+          "A CONFESSION OF FAITH"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "CHAPTER I",
+          "A WOMAN’S HEART",
+          "A CONFESSION OF FAITH"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-48320",
+      "title": "Adventures of Sherlock Holmes: Illustrated",
+      "author": "Doyle, Arthur Conan",
+      "sourceStatus": "PASS",
+      "bytes": 2053512,
+      "sha256": "df78e3d7e1f8cd090ca9494ee763fadd6c7b46aa01e144dec8482fd7d23dcbab",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "ADVENTURES OF SHERLOCK HOLMES",
+          "Adventure V THE FIVE ORANGE PIPS",
+          "Adventure XII THE ADVENTURE OF THE COPPER BEECHES"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "ADVENTURES OF SHERLOCK HOLMES",
+          "Adventure V THE FIVE ORANGE PIPS",
+          "Adventure XII THE ADVENTURE OF THE COPPER BEECHES"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-49987",
+      "title": "Forest Days: A Romance of Old Times",
+      "author": "James, G. P. R. (George Payne Rainsford)",
+      "sourceStatus": "PASS",
+      "bytes": 463674,
+      "sha256": "25015311e4e4e7af8e25504c5936201f14821c05f5e532be1aa1a7f3769848b4",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "COLLECTION",
+          "CHAPTER XVI.",
+          "THE END."
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "COLLECTION",
+          "CHAPTER XVI.",
+          "THE END."
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-51649",
+      "title": "The Mysteries of London, v. 4/4",
+      "author": "Reynolds, George W. M. (George William MacArthur)",
+      "sourceStatus": "PASS",
+      "bytes": 6544729,
+      "sha256": "6ce975d50da75e9f73d0762d7ef3529cb45ec697c555065c7e07b4b7d39d0496",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "THE MYSTERIES OF LONDON.",
+          "CHAPTER CLXII. LAURA IN PARIS.",
+          "FOOTNOTES:"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "THE MYSTERIES OF LONDON.",
+          "CHAPTER CLXII. LAURA IN PARIS.",
+          "FOOTNOTES:"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-53154",
+      "title": "Cameron of Lochiel",
+      "author": "Aubert de Gaspé, Philippe",
+      "sourceStatus": "PASS",
+      "bytes": 399248,
+      "sha256": "abe17286db7c93837944e5ba9cdd9ce0dca3cfe40d21b74cb23dff697fd1c442",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "CAMERON OF LOCHIEL",
+          "CHAPTER VIII. THE FEAST OF ST. JEAN-BAPTISTE.",
+          "CHAPTER XVII. CONCLUSION."
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "CAMERON OF LOCHIEL",
+          "CHAPTER VIII. THE FEAST OF ST. JEAN-BAPTISTE.",
+          "CHAPTER XVII. CONCLUSION."
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-53416",
+      "title": "Only a girl's love",
+      "author": "Garvice, Charles",
+      "sourceStatus": "PASS",
+      "bytes": 804199,
+      "sha256": "1e43d692e20058610f4f476621b55332df71b240ffc222c22d8ba7ffe4364f0c",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "E-text prepared by Chris Whitehead, Demian Katz, and the Online Distributed Proofreading Team (http://www.pgdp.net) from page images generously made available by Villanova University Digital Library (http://digital.library.villanova.edu)",
+          "CHAPTER XXII.",
+          "ALL TITLES ALWAYS IN PRINT"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "E-text prepared by Chris Whitehead, Demian Katz, and the Online Distributed Proofreading Team (http://www.pgdp.net) from page images generously made available by Villanova University Digital Library (http://digital.library.villanova.edu)",
+          "CHAPTER XXII.",
+          "ALL TITLES ALWAYS IN PRINT"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-53874",
+      "title": "Under the Red Dragon: A Novel",
+      "author": "Grant, James",
+      "sourceStatus": "PASS",
+      "bytes": 455193,
+      "sha256": "0a1acc8c1a21c9530723c5ca7ecfb3e65b24711a27174924cad50be761832178",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "UNDER THE RED DRAGON.",
+          "CHAPTER XXX.--NEWS OF BATTLE.",
+          "FOOTNOTES:"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "UNDER THE RED DRAGON.",
+          "CHAPTER XXX.--NEWS OF BATTLE.",
+          "FOOTNOTES:"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-55179",
+      "title": "One of the Six Hundred: A Novel",
+      "author": "Grant, James",
+      "sourceStatus": "PASS",
+      "bytes": 555436,
+      "sha256": "5399c0f511b51ee2e4539065231fcd89c014e402f579ee418b7bcd4993c7e842",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "ONE OF THE SIX HUNDRED.",
+          "CHAPTER XXVIII.",
+          "CHAPTER LIV."
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "ONE OF THE SIX HUNDRED.",
+          "CHAPTER XXVIII.",
+          "CHAPTER LIV."
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-564",
+      "title": "The Mystery of Edwin Drood",
+      "author": "Dickens, Charles",
+      "sourceStatus": "PASS",
+      "bytes": 1798849,
+      "sha256": "12f64834c6fa5b3102efbec9aa76a5207e013833d5bcaa149c961dbfaea55ac1",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "The Mystery of Edwin Drood",
+          "CHAPTER XIII. BOTH AT THEIR BEST",
+          "II"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "The Mystery of Edwin Drood",
+          "CHAPTER XIII. BOTH AT THEIR BEST",
+          "II"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-59828",
+      "title": "The String of Pearls; Or, The Barber of Fleet Street. A Domestic Romance.",
+      "author": "Prest, Thomas Peckett; Rymer, James Malcolm",
+      "sourceStatus": "PASS",
+      "bytes": 12357160,
+      "sha256": "ce48c244a8c38b082d51bf37acfe3a815a6435ce0fa0701c3646493b9fca495d",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "The String of Pearls; or, the Barber of Fleet Street",
+          "CHAPTER LXXXIV. TODD'S WONDERFUL ESCAPE.",
+          "CHAPTER CLXXIII. THE CONCLUSION."
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "The String of Pearls; or, the Barber of Fleet Street",
+          "CHAPTER LXXXIV. TODD'S WONDERFUL ESCAPE.",
+          "CHAPTER CLXXIII. THE CONCLUSION."
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-601",
+      "title": "The Monk: A Romance",
+      "author": "Lewis, M. G. (Matthew Gregory)",
+      "sourceStatus": "PASS",
+      "bytes": 582872,
+      "sha256": "120b34d7a9f5464918c5cc8215a48025fd5ab010aa1ae7bc441b1c24e330d855",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "PREFACE",
+          "CHAPTER VI.",
+          "CHAPTER XII."
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "PREFACE",
+          "CHAPTER VI.",
+          "CHAPTER XII."
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-70854",
+      "title": "The Countess of Pembroke's Arcadia",
+      "author": "Sidney, Philip",
+      "sourceStatus": "PASS",
+      "bytes": 1056987,
+      "sha256": "f5b97cd3c3120463d2ca901551320445888c995470ae5bc00b7cc49105de81c4",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "THE COUNTESS OF PEMBROKE’S ARCADIA",
+          "ARCADIA BOOK IV",
+          "BOOK V NOTES"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "THE COUNTESS OF PEMBROKE’S ARCADIA",
+          "ARCADIA BOOK IV",
+          "BOOK V NOTES"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-76",
+      "title": "Adventures of Huckleberry Finn",
+      "author": "Twain, Mark",
+      "sourceStatus": "PASS",
+      "bytes": 16020333,
+      "sha256": "578224b814a7a9940456d622655525ed74ebf50e91fffd98484f4970d9cadcb8",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "CHAPTER I.",
+          "CHAPTER XXII.",
+          "CHAPTER THE LAST"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "CHAPTER I.",
+          "CHAPTER XXII.",
+          "CHAPTER THE LAST"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-76639",
+      "title": "Eloisa: Or, a Series of Original Letters",
+      "author": "Rousseau, Jean-Jacques",
+      "sourceStatus": "PASS",
+      "bytes": 923740,
+      "sha256": "63b62f018470f5bb8bf7f5ada6137c7b75f922f8f6fd620205a8d5704913bee3",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Eloisa: Or, a Series of Original Letters",
+          "Letter LXXVI. From Eloisa.",
+          "Letter CLXIII. From Mrs. Orbe."
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Eloisa: Or, a Series of Original Letters",
+          "Letter LXXVI. From Eloisa.",
+          "Letter CLXIII. From Mrs. Orbe."
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-84",
+      "title": "Frankenstein; or, the modern prometheus",
+      "author": "Shelley, Mary Wollstonecraft",
+      "sourceStatus": "PASS",
+      "bytes": 474161,
+      "sha256": "2c29669a2cc1a726d6264178a2e8e86529208fd61ef92ca627b1612b2d98b2bd",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Letter 1",
+          "Chapter 11",
+          "Chapter 24"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Letter 1",
+          "Chapter 11",
+          "Chapter 24"
+        ]
+      }
+    },
+    {
+      "id": "gutenberg-98",
+      "title": "A Tale of Two Cities",
+      "author": "Dickens, Charles",
+      "sourceStatus": "PASS",
+      "bytes": 7922028,
+      "sha256": "15701b1310e0c8cfb39162f803b126feefd8309c74707a63e1a32dbfe733af3f",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "A TALE OF TWO CITIES",
+          "CHAPTER XVI. Still Knitting",
+          "CHAPTER XV. The Footsteps Die Out For Ever"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "A TALE OF TWO CITIES",
+          "CHAPTER XVI. Still Knitting",
+          "CHAPTER XV. The Footsteps Die Out For Ever"
+        ]
+      }
+    },
+    {
+      "id": "se-anna-sewell-black-beauty",
+      "title": "Black Beauty",
+      "author": "Anna Sewell",
+      "sourceStatus": "PASS",
+      "bytes": 483392,
+      "sha256": "27c4ed6cf6002e566930f4d4c252060b6f23eb15c59a62c598f61c2c1a195791",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I: My Early Home",
+          "XXV: Reuben Smith",
+          "XLIX: My Last Home"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I: My Early Home",
+          "XXV: Reuben Smith",
+          "XLIX: My Last Home"
+        ]
+      }
+    },
+    {
+      "id": "se-arthur-conan-doyle-a-study-in-scarlet",
+      "title": "A Study in Scarlet",
+      "author": "Arthur Conan Doyle",
+      "sourceStatus": "PASS",
+      "bytes": 616395,
+      "sha256": "153b4fb5bdb6685a201e5dba568c7e2dc868943d06692cf700eb6589c1ee6695",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I: Mr. Sherlock Holmes",
+          "I: On the Great Alkali Plain",
+          "VII: The Conclusion"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I: Mr. Sherlock Holmes",
+          "I: On the Great Alkali Plain",
+          "VII: The Conclusion"
+        ]
+      }
+    },
+    {
+      "id": "se-arthur-conan-doyle-the-lost-world",
+      "title": "The Lost World",
+      "author": "Arthur Conan Doyle",
+      "sourceStatus": "PASS",
+      "bytes": 712491,
+      "sha256": "17cc20324af8c62faa3c122088e9d7d8fee606dfd85725c0555f03b14cd506c0",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I: There Are Heroisms All Round Us",
+          "IX: Who Could Have Foreseen It?",
+          "XVI: A Procession! A Procession!"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I: There Are Heroisms All Round Us",
+          "IX: Who Could Have Foreseen It?",
+          "XVI: A Procession! A Procession!"
+        ]
+      }
+    },
+    {
+      "id": "se-arthur-conan-doyle-the-sign-of-the-four",
+      "title": "The Sign of the Four",
+      "author": "Arthur Conan Doyle",
+      "sourceStatus": "PASS",
+      "bytes": 884291,
+      "sha256": "3b8f978721c0f290a3f703cde68573c63ed023131f8f4f206565e54faf704f76",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I: The Science of Deduction",
+          "VII: The Episode of the Barrel",
+          "XII: The Strange Story of Jonathan Small"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I: The Science of Deduction",
+          "VII: The Episode of the Barrel",
+          "XII: The Strange Story of Jonathan Small"
+        ]
+      }
+    },
+    {
+      "id": "se-booker-t-washington-up-from-slavery",
+      "title": "Up from Slavery",
+      "author": "Booker T. Washington",
+      "sourceStatus": "PASS",
+      "bytes": 656233,
+      "sha256": "55765cc004a12d9736867a4523b0ab5f52c655d838b6150e3414d13fd852c83f",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Introduction",
+          "IX: Anxious Days and Sleepless Nights",
+          "XVII: Last Words"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Introduction",
+          "IX: Anxious Days and Sleepless Nights",
+          "XVII: Last Words"
+        ]
+      }
+    },
+    {
+      "id": "se-charles-dickens-a-christmas-carol",
+      "title": "A Christmas Carol",
+      "author": "Charles Dickens",
+      "sourceStatus": "PASS",
+      "bytes": 548605,
+      "sha256": "89a365dbda5df107d37f026ff5879827d30e7ef14c40af19ca99730782eba276",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Stave I: Marley’s Ghost",
+          "Stave III: The Second of the Three Spirits",
+          "Stave V: The End of It"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Stave I: Marley’s Ghost",
+          "Stave III: The Second of the Three Spirits",
+          "Stave V: The End of It"
+        ]
+      }
+    },
+    {
+      "id": "se-charles-dickens-bleak-house",
+      "title": "Bleak House",
+      "author": "Charles Dickens",
+      "sourceStatus": "PASS",
+      "bytes": 1238504,
+      "sha256": "a83447996d1cf88ddb5c964ed8ed4e685899e1bc4ac78aa378aa10bccecabd76",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Preface",
+          "XXXIV: A Turn of the Screw",
+          "LXVII: The Close of Esther’s Narrative"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Preface",
+          "XXXIV: A Turn of the Screw",
+          "LXVII: The Close of Esther’s Narrative"
+        ]
+      }
+    },
+    {
+      "id": "se-charles-dickens-david-copperfield",
+      "title": "David Copperfield",
+      "author": "Charles Dickens",
+      "sourceStatus": "PASS",
+      "bytes": 1373512,
+      "sha256": "1f328519d96750d6cd3449143eb33e91a55ae10eeb06509897bfa168896787e7",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Preface to the 1850 Edition",
+          "XXXII: The Beginning of a Long Journey",
+          "LXIV: A Last Retrospect"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Preface to the 1850 Edition",
+          "XXXII: The Beginning of a Long Journey",
+          "LXIV: A Last Retrospect"
+        ]
+      }
+    },
+    {
+      "id": "se-charles-dickens-great-expectations",
+      "title": "Great Expectations",
+      "author": "Charles Dickens",
+      "sourceStatus": "PASS",
+      "bytes": 1002514,
+      "sha256": "9727f7ccd2d15c46de025fa3b164d3109ea56d3079946406fe2cad3b79a5990e",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I",
+          "XXX",
+          "LIX"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I",
+          "XXX",
+          "LIX"
+        ]
+      }
+    },
+    {
+      "id": "se-charles-dickens-hard-times",
+      "title": "Hard Times",
+      "author": "Charles Dickens",
+      "sourceStatus": "PASS",
+      "bytes": 984219,
+      "sha256": "b0837ea9bb5f9f16444c5983a0b182ea2777f851842e83b246925d998c94e626",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I: The One Thing Needful",
+          "III: The Whelp",
+          "IX: Final"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I: The One Thing Needful",
+          "III: The Whelp",
+          "IX: Final"
+        ]
+      }
+    },
+    {
+      "id": "se-charles-dickens-oliver-twist",
+      "title": "Oliver Twist",
+      "author": "Charles Dickens",
+      "sourceStatus": "PASS",
+      "bytes": 918059,
+      "sha256": "7a58cd4694a33a919e37a33102a092b15989204506eb196237a9e5c51c272f2e",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I: Treats of the Place Where Oliver Twist Was Born and of the Circumstances Attending His Birth",
+          "XXVII: Atones for the Unpoliteness of a Former Chapter; Which Deserted a Lady, Most Unceremoniously",
+          "LIII: And Last"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I: Treats of the Place Where Oliver Twist Was Born and of the Circumstances Attending His Birth",
+          "XXVII: Atones for the Unpoliteness of a Former Chapter; Which Deserted a Lady, Most Unceremoniously",
+          "LIII: And Last"
+        ]
+      }
+    },
+    {
+      "id": "se-daniel-defoe-the-life-and-adventures-of-robinson-crusoe",
+      "title": "The Life and Adventures of Robinson Crusoe",
+      "author": "Daniel Defoe",
+      "sourceStatus": "PASS",
+      "bytes": 666734,
+      "sha256": "c7dfbe88c10fe5b600f42cf9b82b7fed9d132c0f4ee23cf3b205c78c5a2b259f",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I: Start in Life",
+          "XI: Finds Print of Man’s Foot on the Sand",
+          "XX: Fight Between Friday and a Bear"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I: Start in Life",
+          "XI: Finds Print of Man’s Foot on the Sand",
+          "XX: Fight Between Friday and a Bear"
+        ]
+      }
+    },
+    {
+      "id": "se-emily-bronte-wuthering-heights",
+      "title": "Wuthering Heights",
+      "author": "Emily Brontë",
+      "sourceStatus": "PASS",
+      "bytes": 820456,
+      "sha256": "36cb7d44a2859d08a283a3c8c6f6205cc92fb398428440e8c40645b0c1882244",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I",
+          "XVIII",
+          "XXXIV"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I",
+          "XVIII",
+          "XXXIV"
+        ]
+      }
+    },
+    {
+      "id": "se-frances-hodgson-burnett-the-secret-garden",
+      "title": "The Secret Garden",
+      "author": "Frances Hodgson Burnett",
+      "sourceStatus": "PASS",
+      "bytes": 623491,
+      "sha256": "fd8b90cf9033f6154c9bbeb861c01b18072f2710ce422a77d7807e36ae347325",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I: There Is No One Left",
+          "XIV: A Young Rajah",
+          "XXVII: In the Garden"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I: There Is No One Left",
+          "XIV: A Young Rajah",
+          "XXVII: In the Garden"
+        ]
+      }
+    },
+    {
+      "id": "se-frederick-douglass-narrative-of-the-life-of-frederick-douglass",
+      "title": "Narrative of the Life of Frederick Douglass",
+      "author": "Frederick Douglass",
+      "sourceStatus": "PASS",
+      "bytes": 416803,
+      "sha256": "797cfb6fdebb77b000b10d2c6f33812800823f77a5a865590d356809db7917b3",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Preface",
+          "VI",
+          "Appendix"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Preface",
+          "VI",
+          "Appendix"
+        ]
+      }
+    },
+    {
+      "id": "se-h-g-wells-the-invisible-man",
+      "title": "The Invisible Man",
+      "author": "H. G. Wells",
+      "sourceStatus": "PASS",
+      "bytes": 680131,
+      "sha256": "ea96500b18aeacca1a83c9f0689f411c3dc2feb2e76a81a22f3f0af66b318c46",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I: The Strange Man’s Arrival",
+          "XVI: In the Jolly Cricketers",
+          "Epilogue"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I: The Strange Man’s Arrival",
+          "XVI: In the Jolly Cricketers",
+          "Epilogue"
+        ]
+      }
+    },
+    {
+      "id": "se-h-g-wells-the-island-of-doctor-moreau",
+      "title": "The Island of Doctor Moreau",
+      "author": "H. G. Wells",
+      "sourceStatus": "PASS",
+      "bytes": 608590,
+      "sha256": "f7b34cd4f130eb1c45ec7214f2e1821d251fcc74f585f07bf20711d2f31fe362",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Introduction",
+          "XI: The Hunting of the Man",
+          "XXII: The Man Alone"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Introduction",
+          "XI: The Hunting of the Man",
+          "XXII: The Man Alone"
+        ]
+      }
+    },
+    {
+      "id": "se-h-g-wells-the-time-machine",
+      "title": "The Time Machine",
+      "author": "H. G. Wells",
+      "sourceStatus": "PASS",
+      "bytes": 535522,
+      "sha256": "c64890c15619ac2e82955f37b30409a8b0c37326c5be28d8fa402952b4c6e3c7",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I",
+          "VII",
+          "Epilogue"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I",
+          "VII",
+          "Epilogue"
+        ]
+      }
+    },
+    {
+      "id": "se-h-rider-haggard-king-solomons-mines",
+      "title": "King Solomon’s Mines",
+      "author": "H. Rider Haggard",
+      "sourceStatus": "PASS",
+      "bytes": 851975,
+      "sha256": "ecfb1e4850e77eb1bc34233524632f8f32d823f7b67eb3f1cbe7f938b7512682",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Introduction",
+          "X: The Witch-Hunt",
+          "XX: Found"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Introduction",
+          "X: The Witch-Hunt",
+          "XX: Found"
+        ]
+      }
+    },
+    {
+      "id": "se-h-rider-haggard-she",
+      "title": "She",
+      "author": "H. Rider Haggard",
+      "sourceStatus": "PASS",
+      "bytes": 1192532,
+      "sha256": "0cc628783ec873ca0187a31a2b0183be592f5218b4c299f281cea88f8ca357b6",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Introduction",
+          "XIV: A Soul in Hell",
+          "XXVIII: Over the Mountain"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Introduction",
+          "XIV: A Soul in Hell",
+          "XXVIII: Over the Mountain"
+        ]
+      }
+    },
+    {
+      "id": "se-henry-david-thoreau-walden",
+      "title": "Walden",
+      "author": "Henry David Thoreau",
+      "sourceStatus": "PASS",
+      "bytes": 997167,
+      "sha256": "bfd95abe732c622cf2341abb2c1b78a8c7fdd19e43aebfd774dc7ffee1064fd4",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Economy",
+          "Baker Farm",
+          "Conclusion"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Economy",
+          "Baker Farm",
+          "Conclusion"
+        ]
+      }
+    },
+    {
+      "id": "se-jack-london-the-call-of-the-wild",
+      "title": "The Call of the Wild",
+      "author": "Jack London",
+      "sourceStatus": "PASS",
+      "bytes": 478502,
+      "sha256": "dd29d33c8811128da6aba91cd9ba105c2fc939fc9a6b2881865ed29473df9d61",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I: Into the Primitive",
+          "IV: Who Has Won to Mastership",
+          "VII: The Sounding of the Call"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I: Into the Primitive",
+          "IV: Who Has Won to Mastership",
+          "VII: The Sounding of the Call"
+        ]
+      }
+    },
+    {
+      "id": "se-jack-london-white-fang",
+      "title": "White Fang",
+      "author": "Jack London",
+      "sourceStatus": "PASS",
+      "bytes": 470501,
+      "sha256": "2eca5bbc42ae023705f3dcc0ba5d0d0575c20dcf55917450b675fd5b2a812ea5",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I: The Trail of the Meat",
+          "V: The Covenant",
+          "V: The Sleeping Wolf"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I: The Trail of the Meat",
+          "V: The Covenant",
+          "V: The Sleeping Wolf"
+        ]
+      }
+    },
+    {
+      "id": "se-jane-austen-emma",
+      "title": "Emma",
+      "author": "Jane Austen",
+      "sourceStatus": "PASS",
+      "bytes": 798853,
+      "sha256": "05fa1677f0e842c68fb8ac98975e89aeafeee5b16f795b5047523575fa70ce2d",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I",
+          "XXVIII",
+          "LV"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I",
+          "XXVIII",
+          "LV"
+        ]
+      }
+    },
+    {
+      "id": "se-jane-austen-mansfield-park",
+      "title": "Mansfield Park",
+      "author": "Jane Austen",
+      "sourceStatus": "PASS",
+      "bytes": 708450,
+      "sha256": "ef870acb436392079e95a645402068d70308d2cd4cd4fa75f55cc9770bc9104f",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I",
+          "XXV",
+          "XLVIII"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I",
+          "XXV",
+          "XLVIII"
+        ]
+      }
+    },
+    {
+      "id": "se-jane-austen-northanger-abbey",
+      "title": "Northanger Abbey",
+      "author": "Jane Austen",
+      "sourceStatus": "PASS",
+      "bytes": 841951,
+      "sha256": "637debd18edb3e105dfc57169a16ad70fa8406334871e4f12685e5082e31eef2",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I",
+          "XVI",
+          "XXXI"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I",
+          "XVI",
+          "XXXI"
+        ]
+      }
+    },
+    {
+      "id": "se-jane-austen-persuasion",
+      "title": "Persuasion",
+      "author": "Jane Austen",
+      "sourceStatus": "PASS",
+      "bytes": 640478,
+      "sha256": "d0040bd9c8d55d2693e26fa6fa3cad4f410a7bd13099e3085a62eaac6e0d5fc2",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I",
+          "XIII",
+          "XXIV"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I",
+          "XIII",
+          "XXIV"
+        ]
+      }
+    },
+    {
+      "id": "se-jonathan-swift-gullivers-travels",
+      "title": "Gulliver’s Travels",
+      "author": "Jonathan Swift",
+      "sourceStatus": "PASS",
+      "bytes": 1016600,
+      "sha256": "cedf5daf17e8a8fd29a6dcdda02547c9c81965bc4ce5b7329d4218b2716c716c",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Introduction",
+          "III",
+          "XII"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Introduction",
+          "III",
+          "XII"
+        ]
+      }
+    },
+    {
+      "id": "se-l-frank-baum-the-wonderful-wizard-of-oz",
+      "title": "The Wonderful Wizard of Oz",
+      "author": "L. Frank Baum",
+      "sourceStatus": "PASS",
+      "bytes": 681132,
+      "sha256": "5ddd1f98fd23d7abcfc209613afd9f1271bfbe825376a22fda6cbbc72e3a640a",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I: The Cyclone",
+          "XII: The Search for the Wicked Witch",
+          "XXIII: Glinda the Good Witch Grants Dorothy’s Wish"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I: The Cyclone",
+          "XII: The Search for the Wicked Witch",
+          "XXIII: Glinda the Good Witch Grants Dorothy’s Wish"
+        ]
+      }
+    },
+    {
+      "id": "se-l-m-montgomery-anne-of-green-gables",
+      "title": "Anne of Green Gables",
+      "author": "L. M. Montgomery",
+      "sourceStatus": "PASS",
+      "bytes": 1087353,
+      "sha256": "f8ebee78f47ae986a2792846c0ad0732b1a13cdceda4b1a358c454bff71d1eea",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I: Mrs. Rachel Lynde Is Surprised",
+          "XX: A Good Imagination Gone Wrong",
+          "XXXVIII: The Bend in the Road"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I: Mrs. Rachel Lynde Is Surprised",
+          "XX: A Good Imagination Gone Wrong",
+          "XXXVIII: The Bend in the Road"
+        ]
+      }
+    },
+    {
+      "id": "se-mark-twain-the-adventures-of-tom-sawyer",
+      "title": "The Adventures of Tom Sawyer",
+      "author": "Mark Twain",
+      "sourceStatus": "PASS",
+      "bytes": 697383,
+      "sha256": "6d9a36a71c755a7ae40c55518666ba924a5be130dc1fc09b173f5028475526c2",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I: Tom Plays, Fights, and Hides",
+          "XVIII: Tom Reveals His Dream Secret",
+          "XXXV: Respectable Huck Joins the Gang"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I: Tom Plays, Fights, and Hides",
+          "XVIII: Tom Reveals His Dream Secret",
+          "XXXV: Respectable Huck Joins the Gang"
+        ]
+      }
+    },
+    {
+      "id": "se-nathaniel-hawthorne-the-scarlet-letter",
+      "title": "The Scarlet Letter",
+      "author": "Nathaniel Hawthorne",
+      "sourceStatus": "PASS",
+      "bytes": 554814,
+      "sha256": "f08c8e08deb9a147441e85140445d2368b6fcdbbd308926df0818b0f094f4568",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Preface to the Second Edition",
+          "XII: The Minister’s Vigil",
+          "XXIV: Conclusion"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Preface to the Second Edition",
+          "XII: The Minister’s Vigil",
+          "XXIV: Conclusion"
+        ]
+      }
+    },
+    {
+      "id": "se-oscar-wilde-the-picture-of-dorian-gray",
+      "title": "The Picture of Dorian Gray",
+      "author": "Oscar Wilde",
+      "sourceStatus": "PASS",
+      "bytes": 634140,
+      "sha256": "11cee02b0cb5836ea3afdddba89e3cdeca88b933285153b5fe84b8f9fe09bce6",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Preface",
+          "X",
+          "XX"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Preface",
+          "X",
+          "XX"
+        ]
+      }
+    },
+    {
+      "id": "se-rudyard-kipling-kim",
+      "title": "Kim",
+      "author": "Rudyard Kipling",
+      "sourceStatus": "PASS",
+      "bytes": 848312,
+      "sha256": "ba0fa5b33f0e2d1daad246541f1545f9c41a4624f9b034d706c30a91a4fe92c6",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I",
+          "VIII",
+          "XV"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I",
+          "VIII",
+          "XV"
+        ]
+      }
+    },
+    {
+      "id": "se-rudyard-kipling-the-jungle-book",
+      "title": "The Jungle Book",
+      "author": "Rudyard Kipling",
+      "sourceStatus": "PASS",
+      "bytes": 599536,
+      "sha256": "301cfaf849755dacaf90536d3c240005ed8212cea25b167e2c501e72fc523184",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Mowgli’s Brothers",
+          "The White Seal",
+          "Her Majesty’s Servants"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Mowgli’s Brothers",
+          "The White Seal",
+          "Her Majesty’s Servants"
+        ]
+      }
+    },
+    {
+      "id": "se-stephen-crane-the-red-badge-of-courage",
+      "title": "The Red Badge of Courage",
+      "author": "Stephen Crane",
+      "sourceStatus": "PASS",
+      "bytes": 758461,
+      "sha256": "837f73c40c66262c2e9a0f660d776c8d59094eb5677b423a3c019a814cd3f818",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I",
+          "XIII",
+          "XXIV"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I",
+          "XIII",
+          "XXIV"
+        ]
+      }
+    },
+    {
+      "id": "se-thomas-hardy-far-from-the-madding-crowd",
+      "title": "Far from the Madding Crowd",
+      "author": "Thomas Hardy",
+      "sourceStatus": "PASS",
+      "bytes": 1025553,
+      "sha256": "a73f37347769e83b501bf25bd96e2b31102fe4c24d30f29c90f8bef6e5637579",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Preface",
+          "XXIX: Particulars of a Twilight Walk",
+          "LVII: A Foggy Night and Morning; Conclusion"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Preface",
+          "XXIX: Particulars of a Twilight Walk",
+          "LVII: A Foggy Night and Morning; Conclusion"
+        ]
+      }
+    },
+    {
+      "id": "se-thomas-hardy-tess-of-the-durbervilles",
+      "title": "Tess of the d’Urbervilles",
+      "author": "Thomas Hardy",
+      "sourceStatus": "PASS",
+      "bytes": 1140305,
+      "sha256": "6e32181fbfaaf1a626bc1804ed2120c07c4b2fc706136d9bc56f55ed050aae9e",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I",
+          "XXX",
+          "LIX"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "I",
+          "XXX",
+          "LIX"
+        ]
+      }
+    },
+    {
+      "id": "se-wilkie-collins-the-moonstone",
+      "title": "The Moonstone",
+      "author": "Wilkie Collins",
+      "sourceStatus": "PASS",
+      "bytes": 958053,
+      "sha256": "a62a2002f2fb13e5e90cc89f0210d8355a8252fb83c1dc9f1c0ca76bc4b3cc4e",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Prologue",
+          "IV",
+          "III: The Statement of Mr. Murthwaite (1850)"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Prologue",
+          "IV",
+          "III: The Statement of Mr. Murthwaite (1850)"
+        ]
+      }
+    },
+    {
+      "id": "se-wilkie-collins-the-woman-in-white",
+      "title": "The Woman in White",
+      "author": "Wilkie Collins",
+      "sourceStatus": "PASS",
+      "bytes": 1162016,
+      "sha256": "c6e53a06cce709236403de27d62230b65392de94e8841d01a681917390f0ed88",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Preface to the Present Edition",
+          "The Story Continued by Frederick Fairlie, Esq., of Limmeridge House",
+          "III"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Preface to the Present Edition",
+          "The Story Continued by Frederick Fairlie, Esq., of Limmeridge House",
+          "III"
+        ]
+      }
+    },
+    {
+      "id": "ws-vi-kieu",
+      "title": "Truyện Kiều",
+      "author": "Nguyễn Du",
+      "sourceStatus": "PASS",
+      "bytes": 62922,
+      "sha256": "4fc8bc6cf2df378da046c666ce8154ce062c0b9e4231d2602648b916a8d5c9ec",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Truyện Kiều"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Truyện Kiều"
+        ]
+      }
+    },
+    {
+      "id": "ws-vi-luc-van-tien",
+      "title": "Lục Vân Tiên",
+      "author": "Nguyễn Đình Chiểu",
+      "sourceStatus": "PASS",
+      "bytes": 65278,
+      "sha256": "d70a9c1443ee0bfb0cb1070d695a8260f7b5812185dfe0e67382bcd4c7d4fd07",
+      "coverStatus": "PASS",
+      "desktop": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Lục Vân Tiên (bản Quốc ngữ 2082 câu)/I",
+          "Lục Vân Tiên (bản Quốc ngữ 2082 câu)/III",
+          "Lục Vân Tiên (bản Quốc ngữ 2082 câu)/IV"
+        ]
+      },
+      "phone": {
+        "passed": true,
+        "checks": 4,
+        "readingTargets": [
+          "Lục Vân Tiên (bản Quốc ngữ 2082 câu)/I",
+          "Lục Vân Tiên (bản Quốc ngữ 2082 câu)/III",
+          "Lục Vân Tiên (bản Quốc ngữ 2082 câu)/IV"
+        ]
+      }
+    }
+  ]
+}

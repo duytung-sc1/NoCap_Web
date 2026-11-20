@@ -30,4 +30,24 @@ The production build and TypeScript check pass. Lint has no errors (four existin
 
 Frozen-source ReaderPane validation passes for all 100 books at 1366×900/English UI and all 100 at 390×844/Vietnamese UI (375-pixel content iframe). Each viewport has 397 checks: initial opening and 297 first/middle/last source-section targets. No browser errors or actual off-frame text/image clipping are found. Hash guards confirm all 150 non-test product modules remain unchanged throughout both final runs. These source-section targets include original front/legal matter in some older split editions; production TOC checks separately select authentic reading entries.
 
-The post-deployment gate repeats all 100 books through the actual public application on both viewport sizes, selects authentic reading TOC entries, and checks representative feature flows again. Its per-book results and active build identity are retained beside the source audit evidence.
+## Production result
+
+Released source commit: `4e467ddfd90b2b980ece49e8fd2d0f3b7a0c447e`.
+Production: <https://nocap.rest>. Deployment: <https://21dd3f7b.nocap-web.pages.dev>.
+Every production browser case verifies `/assets/index-D_FMsQz3.js`; the deployed entry and reader chunks also match the tested build by SHA-256.
+
+| Verification | Result |
+|---|---|
+| Public catalog source downloads and archive integrity | 100/100 pass |
+| Final cover URLs | 100/100 pass |
+| Frozen-source desktop + phone book runs | 200/200 pass; 794 checks |
+| Actual production desktop + phone book runs | 200/200 pass; 800 checks |
+| Production reading TOC targets | 596 correct visible destinations; 4 additional within-document reading-scroll checks |
+| Production representative feature flows | 8/8 pass; 66 checks |
+| Production Escape closes the reader | 5/5 desktop cases pass |
+| Production manual-scroll position survives panel changes | 2/2 phone cases pass |
+| Browser JavaScript errors or final width/image warnings | 0 |
+
+The production checks select authentic reading contents entries rather than counting only successful network requests or the presence of an iframe. All previously identified failing examples and both recovered TOCs pass. No blocking reading error was found in the final checks.
+
+The [structured result](catalog-content-audit-results-2026-11-20.json) includes each book's identity, original SHA-256 and desktop/phone reading targets. Full raw browser evidence remains in the audit directory specified above.
