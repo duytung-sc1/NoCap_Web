@@ -28,6 +28,8 @@ import { AndroidDownloadCallout } from './AndroidDownloadCallout'
 import { CompactNavigation, MobileNavigation } from './ResponsiveNavigation'
 import { ExploreToolbar } from './ExploreToolbar'
 import { BookCard } from './BookCard'
+import { ReadingRecommendations } from './ReadingGenreRecommendations'
+import { buildReadingRecommendations } from './readingRecommendations'
 import { ReaderToolbar } from './ReaderToolbar'
 import { ImportFeedback, type ImportFeedbackStatus } from './ImportFeedback'
 import { commitDocumentImport } from './importDocument'
@@ -326,6 +328,15 @@ function App() {
     navigate({ kind: 'page', page: next })
     window.scrollTo({ top: 0 })
   }, [navigate])
+
+  function exploreRecommendedGenre(categoryId: string) {
+    setQuery('')
+    setCategory(categoryId)
+    setShelfFilter('all')
+    setOrganizationFilter('all')
+    setSortOrder('recent')
+    setPage('catalog')
+  }
 
   function navigatePrimary(next: Page) {
     if (page === next || (page === 'libraryMap' && next === 'library')) {
@@ -877,6 +888,9 @@ function App() {
   })).sort((left, right) => left.path.localeCompare(right.path, lang)), [libraryFolderState, curT.nav.library, lang])
   const canonicalProgressBookIds = useMemo(() => new Map(books.map(book => [androidRecordId('reading_progress', book.id), book.id])), [books])
   const resetBookIds = useMemo(() => resetLibraryBookIds(records, canonicalProgressBookIds), [records, canonicalProgressBookIds])
+  const recommendations = useMemo(() => buildReadingRecommendations({
+    books, catalog, categories, records: loadedProfile === profile ? records : [], profile, resetBookIds,
+  }), [books, catalog, categories, records, loadedProfile, profile, resetBookIds])
   const libraryBooks = useMemo(() => books.filter(book => book.source === 'local' || book.source === 'cloud' || (offlineIds.has(book.id) && !resetBookIds.has(book.id)) || favorites.has(book.id) || libraryFolderState.bookFolders.has(book.id) || !!progressFor(records, book.id)), [books, offlineIds, favorites, records, libraryFolderState, resetBookIds])
   const tags = useMemo(() => records.filter(record => record.kind === 'tags' && !record.deleted).map(record => ({ id: toText(record.payload.id), name: toText(record.payload.name) })).filter(item => item.id && item.name), [records])
   const collections = useMemo(() => records.filter(record => record.kind === 'collections' && !record.deleted).map(record => ({ id: toText(record.payload.id), name: toText(record.payload.name) })).filter(item => item.id && item.name), [records])
@@ -2283,8 +2297,11 @@ async function sha256Hex(file: Blob): Promise<string> {
         {page === 'home' && <>
           <SectionHeader title={lang === 'vi' ? 'Đọc tiếp gần đây' : 'Continue Reading'} action={curT.showcase.viewAll} onAction={() => setPage('library')} />
           {reading.length ? <div className="book-grid">{reading.slice(0, 4).map(book => <BookCard key={book.id} book={book} lang={lang} progress={Number(progressFor(records, book.id)?.payload.progression || 0)} onOpen={() => void openBook(book)} onStealth={() => void launchStealth(book)} onDetails={() => showBookDetails(book)} onFavorite={() => void toggleFavorite(book)} favorite={favorites.has(book.id)} offline={book.source === 'local' || offlineIds.has(book.id)} downloadBusy={downloadBusy === book.id} onDownload={(book.source === 'local' || book.fileUrl) ? () => void downloadBook(book) : undefined} />)}</div> : <div className="empty-state"><BookOpen size={30} /><h3>{lang === 'vi' ? 'Hành trình đọc bắt đầu ở đây' : 'Your reading journey begins here'}</h3><p>{lang === 'vi' ? 'Chọn một cuốn sách hoặc thêm tài liệu của bạn để bắt đầu.' : 'Pick a book or import your own document to begin.'}</p><button className="secondary" onClick={() => setPage('catalog')}>{curT.hero.exploreBtn}</button></div>}
-          <SectionHeader title={lang === 'vi' ? 'Gợi ý cho bạn' : 'Recommended for You'} action={lang === 'vi' ? 'Xem tất cả' : 'View all'} onAction={() => setPage('catalog')} />
-          <div className="book-grid">{catalog.filter(book => book.fileUrl).slice(0, 4).map(book => <BookCard key={book.id} book={book} lang={lang} onOpen={() => void openBook(book)} onStealth={() => void launchStealth(book)} onDetails={() => showBookDetails(book)} onFavorite={() => void toggleFavorite(book)} favorite={favorites.has(book.id)} offline={offlineIds.has(book.id)} downloadBusy={downloadBusy === book.id} onDownload={() => void downloadBook(book)} />)}</div>
+          <ReadingRecommendations lang={lang} genres={recommendations.genres} categories={categories} onExplore={exploreRecommendedGenre} />
+          {recommendations.books.length > 0 && <>
+            <SectionHeader title={recommendations.genres.length ? (lang === 'vi' ? 'Gợi ý cho bạn' : 'Recommended for You') : (lang === 'vi' ? 'Khám phá sách' : 'Explore books')} action={lang === 'vi' ? 'Xem tất cả' : 'View all'} onAction={() => setPage('catalog')} />
+            <div className="book-grid">{recommendations.books.map(book => <BookCard key={book.id} book={book} lang={lang} onOpen={() => void openBook(book)} onStealth={() => void launchStealth(book)} onDetails={() => showBookDetails(book)} onFavorite={() => void toggleFavorite(book)} favorite={favorites.has(book.id)} offline={offlineIds.has(book.id)} downloadBusy={downloadBusy === book.id} onDownload={() => void downloadBook(book)} />)}</div>
+          </>}
         </>}
 
         {(page === 'catalog' || page === 'library' || page === 'libraryMap') && <>
@@ -2337,6 +2354,7 @@ async function sha256Hex(file: Blob): Promise<string> {
               ))}
             </div>
           )}
+          {page === 'catalog' && <ReadingRecommendations lang={lang} genres={recommendations.genres} categories={categories} activeCategory={category} onExplore={exploreRecommendedGenre} />}
           {page === 'catalog' ? <ExploreToolbar
             lang={lang}
             query={query}

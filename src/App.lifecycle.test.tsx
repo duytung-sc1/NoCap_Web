@@ -139,6 +139,81 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks(); delete (window as unknown as { google?: unknown }).google })
 
+describe('reading-based genre suggestions', () => {
+  const recommendationProfile = 'DEVICE_LOCAL'
+  const genreCatalog = {
+    books: [
+      { id: 'genre-read', title: 'Cuốn trinh thám đã đọc', author: 'QA', categoryId: 'mystery', fileUrl: 'https://books.example.test/read.epub' },
+      { id: 'genre-next', title: 'Vụ án tiếp theo', author: 'QA', categoryId: 'mystery', fileUrl: 'https://books.example.test/next.epub' },
+      { id: 'genre-history', title: 'Một cuốn lịch sử', author: 'QA', categoryId: 'history', fileUrl: 'https://books.example.test/history.epub' },
+    ],
+    categories: [{ id: 'mystery', name: 'Trinh thám' }, { id: 'history', name: 'Lịch sử' }],
+  }
+  const genreProgress = (profile = recommendationProfile, progression = .4): SyncRecord => ({
+    key: `${profile}:reading_progress:genre-read`, id: 'genre-read', profile, kind: 'reading_progress', version: 1, deleted: false,
+    payload: { book_id: 'genre-read', progression, last_read_at: 100 },
+  })
+
+  it('explains a genuine reading genre and clears incompatible Explore filters when it is selected', async () => {
+    fixtures.getCatalog.mockResolvedValue(genreCatalog)
+    fixtures.localRecords.mockResolvedValue([genreProgress()])
+    window.history.replaceState(null, '', '/explore')
+    render(<App />)
+    const suggestion = await screen.findByRole('button', { name: 'Khám phá thể loại Trinh thám' })
+    expect(suggestion.textContent).toContain('Cuốn trinh thám đã đọc')
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Tìm sách' }), { target: { value: 'nothing matches this' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Thể loại' }), { target: { value: 'history' } })
+    expect(screen.queryByRole('button', { name: 'Vụ án tiếp theo' })).toBeNull()
+    fireEvent.click(suggestion)
+    expect((screen.getByRole('searchbox', { name: 'Tìm sách' }) as HTMLInputElement).value).toBe('')
+    expect((screen.getByRole('combobox', { name: 'Thể loại' }) as HTMLSelectElement).value).toBe('mystery')
+    expect(screen.getByRole('button', { name: 'Vụ án tiếp theo' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Một cuốn lịch sử' })).toBeNull()
+    expect(suggestion.getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('recommends unread matching books on Home while keeping the read source in Continue Reading', async () => {
+    fixtures.getCatalog.mockResolvedValue(genreCatalog)
+    fixtures.localRecords.mockResolvedValue([genreProgress()])
+    render(<App />)
+    await screen.findByRole('heading', { name: 'Gợi ý cho bạn' })
+    expect(screen.getByRole('button', { name: 'Vụ án tiếp theo' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Một cuốn lịch sử' })).toBeNull()
+    // The read source stays in Continue Reading, rather than being presented as
+    // a new recommendation a second time.
+    expect(screen.getAllByRole('button', { name: 'Cuốn trinh thám đã đọc' })).toHaveLength(1)
+  })
+
+  it('does not claim personalized genres from opened covers alone', async () => {
+    fixtures.getCatalog.mockResolvedValue(genreCatalog)
+    fixtures.localRecords.mockResolvedValue([genreProgress(recommendationProfile, 0)])
+    render(<App />)
+    await screen.findByRole('button', { name: 'Vụ án tiếp theo' })
+    expect(screen.queryByRole('heading', { name: 'Gợi ý thể loại' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Gợi ý cho bạn' })).toBeNull()
+    expect(screen.getByRole('heading', { name: 'Khám phá sách' })).toBeTruthy()
+  })
+
+  it('removes account reading evidence immediately while another profile is still loading', async () => {
+    const accountProfile = `ACCOUNT:${session.user.id}`
+    const guest = deferred<SyncRecord[]>()
+    fixtures.getCatalog.mockResolvedValue(genreCatalog)
+    fixtures.localRecords.mockImplementation((profile: string) => profile === accountProfile ? Promise.resolve([genreProgress(accountProfile)]) : guest.promise)
+    saveSession(session)
+    window.history.replaceState(null, '', '/explore')
+    render(<App />)
+    await screen.findByRole('button', { name: 'Khám phá thể loại Trinh thám' })
+    act(() => {
+      saveSession(null)
+      window.dispatchEvent(new StorageEvent('storage', { key: SESSION_STORAGE_KEY, storageArea: localStorage }))
+    })
+    expect(screen.queryByRole('heading', { name: 'Gợi ý thể loại' })).toBeNull()
+    expect(screen.queryByText('Vì bạn đã đọc')).toBeNull()
+    await act(async () => { guest.resolve([]); await guest.promise })
+    expect(screen.queryByRole('button', { name: 'Khám phá thể loại Trinh thám' })).toBeNull()
+  })
+})
+
 describe('system announcements integration', () => {
   it.each([false, true])('shows active admin announcements on the public web (signed in: %s)', async signedIn => {
     if (signedIn) saveSession(session)
