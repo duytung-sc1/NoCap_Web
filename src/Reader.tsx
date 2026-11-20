@@ -8,8 +8,9 @@ import { applyDocumentTypography, contentLanguage } from './typography'
 import { readerTypeface } from './readerTypography'
 import type { Book, FontFamily, ReaderAnnotation, ReaderLocation, ReaderWidth, TextAlignment, TocItem } from './types'
 import { detectReaderFormat } from './readerFormat'
-import { refillEpubAfterRender, restoreEpubAfterResize, synchronizeEpubScroll, waitForEpubTargetFonts, type EpubScrollManager } from './epubScroll'
+import { coordinateEpubNavigation, refillEpubAfterRender, restoreEpubAfterResize, synchronizeEpubScroll, waitForEpubTargetFonts, type EpubScrollManager } from './epubScroll'
 import { observeEpubViewport } from './epubViewport'
+import { completeEpubToc } from './epubToc'
 import { archiveLocator, archivePageIndex, clampProgression, epubProgression, findSpineHref, normalizedPdfRects, pdfTextOffsets, rangeFromOffsets, rangeOffsets, sectionTextProgression, type PdfRect } from './readerPositions'
 import type Rendition from 'epubjs/types/rendition'
 import type Contents from 'epubjs/types/contents'
@@ -138,10 +139,28 @@ function applyEpubComfort(view: Rendition, comfort: Pick<Props, 'fontSize' | 'fo
       'font-synthesis': 'none',
       'line-height': `${lineHeight || 1.65} !important`,
       'text-align': `${textAlignment || 'left'} !important`,
+      'overflow-wrap': 'anywhere !important',
+      'min-width': '0 !important',
       'max-width': `${readingMeasure(readerWidth)} !important`,
       'margin-left': 'auto !important',
       'margin-right': 'auto !important',
     },
+    'div, section, blockquote, figure, .figcenter, .figleft, .figright, .caption, .illustration': {
+      'box-sizing': 'border-box !important',
+      'min-width': '0 !important',
+      'max-width': '100% !important',
+    },
+    'img, svg': { 'max-width': '100% !important' },
+    'h1, h2, h3, h4, h5, h6': {
+      'overflow-wrap': 'anywhere !important',
+      'white-space': 'normal !important',
+    },
+    'table, pre': {
+      'box-sizing': 'border-box !important',
+      'max-width': '100% !important',
+      'overflow-x': 'auto !important',
+    },
+    table: { display: 'block !important' },
   })
 }
 
@@ -197,6 +216,7 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
   const contentReadiness = useRef(new WeakMap<Document, Promise<void>>())
   const renditionReady = useRef(false)
   const navigationVersion = useRef(0)
+  const navigationTarget = useRef<{ target: string; settled: boolean } | null>(null)
   const reflow = useRef<ReturnType<typeof restoreEpubAfterResize> | null>(null)
   const appliedLocatorRequest = useRef<string | null>(null)
   const comfortRef = useRef({ fontSize, fontFamily, lineHeight, textAlignment, readerWidth, theme, language })
@@ -222,6 +242,20 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
     }
   }, [])
 
+  const displayNavigation = useCallback(async (view: Rendition, target: string | undefined, isCurrent: () => boolean) => {
+    const request = target ? { target, settled: false } : null
+    navigationTarget.current = request
+    try {
+      await displayEpubLocation(view, target, isCurrent, contentReadiness.current)
+      if (request && isCurrent()) request.settled = true
+    } catch (error) {
+      if (navigationTarget.current === request) navigationTarget.current = null
+      throw error
+    } finally {
+      if (!isCurrent() && navigationTarget.current === request) navigationTarget.current = null
+    }
+  }, [])
+
   useEffect(() => {
     if (!navigateTarget || !rendition.current || !renditionReady.current) return
     const target = findSpineHref(bookRef.current?.spine, navigateTarget) || navigateTarget
@@ -230,9 +264,9 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
     const version = ++navigationVersion.current
     requestedProgression.current = null
     reflow.current?.cancel()
-    void displayEpubLocation(current, target, () => active && navigationVersion.current === version, contentReadiness.current).catch(() => {})
+    void displayNavigation(current, target, () => active && navigationVersion.current === version).catch(() => {})
     return () => { active = false }
-  }, [navigateTarget, renditionVersion])
+  }, [navigateTarget, renditionVersion, displayNavigation])
 
   useEffect(() => {
     const saved = parseInitial(navigateLocator?.locatorJson)
@@ -250,9 +284,9 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
     const version = ++navigationVersion.current
     requestedProgression.current = null
     reflow.current?.cancel()
-    void displayEpubLocation(view, cfi || href, () => active && navigationVersion.current === version, contentReadiness.current).catch(() => {})
+    void displayNavigation(view, cfi || href, () => active && navigationVersion.current === version).catch(() => {})
     return () => { active = false }
-  }, [navigateLocator, renditionVersion])
+  }, [navigateLocator, renditionVersion, displayNavigation])
 
   useEffect(() => {
     const request = navigateProgression
@@ -274,7 +308,7 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
           const targetHref = findSpineHref(book.spine, request.href) || request.href
           requestedProgression.current = clampProgression(request.progression)
           if (isCurrent()) {
-            await view.display(targetHref)
+            await displayNavigation(view, targetHref, isCurrent)
             if (!isCurrent()) return
             locationRef.current({
               locatorJson: JSON.stringify({ type: 'STEALTH', version: 1, href: request.href, progression: request.progression }),
@@ -290,13 +324,13 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
         }
         const progression = clampProgression(request.progression)
         const cfi = book.locations.cfiFromPercentage(progression)
-        if (isCurrent() && cfi) await view.display(cfi)
+        if (isCurrent() && cfi) await displayNavigation(view, cfi, isCurrent)
       } catch {
         // Keep the current EPUB location if this book cannot generate CFIs.
       }
     })()
     return () => { active = false }
-  }, [navigateProgression, renditionVersion, generateLocations])
+  }, [navigateProgression, renditionVersion, generateLocations, displayNavigation])
 
   useEffect(() => {
     if (!host.current) return
@@ -305,12 +339,14 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
     locationsReady.current = false
     locationsPromise.current = null
     requestedProgression.current = null
+    navigationTarget.current = null
     publicationLanguage.current = undefined
     let alive = true
     let book: import('epubjs/types/book').default | null = null
     let view: Rendition | null = null
     let stopObservingViewport: (() => void) | undefined
     let stopRefillingViewport: (() => void) | undefined
+    let stopCoordinatingNavigation: (() => void) | undefined
     async function open() {
       try {
         const { default: ePub } = await import('epubjs')
@@ -323,7 +359,7 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
         // declared EPUB language before choosing or measuring the reader font.
         publicationLanguage.current = (await book.loaded.metadata).language
         if (!alive || !host.current) return
-        void book.loaded.navigation.then(nav => {
+        void book.loaded.navigation.then(async nav => {
           if (!alive || !nav?.toc || !onTocRef.current) return
           type RawToc = { id?: string; href: string; label?: string; subitems?: RawToc[] }
           const formatToc = (list: RawToc[]): TocItem[] => list.map(item => ({
@@ -332,7 +368,10 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
             href: item.href,
             subitems: item.subitems?.length ? formatToc(item.subitems) : undefined,
           }))
-          onTocRef.current(formatToc(nav.toc as RawToc[]))
+          const originalToc = formatToc(nav.toc as RawToc[])
+          onTocRef.current(originalToc)
+          const completedToc = await completeEpubToc(book, originalToc, langRef.current, () => alive)
+          if (alive && completedToc !== originalToc) onTocRef.current?.(completedToc)
         }).catch(() => {})
         view = book.renderTo(host.current, { width: '100%', height: '100%', flow: 'scrolled-doc', manager: 'continuous', overflow: 'scroll', allowScriptedContent: false })
         rendition.current = view
@@ -344,6 +383,7 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
         })
         await view.started
         if (!alive) return
+        stopCoordinatingNavigation = coordinateEpubNavigation(view as unknown as Parameters<typeof coordinateEpubNavigation>[0], () => navigationTarget.current?.target)
         synchronizeEpubScroll((view as unknown as { manager: EpubScrollManager }).manager)
         stopRefillingViewport = refillEpubAfterRender(view as unknown as Parameters<typeof refillEpubAfterRender>[0])
         // Set typography before display measures any spine views.
@@ -361,6 +401,27 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
               style.id = 'nocap-reader-fonts'
               style.textContent = epubFontFaces
               document.head.appendChild(style)
+            }
+            if (!document.getElementById('nocap-reader-indent')) {
+              const style = document.createElement('style')
+              style.id = 'nocap-reader-indent'
+              style.textContent = '@media(max-width:600px){[data-nocap-indent-left]{margin-left:min(var(--nocap-source-indent-left),20vw,20%)!important}[data-nocap-indent-right]{margin-right:min(var(--nocap-source-indent-right),20vw,20%)!important}}'
+              document.head.appendChild(style)
+              // Old editions use both inline and class-based indentation.
+              // Retain their source rules on wide pages, while allowing room
+              // for the actual text inside narrow nested blocks on phones.
+              for (const element of document.querySelectorAll<HTMLElement>('[style], [class]')) {
+                const computed = document.defaultView?.getComputedStyle(element)
+                for (const side of ['left', 'right'] as const) {
+                  const inline = element.style.getPropertyValue(`margin-${side}`).trim()
+                  const measured = computed?.getPropertyValue(`margin-${side}`).trim() || ''
+                  const value = inline || (parseFloat(measured) > 60 ? measured : '')
+                  if (/^(?:\d*\.)?\d+(?:px|em|rem|ch|ex|%)$/i.test(value) && parseFloat(value) > 0) {
+                    element.style.setProperty(`--nocap-source-indent-${side}`, value)
+                    element.setAttribute(`data-nocap-indent-${side}`, '')
+                  }
+                }
+              }
             }
             view!.themes.inject(contents)
             view!.themes.overrides(contents)
@@ -384,6 +445,14 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
             ? (book.spine as unknown as { get: (cfi: string) => { href?: string; index?: number } }).get(start.cfi)
             : undefined
           const sectionIndex = Number.isFinite(section?.index) ? section!.index! : (start.index || 0)
+          const navigating = navigationTarget.current
+          // A resize may occur as a search/notes panel closes. Keep its pending
+          // destination until final alignment has reported that same section;
+          // afterward native scrolling/resizing uses the current reading CFI.
+          if (navigating) {
+            if (!navigating.settled || book?.spine.get(navigating.target)?.index !== sectionIndex) return
+            navigationTarget.current = null
+          }
           let sectionProgression = 0
           try {
             // epub.js's runtime returns Contents[], despite its bundled type.
@@ -505,7 +574,7 @@ function EpubPane({ lang = 'vi', book: sourceBook, bytes, initial, fontSize, fon
       } catch { if (alive) setError(translate("Không mở được EPUB này. Tệp có thể bị hỏng hoặc không đúng định dạng.", langRef.current)) }
     }
     void open()
-    return () => { alive = false; navigationVersion.current++; publishSearch(null); stopObservingViewport?.(); stopRefillingViewport?.(); reflow.current?.dispose(); reflow.current = null; renditionReady.current = false; rendition.current = null; bookRef.current = null; locationsReady.current = false; locationsPromise.current = null; view?.destroy(); book?.destroy() }
+    return () => { alive = false; navigationVersion.current++; navigationTarget.current = null; publishSearch(null); stopObservingViewport?.(); stopRefillingViewport?.(); stopCoordinatingNavigation?.(); reflow.current?.dispose(); reflow.current = null; renditionReady.current = false; rendition.current = null; bookRef.current = null; locationsReady.current = false; locationsPromise.current = null; view?.destroy(); book?.destroy() }
   }, [bytes, initial, publishSearch, generateLocations])
 
   useEffect(() => {

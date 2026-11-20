@@ -33,11 +33,12 @@ function epub() {
     manager: {
       container: { scrollTop: 0, scrollLeft: 0 }, scrollTop: 0, scrollLeft: 0,
       scrollTo() {}, scrollBy() {}, views: { all: () => [], find: () => undefined },
+      resize: vi.fn(),
     },
   }
   book.renderTo.mockReturnValue(view)
   fixture.open.mockReturnValue(book)
-  return { book, view, emit: (event: string, ...args: unknown[]) => listeners.get(event)?.(...args) }
+  return { book, view, display: view.display, resize: view.manager.resize, emit: (event: string, ...args: unknown[]) => listeners.get(event)?.(...args) }
 }
 
 const props = {
@@ -53,7 +54,7 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 it('retires initial EPUB restoration before pending location generation finishes', async () => {
-  const { book, view } = epub(), pending = deferred<void>()
+  const { book, view, display } = epub(), pending = deferred<void>()
   book.locations.generate.mockReturnValue(pending.promise)
   const { unmount } = render(<ReaderPane {...props} initial={JSON.stringify({ type: 'STEALTH', href: 'chapter.xhtml', progression: .4 })} />)
   await waitFor(() => expect(book.locations.generate).toHaveBeenCalledOnce())
@@ -61,14 +62,14 @@ it('retires initial EPUB restoration before pending location generation finishes
   await act(async () => { pending.resolve(); await pending.promise })
   expect(view.destroy).toHaveBeenCalledOnce()
   expect(book.destroy).toHaveBeenCalledOnce()
-  expect(view.display).not.toHaveBeenCalled()
+  expect(display).not.toHaveBeenCalled()
   expect(props.onLocation).not.toHaveBeenCalled()
 })
 
 it('ignores delayed EPUB location and selection events after closing the document', async () => {
-  const { view, emit } = epub()
+  const { display, emit } = epub()
   const { unmount } = render(<ReaderPane {...props} />)
-  await waitFor(() => expect(view.display).toHaveBeenCalledOnce())
+  await waitFor(() => expect(display).toHaveBeenCalledOnce())
   unmount(); props.onLocation.mockClear()
   act(() => {
     emit('relocated', { start: { cfi: 'cfi:old', href: 'chapter.xhtml' } })
@@ -79,47 +80,63 @@ it('ignores delayed EPUB location and selection events after closing the documen
 })
 
 it('does not let a cancelled EPUB progression request overwrite the next location', async () => {
-  const { book, view, emit } = epub(), pending = deferred<void>()
+  const { book, display, emit } = epub(), pending = deferred<void>()
   book.locations.generate.mockReturnValueOnce(pending.promise)
   const request = { requestId: 1, href: 'old.xhtml', progression: .1 }
   const { rerender } = render(<ReaderPane {...props} />)
-  await waitFor(() => expect(view.display).toHaveBeenCalledOnce())
+  await waitFor(() => expect(display).toHaveBeenCalledOnce())
   rerender(<ReaderPane {...props} navigateProgression={request} />)
   await waitFor(() => expect(book.locations.generate).toHaveBeenCalledOnce())
   rerender(<ReaderPane {...props} navigateProgression={request} navigateTarget="current.xhtml" />)
-  await waitFor(() => expect(view.display).toHaveBeenLastCalledWith('current.xhtml'))
+  await waitFor(() => expect(display).toHaveBeenLastCalledWith('current.xhtml'))
   await act(async () => { pending.resolve(); await pending.promise })
   props.onLocation.mockClear()
   act(() => emit('relocated', { start: { cfi: 'cfi:current', href: 'chapter.xhtml' } }))
-  expect(view.display).toHaveBeenLastCalledWith('current.xhtml')
+  expect(display).toHaveBeenLastCalledWith('current.xhtml')
   expect(props.onLocation).toHaveBeenLastCalledWith(expect.objectContaining({ progression: .7 }))
 })
 
-it('does not publish a superseded EPUB progression after its display finishes late', async () => {
-  const { view } = epub(), pending = deferred<void>()
+it('finishes in-flight EPUB rendering before the next destination and does not publish its superseded progression', async () => {
+  const { display, emit } = epub(), pending = deferred<void>()
   const request = { requestId: 1, href: 'old.xhtml', progression: .1 }
   const { rerender } = render(<ReaderPane {...props} />)
-  await waitFor(() => expect(view.display).toHaveBeenCalledOnce())
-  view.display.mockImplementation(target => target === 'old.xhtml' ? pending.promise : Promise.resolve())
+  await waitFor(() => expect(display).toHaveBeenCalledOnce())
+  display.mockImplementation(target => target === 'old.xhtml' ? pending.promise : Promise.resolve())
   rerender(<ReaderPane {...props} navigateProgression={request} />)
-  await waitFor(() => expect(view.display).toHaveBeenLastCalledWith('old.xhtml'))
+  await waitFor(() => expect(display).toHaveBeenLastCalledWith('old.xhtml'))
   rerender(<ReaderPane {...props} navigateProgression={request} navigateTarget="current.xhtml" />)
-  await waitFor(() => expect(view.display).toHaveBeenLastCalledWith('current.xhtml'))
+  expect(display).toHaveBeenLastCalledWith('old.xhtml')
   props.onLocation.mockClear()
+  act(() => emit('relocated', { start: { cfi: 'cfi:old', href: 'chapter.xhtml' } }))
+  expect(props.onLocation).not.toHaveBeenCalled()
   await act(async () => { pending.resolve(); await pending.promise })
+  await waitFor(() => expect(display).toHaveBeenLastCalledWith('current.xhtml'))
   expect(props.onLocation).not.toHaveBeenCalled()
 })
 
+it('retires a completed navigation destination so a later resize preserves the manually scrolled CFI', async () => {
+  const { view, display, resize, emit } = epub()
+  const { rerender } = render(<ReaderPane {...props} />)
+  await waitFor(() => expect(display).toHaveBeenCalledOnce())
+  rerender(<ReaderPane {...props} navigateTarget="chapter.xhtml#search-result" />)
+  await waitFor(() => expect(display).toHaveBeenLastCalledWith('chapter.xhtml#search-result'))
+  await act(async () => { await Promise.resolve() })
+  act(() => emit('relocated', { start: { cfi: 'cfi:search-result', href: 'chapter.xhtml' } }))
+  act(() => emit('relocated', { start: { cfi: 'cfi:manual-scroll', href: 'chapter.xhtml' } }))
+  await act(async () => { await view.manager.resize(390, 600, 'cfi:manual-scroll') })
+  expect(resize).toHaveBeenLastCalledWith(390, 600, 'cfi:manual-scroll')
+})
+
 it('generates one EPUB location table for overlapping progression requests and applies only the latest', async () => {
-  const { book, view } = epub(), pending = deferred<void>()
+  const { book, display } = epub(), pending = deferred<void>()
   book.locations.generate.mockReturnValue(pending.promise)
   const { rerender } = render(<ReaderPane {...props} />)
-  await waitFor(() => expect(view.display).toHaveBeenCalledOnce())
+  await waitFor(() => expect(display).toHaveBeenCalledOnce())
   rerender(<ReaderPane {...props} navigateProgression={{ requestId: 1, href: 'old.xhtml', progression: .1 }} />)
   await waitFor(() => expect(book.locations.generate).toHaveBeenCalledOnce())
   rerender(<ReaderPane {...props} navigateProgression={{ requestId: 2, href: 'latest.xhtml', progression: .8 }} />)
   expect(book.locations.generate).toHaveBeenCalledOnce()
   await act(async () => { pending.resolve(); await pending.promise })
-  expect(view.display.mock.calls).toEqual([[undefined], ['latest.xhtml']])
+  expect(display.mock.calls).toEqual([[undefined], ['latest.xhtml']])
   expect(props.onLocation).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ progression: .8 }))
 })

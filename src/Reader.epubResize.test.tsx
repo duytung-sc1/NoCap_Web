@@ -43,6 +43,7 @@ it('keeps a responsive EPUB rendition when notes change its viewport and disconn
   }
   Object.assign(view, { book })
   fixture.open.mockReturnValue(book)
+  const display = view.display
 
   const { container, unmount } = render(<ReaderPane
     book={{ id: 'resize-epub', title: 'EPUB', author: 'QA', format: 'EPUB' }}
@@ -67,7 +68,7 @@ it('keeps a responsive EPUB rendition when notes change its viewport and disconn
   expect(view.resize).toHaveBeenCalledWith()
   expect(fixture.open).toHaveBeenCalledTimes(1)
   expect(book.renderTo).toHaveBeenCalledTimes(1)
-  expect(view.display).toHaveBeenCalledTimes(1)
+  expect(display).toHaveBeenCalledTimes(1)
 
   unmount()
   expect(disconnect).toHaveBeenCalledTimes(1)

@@ -1,6 +1,72 @@
 import { expect, it, vi } from 'vitest'
 import type Rendition from 'epubjs/types/rendition'
-import { restoreEpubAfterResize, synchronizeEpubScroll, waitForEpubTargetFonts, type EpubScrollManager } from './epubScroll'
+import { coordinateEpubNavigation, restoreEpubAfterResize, synchronizeEpubScroll, waitForEpubTargetFonts, type EpubScrollManager } from './epubScroll'
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason: unknown) => void
+  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail })
+  return { promise, resolve, reject }
+}
+
+it('finishes the active display before another display or destructive stage resize, preserving the requested destination', async () => {
+  const first = deferred<void>()
+  const display = vi.fn((target?: string | number) => target === 'first.xhtml' ? first.promise : Promise.resolve())
+  const resize = vi.fn()
+  const view = { display, manager: { resize } }
+  let desired: string | undefined = 'last.xhtml#chapter'
+  const stop = coordinateEpubNavigation(view, () => desired)
+  const opening = view.display('first.xhtml')
+  await vi.waitFor(() => expect(display).toHaveBeenCalledOnce())
+  const last = view.display('last.xhtml#chapter')
+  const resizing = view.manager.resize(390, 700, 'old-reading-cfi')
+  expect(display).toHaveBeenCalledTimes(1)
+  expect(resize).not.toHaveBeenCalled()
+  first.resolve()
+  await Promise.all([opening, last, resizing])
+  expect(display.mock.calls).toEqual([['first.xhtml'], ['last.xhtml#chapter']])
+  expect(resize).toHaveBeenLastCalledWith(390, 700, 'last.xhtml#chapter')
+  desired = undefined
+  await view.manager.resize(390, 500, 'manually-scrolled-cfi')
+  expect(resize).toHaveBeenLastCalledWith(390, 500, 'manually-scrolled-cfi')
+  stop()
+  expect(view.display).toBe(display)
+  expect(view.manager.resize).toBe(resize)
+})
+
+it('shares one in-flight iframe render when continuous fill discovers the still-loading chapter', async () => {
+  const loading = deferred<object>()
+  const display = vi.fn(() => loading.promise)
+  const createView = vi.fn(() => ({ display }))
+  const view = { display: async () => {}, manager: { createView } }
+  const stop = coordinateEpubNavigation(view, () => undefined)
+  const frame = view.manager.createView()
+  const added = frame.display(), discovered = frame.display()
+  expect(added).toBe(discovered)
+  expect(display).toHaveBeenCalledOnce()
+  const content = { ready: true }
+  loading.resolve(content)
+  await expect(added).resolves.toBe(content)
+  await frame.display()
+  expect(display).toHaveBeenCalledTimes(2)
+  stop()
+  expect(view.manager.createView).toBe(createView)
+})
+
+it('continues after a failed display and drops queued work when the rendition is disposed', async () => {
+  const first = deferred<void>()
+  const display = vi.fn((target?: string | number) => target === 'failed.xhtml' ? Promise.reject(new Error('missing section')) : target === 'loading.xhtml' ? first.promise : Promise.resolve())
+  const view = { display, manager: {} }
+  const stop = coordinateEpubNavigation(view, () => undefined)
+  const failed = view.display('failed.xhtml')
+  await expect(failed).rejects.toThrow('missing section')
+  const loading = view.display('loading.xhtml')
+  await vi.waitFor(() => expect(display).toHaveBeenLastCalledWith('loading.xhtml'))
+  const queued = view.display('unmounted.xhtml')
+  stop(); first.resolve()
+  await Promise.all([loading, queued])
+  expect(display.mock.calls).toEqual([['failed.xhtml'], ['loading.xhtml']])
+})
 
 it('updates continuous fill offsets before the asynchronous browser scroll event', () => {
   const container = { scrollTop: 4000, scrollLeft: 30 }

@@ -1,5 +1,65 @@
 import type Rendition from 'epubjs/types/rendition'
 
+type NavigationRendition = Pick<Rendition, 'display'> & {
+  manager: {
+    resize?: (width?: number, height?: number, target?: string) => unknown
+    createView?: (...args: unknown[]) => { display: (request?: unknown) => Promise<unknown> }
+  }
+}
+
+/** epub.js resolves an in-flight display early when display() is called again.
+ * Its continuous fill is still running then, so overlapping chapter requests
+ * can destroy one another's frames. Serialize the real display work, including
+ * library-generated resize restores, on this rendition only. */
+export function coordinateEpubNavigation(view: NavigationRendition, desiredTarget: () => string | undefined) {
+  const display = view.display as (target?: string | number) => Promise<void>
+  const resize = view.manager.resize
+  const createView = view.manager.createView
+  let disposed = false
+  let pending: Promise<unknown> = Promise.resolve()
+  const serialized = ((target?: string | number) => {
+    const result = pending.catch(() => {}).then(() => disposed ? undefined : display.call(view, target))
+    pending = result
+    return result
+  }) as Rendition['display']
+  view.display = serialized
+  const preserveTarget = (width?: number, height?: number, target?: string) => {
+    // Resizing immediately clears every iframe. If a chapter is still filling,
+    // its removed iframe can never finish loading and its display never settles.
+    // Let that work finish before rebuilding the stage at its new dimensions.
+    const destination = desiredTarget() || target
+    const result = pending.catch(() => {}).then(() => {
+      if (!disposed) return resize!.call(view.manager, width, height, desiredTarget() || destination)
+    })
+    pending = result
+    return result
+  }
+  if (resize) view.manager.resize = preserveTarget
+  const create = (...args: unknown[]) => {
+    const frame = createView!.apply(view.manager, args)
+    const displayFrame = frame.display
+    let loading: Promise<unknown> | undefined
+    // Continuous check/update can discover the same frame while manager.add
+    // is still loading it. A second iframe render replaces its load callback,
+    // leaving the first display (and all later navigation) pending forever.
+    frame.display = request => {
+      if (!loading) {
+        const pendingFrame = displayFrame.call(frame, request).finally(() => { if (loading === pendingFrame) loading = undefined })
+        loading = pendingFrame
+      }
+      return loading
+    }
+    return frame
+  }
+  if (createView) view.manager.createView = create
+  return () => {
+    disposed = true
+    if (view.display === serialized) view.display = display
+    if (resize && view.manager.resize === preserveTarget) view.manager.resize = resize
+    if (createView && view.manager.createView === create) view.manager.createView = createView
+  }
+}
+
 export type EpubScrollManager = {
   container: { scrollTop: number; scrollLeft: number }
   scrollTop: number
