@@ -39,6 +39,9 @@ export function ReadingRecommendations({ lang, genres, categories, activeCategor
         const additional = suggestion.sourceBooks.length - 1
         const sourceId = `${id}-source-${index}`
         const selected = activeCategory === undefined ? undefined : activeCategory === suggestion.categoryId
+        const explanation = vi
+          ? `Vì bạn đã đọc “${source.title}”${additional > 0 ? ` và ${additional} cuốn cùng thể loại` : ''}`
+          : `Because you read “${source.title}”${additional > 0 ? ` and ${additional} other ${additional === 1 ? 'book' : 'books'} in this genre` : ''}`
         return <button
           key={suggestion.categoryId}
           type="button"
@@ -46,11 +49,12 @@ export function ReadingRecommendations({ lang, genres, categories, activeCategor
           aria-label={vi ? `Khám phá thể loại ${suggestion.label}` : `Explore ${suggestion.label} books`}
           aria-describedby={sourceId}
           aria-pressed={selected}
+          title={explanation}
           onClick={() => onExplore(suggestion.categoryId)}
         >
           <span className="reading-genre-heading">
             <span className="reading-genre-name" lang={contentLanguage(suggestion.label, undefined, lang)}>{suggestion.label}</span>
-            <ArrowRight size={16} aria-hidden="true" />
+            <ArrowRight size={14} aria-hidden="true" />
           </span>
           <span id={sourceId} className="reading-genre-source">
             {vi ? 'Vì bạn đã đọc “' : 'Because you read “'}<span lang={contentLanguage(source.title, source.language, lang)}>{source.title}</span>”
