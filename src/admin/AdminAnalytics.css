@@ -7,6 +7,7 @@
 .admin-analytics-collection p { margin: 0; }
 .admin-analytics-collection p + p { margin-top: 5px; }
 .admin-analytics-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 20px 0; }
+.admin-analytics-overview-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .admin-analytics-metric { padding: 17px; border: 1px solid #dce3e4; border-radius: 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .admin-analytics-metric h3 { font-size: 12px; line-height: 1.5; font-weight: 600; margin: 0; color: #526a7b; }
 .admin-analytics-metric strong { font-size: clamp(24px, 3vw, 32px); line-height: 1.3; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }

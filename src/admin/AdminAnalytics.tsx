@@ -87,13 +87,11 @@ function AnalyticsDashboard({ token, lang, onError, onSignIn }: AdminAnalyticsPr
     {data?.enabled && <>
       <div className="admin-analytics-collection"><p>{date(data.from)} – {date(data.to)} · {text('Múi giờ', 'Time zone')}: {data.timezone}</p><p>{data.trackingStartedAt == null ? text('Chưa ghi nhận lượt truy cập đầu tiên.', 'No visits have been collected yet.') : <>{text('Bắt đầu ghi nhận: ', 'Collection started: ')}<time dateTime={new Date(data.trackingStartedAt).toISOString()}>{stamp(data.trackingStartedAt)}</time>.</>} {text('Không có dữ liệu truy cập trước thời điểm bắt đầu thu thập.', 'Traffic before collection began is unavailable.')}</p><p>{text('Cập nhật báo cáo: ', 'Report generated: ')}<time dateTime={new Date(data.generatedAt).toISOString()}>{stamp(data.generatedAt)}</time></p></div>
       {empty && <p className="admin-analytics-empty" role="status">{text('Chưa ghi nhận truy cập trong khoảng thời gian đã chọn. Số 0 không đại diện cho lưu lượng trước khi bật thống kê.', 'No traffic has been collected in the selected range. Zero does not represent traffic before analytics was enabled.')}</p>}
-      <div className="admin-analytics-metrics">
+      <div className="admin-analytics-metrics admin-analytics-overview-metrics">
         {[
           [text('Khách truy cập ước tính', 'Estimated visitors'), number(data.summary.visitors), text('Trình duyệt khác nhau trong cả khoảng thời gian.', 'Distinct browsers across the selected range.')],
           [text('Phiên truy cập', 'Sessions'), number(data.summary.sessions), text('Phiên có hoạt động trong khoảng thời gian.', 'Sessions with activity in the selected range.')],
           [text('Lượt xem trang', 'Page views'), number(data.summary.pageViews), text('Một trình duyệt có thể xem nhiều trang.', 'A browser can generate multiple page views.')],
-          [text('Tổng thời gian tương tác', 'Total active time'), duration(data.summary.activeMs), text('Thời gian tab hiển thị, được chọn và có tương tác.', 'Time while the tab is visible, focused and active.')],
-          [text('Tương tác trung bình / phiên', 'Average active time / session'), duration(data.summary.sessions > 0 ? data.summary.activeMs / data.summary.sessions : 0), text('Tổng thời gian tương tác chia số phiên.', 'Total active time divided by sessions.')],
           [text('Trình duyệt mới / quay lại', 'New / returning browsers'), `${number(data.summary.newVisitors)} / ${number(data.summary.returningVisitors)}`, text('Mới: lần đầu được ghi nhận trong kỳ. Quay lại: đã được ghi nhận trước kỳ và có hoạt động trong kỳ.', 'New: first recorded within this range. Returning: recorded before this range and active within it.')],
         ].map(([label, value, hint]) => <article className="admin-analytics-metric" key={label}><h3>{label}</h3><strong>{value}</strong><p>{hint}</p></article>)}
       </div>
