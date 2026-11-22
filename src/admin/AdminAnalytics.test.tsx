@@ -87,6 +87,29 @@ describe('Web analytics administrator dashboard', () => {
     expect(request.mock.lastCall?.[1]).toBe('analytics?days=1')
   })
 
+  it.each([
+    { lang: 'en' as const, visitors: 'Estimated visitors', pages: 'Most viewed pages', features: 'Feature activity', info: 'Report information', reader: 'Reader' },
+    { lang: 'vi' as const, visitors: 'Khách truy cập ước tính', pages: 'Trang được xem nhiều', features: 'Hoạt động tính năng', info: 'Thông tin báo cáo', reader: 'Đọc sách' },
+  ])('keeps secondary reports folded until requested without refetching in $lang', async ({ lang, visitors, pages, features, info, reader }) => {
+    setup({ lang })
+    await screen.findByText(visitors)
+    for (const label of [pages, features, info]) {
+      const panel = screen.getByRole('heading', { name: label }).closest('details')!
+      expect(panel.open).toBe(false)
+    }
+    const pagePanel = screen.getByRole('heading', { name: pages }).closest('details')!
+    // jsdom does not model closed-details layout; real-browser checks verify
+    // visibility while this regression checks native disclosure state/data.
+    expect(pagePanel.open).toBe(false)
+    fireEvent.click(pagePanel.querySelector('summary')!)
+    expect(pagePanel.open).toBe(true)
+    expect(within(pagePanel).getByRole('table')).toBeTruthy()
+    expect(within(pagePanel).getByText(reader)).toBeTruthy()
+    fireEvent.click(pagePanel.querySelector('summary')!)
+    expect(pagePanel.open).toBe(false)
+    expect(request).toHaveBeenCalledOnce()
+  })
+
   it('resets filters and removes the previous session report immediately when the token changes', async () => {
     const mounted = setup()
     await screen.findByText('Estimated visitors')

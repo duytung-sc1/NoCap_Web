@@ -190,20 +190,19 @@ describe('administrator workspace', () => {
     expect(callbacks.onCatalogChanged).not.toHaveBeenCalled()
   })
 
-  it('accumulates R2 batches once and resets totals on a new scan', async () => {
-    const original = request.getMockImplementation()!
-    request.mockImplementation(async (token, path, signal, data) => path.startsWith('storage') ? { groups: { public: { objects: 1, bytes: 1048576 }, private: { objects: 2, bytes: 2097152 }, other: { objects: 0, bytes: 0 } }, cursor: path.includes('?') ? null : 'next-cursor', complete: path.includes('?'), measuredAt: new Date().toISOString() } : original(token, path, signal, data))
-    setup(); fireEvent.click(screen.getByRole('button', { name: 'Dung lượng R2' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Bắt đầu quét' }))
-    await screen.findByText(/Kết quả tạm tính/)
-    fireEvent.click(screen.getByRole('button', { name: 'Quét lượt tiếp' }))
-    await screen.findByText(/Quét hoàn tất/)
-    expect(screen.getByText('4 MB')).toBeTruthy()
-    expect(request).toHaveBeenCalledWith('qa-admin-token', 'storage?cursor=next-cursor', expect.any(AbortSignal))
-    fireEvent.click(screen.getByRole('button', { name: 'Quét lại từ đầu' }))
-    await screen.findByText(/Kết quả tạm tính/)
-    expect(screen.queryByText('4 MB')).toBeNull()
-    expect(screen.getByText('2 MB')).toBeTruthy()
+  it.each([
+    { lang: 'vi' as const, navigation: 'Mục quản trị', storage: 'Dung lượng R2', audit: 'Lịch sử thao tác', overview: 'Tài khoản được bật', analytics: 'Thống kê Web', security: 'Bảo mật admin' },
+    { lang: 'en' as const, navigation: 'Administration sections', storage: 'R2 storage', audit: 'Audit log', overview: 'Enabled accounts', analytics: 'Web Analytics', security: 'Administrator security' },
+  ])('hides unused storage and audit menu entries without requesting them in $lang', async ({ lang, navigation, storage, audit, overview, analytics, security }) => {
+    render(<AdminWorkspace token="qa-admin-token" admin={admin} lang={lang} {...callbacks} />)
+    await screen.findByText(overview)
+    const menu = screen.getByRole('navigation', { name: navigation })
+    expect(within(menu).queryByRole('button', { name: storage })).toBeNull()
+    expect(within(menu).queryByRole('button', { name: audit })).toBeNull()
+    expect(within(menu).getAllByRole('button')).toHaveLength(8)
+    expect(within(menu).getByRole('button', { name: analytics })).toBeTruthy()
+    expect(within(menu).getByRole('button', { name: security })).toBeTruthy()
+    expect(request.mock.calls.some(call => /^(?:storage|audit)(?:\?|$)/.test(call[1]))).toBe(false)
   })
 
   it('loads conflict metadata for the selected user and clears a revoked admin view', async () => {
@@ -213,7 +212,7 @@ describe('administrator workspace', () => {
     expect(request).toHaveBeenCalledWith('qa-admin-token', 'users/conflicts?id=reader&page=0', expect.any(AbortSignal))
     fireEvent.click(screen.getByRole('button', { name: 'Đóng' }))
     request.mockRejectedValueOnce(new ApiError(403, 'Revoked', 'ADMIN_REQUIRED'))
-    fireEvent.click(screen.getByRole('button', { name: 'Lịch sử thao tác' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Tải lại' }))
     await waitFor(() => expect(callbacks.onAccessLost).toHaveBeenCalledOnce())
     expect(screen.queryByText('reader@example.test')).toBeNull()
   })
