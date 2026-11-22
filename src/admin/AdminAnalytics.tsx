@@ -87,7 +87,7 @@ function AnalyticsDashboard({ token, lang, onError, onSignIn }: AdminAnalyticsPr
   const plot = points.map(point => `${point.x},${point.y}`).join(' ')
   const empty = data && data.summary.sessions === 0 && data.summary.pageViews === 0
 
-  return <div className="admin-analytics">
+  return <div className="admin-analytics admin-web-analytics">
     <div className="admin-analytics-toolbar"><label>{text('Khoảng thời gian', 'Date range')}<select value={days} onChange={event => setDays(Number(event.target.value) as AdminAnalyticsDays)}>{ranges.map(value => <option value={value} key={value}>{value === 1 ? text('Hôm nay', 'Today') : text(`${value} ngày gần đây`, `Last ${value} days`)}</option>)}</select></label><div className="admin-actions"><button type="button" className="secondary" disabled={loading} onClick={refresh}><RefreshCw size={15} aria-hidden="true" />{text('Tải lại', 'Refresh')}</button><button type="button" className="secondary" disabled={!data?.enabled || loading} onClick={() => data && downloadCsv(data)}><Download size={15} aria-hidden="true" />{text('Xuất CSV', 'Export CSV')}</button></div></div>
     <p className="admin-analytics-caption">{text('Dữ liệu Web · Khách truy cập ước tính theo trình duyệt.', 'Web traffic · Visitors are estimated browsers.')}</p>
     {loading && <p role="status">{text('Đang tải thống kê Web…', 'Loading Web analytics…')}</p>}
