@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { CreditCard, RotateCw, X } from 'lucide-react'
 import { createSePayOrder, getEntitlement, getSePayOrder, getSePayPlans, type Entitlement, type SePayOrder, type SePayPlan, type SePayPlanId } from './api'
+import { PRO_PLAN_IDS, proPlanDays, proPlanDuration, proPlanLabel, proPlanName } from './proPlans'
 import type { Session } from './types'
 import type { Lang } from './i18n'
 import { readableError } from './sync'
@@ -153,19 +154,21 @@ function Checkout({ session, entitlement, lang, onSignIn, onPaid }: Props) {
     <p className="muted">{vi ? 'Thanh toán chuyển khoản bằng mã QR. NoCap tự xác nhận và cập nhật gói sau khi nhận được giao dịch.' : 'Pay by bank-transfer QR. NoCap confirms the transfer and updates your plan automatically.'}</p>
     <div className="pro-benefits"><p>{vi ? 'Free: đọc sách, ghi chú và ôn tập từng thẻ.' : 'Free: reading, notes and individual review cards.'}</p><p>{vi ? 'Pro: Đọc ẩn, tạo thẻ ôn tự động và xuất ghi chú PDF trên Web; các tính năng Pro tương ứng trên Android. Xuất Anki hiện có trên Android.' : 'Pro: Stealth Reading, automatic review-card generation and PDF notes export on Web, plus corresponding Pro features on Android. Anki export is currently available on Android.'}</p></div>
     <fieldset className="pro-plan-options">
-      <legend>{vi ? 'Chọn thời hạn Pro' : 'Choose your Pro plan'}</legend>
-      {(['MONTHLY', 'YEARLY'] as const).map(id => {
+      <legend>{vi ? 'Chọn gói NoCap Pro' : 'Choose your NoCap Pro plan'}</legend>
+      {PRO_PLAN_IDS.map(id => {
         const plan = currentQuote?.plans.find(value => value.id === id)
         return <label key={id} className={`pro-plan-option ${selectedPlan === id ? 'selected' : ''}`}>
-          <input type="radio" name="pro-plan" value={id} checked={selectedPlan === id} onChange={() => setSelectedPlan(id)} disabled={creating} />
+          <input type="radio" name="pro-plan" value={id} checked={selectedPlan === id} onChange={() => setSelectedPlan(id)} disabled={creating || (!!session && !plan)} />
           <span className="pro-plan-copy">
-            <strong>{id === 'YEARLY' ? (vi ? '1 năm' : '1 year') : (vi ? '30 ngày' : '30 days')}</strong>
-            {id === 'YEARLY' && <span className="pro-plan-discount">{vi ? 'Giảm 40%' : '40% off'}</span>}
-            {plan && <span className="pro-plan-price">{id === 'YEARLY' && <del>{price(plan.regularAmount)}</del>}<b>{price(plan.amount)}</b></span>}
+            <strong>{proPlanName(id, lang)}</strong>
+            <small className="pro-plan-duration">{proPlanDuration(plan?.planDays ?? proPlanDays(id), lang)}</small>
+            {!!plan?.discountPercent && <span className="pro-plan-discount">{vi ? `Giảm ${plan.discountPercent}%` : `${plan.discountPercent}% off`}</span>}
+            {plan && <span className="pro-plan-price">{plan.discountPercent > 0 && <del>{price(plan.regularAmount)}</del>}<b>{price(plan.amount)}</b></span>}
           </span>
         </label>
       })}
     </fieldset>
+    <p className="muted pro-plan-note">{vi ? 'Các gói có cùng quyền lợi Pro, khác thời hạn sử dụng và mức ưu đãi. Gia hạn sẽ cộng tiếp thời gian Pro còn lại.' : 'All plans share the same Pro benefits and differ in duration and savings. Renewals extend your remaining Pro period.'}</p>
     {session && !currentQuote && <p className="muted" role="status">{vi ? 'Đang tải giá gói…' : 'Loading plan prices…'}</p>}
     {currentQuote?.error && <><p className="form-message" role="alert">{currentQuote.error}</p><button className="secondary" onClick={() => setQuoteRetry(value => value + 1)}>{vi ? 'Tải lại giá gói' : 'Reload plan prices'}</button></>}
     <button className="secondary" onClick={() => void createOrder()} disabled={creating || (!!session && !selectedQuote)}>
@@ -180,7 +183,7 @@ function Checkout({ session, entitlement, lang, onSignIn, onPaid }: Props) {
         {order.status === 'PAID' ? <p>{vi ? 'Giao dịch đã được máy chủ xác nhận. Gói Pro của bạn đang được cập nhật.' : 'The server confirmed your payment. Your Pro plan is being updated.'}</p> : order.status === 'PROCESSING' ? <p>{vi ? 'Máy chủ đang xác nhận giao dịch của bạn. Không chuyển khoản thêm cho đơn này.' : 'The server is confirming your transfer. Do not pay this order again.'}</p> : transferExpired ? <p>{vi ? 'Mã chuyển khoản đã hết hạn. Không chuyển khoản theo mã này. Kiểm tra trạng thái nếu bạn đã thanh toán.' : 'This transfer reference expired. Do not pay this reference. Check the status if you already paid.'}</p> : order.status === 'EXPIRED' ? <p>{vi ? 'Không chuyển khoản theo đơn này. Đóng cửa sổ và tạo đơn mới.' : 'Do not pay this expired order. Close the dialog and create a new one.'}</p> : <>
           <img className="payment-qr" src={order.qrUrl} alt={vi ? 'Mã QR chuyển khoản cho đơn NoCap Pro' : 'Bank-transfer QR for your NoCap Pro order'} />
           <dl className="payment-details">
-            {order.planDays && <><dt>{vi ? 'Gói dịch vụ' : 'Plan'}</dt><dd>NoCap Pro · {order.planDays === 365 ? (vi ? '1 năm (365 ngày)' : '1 year (365 days)') : `${order.planDays} ${vi ? 'ngày' : 'days'}`}</dd></>}
+            {order.planDays && <><dt>{vi ? 'Gói dịch vụ' : 'Plan'}</dt><dd>NoCap Pro · {proPlanLabel(order.planDays, lang)}</dd></>}
             <dt>{vi ? 'Số tiền' : 'Amount'}</dt><dd><strong>{new Intl.NumberFormat(vi ? 'vi-VN' : 'en-US', { style: 'currency', currency: order.currency }).format(order.amount)}</strong></dd>
             <dt>{vi ? 'Ngân hàng' : 'Bank'}</dt><dd>{order.bank.name}</dd>
             <dt>{vi ? 'Số tài khoản' : 'Account number'}</dt><dd>{order.bank.accountNumber}</dd>

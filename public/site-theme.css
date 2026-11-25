@@ -1,5 +1,15 @@
 /* Shared UI palette. Covers app and legal pages; never filters document/media pixels. */
 :root {
+  --ui-space-1: 4px;
+  --ui-space-2: 8px;
+  --ui-space-3: 12px;
+  --ui-space-4: 16px;
+  --ui-space-6: 24px;
+  --ui-space-8: 32px;
+  --ui-radius-sm: 6px;
+  --ui-radius-md: 10px;
+  --ui-radius-lg: 16px;
+  --ui-control-height: 44px;
   color-scheme: light;
   --site-bg: #fdfcf8;
   --site-panel: #ffffff;

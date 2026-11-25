@@ -106,6 +106,9 @@ describe('interactive two-source comparison reader', () => {
     const handlers = props({ initialLocators: [original, 'right-position'] })
     render(<ComparisonReader {...handlers} />)
     await screen.findByTestId(`reader-${original}`)
+    // Wait for the mock's initial location effect before publishing a user
+    // scroll, just as the other mobile resume regression does above.
+    await waitFor(() => expect(handlers.onLocation).toHaveBeenCalledWith(left, { locatorJson: `initial:${original}`, progression: .1, chapterTitle: `Chapter ${original}` }))
     expect(fixtures.readers.get(original)?.navigateLocator?.requestId).toBe(1)
     act(() => fixtures.readers.get(original)!.onLocation({ locatorJson: resumed, progression: .6, chapterTitle: 'Resumed' }))
     fixtures.publishInitialLocation = false

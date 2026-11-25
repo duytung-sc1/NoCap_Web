@@ -1,6 +1,14 @@
 /*
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  X-Frame-Options: DENY
+  X-XSS-Protection: 0
+  X-Permitted-Cross-Domain-Policies: none
+  Cross-Origin-Opener-Policy: same-origin-allow-popups
+  Cross-Origin-Resource-Policy: same-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=(), ambient-light-sensor=(), autoplay=(self), fullscreen=(self), picture-in-picture=(self), clipboard-write=(self)
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://accounts.google.com https://www.google.com https://apis.google.com https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://accounts.google.com https://www.google.com; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://nocap-ebook-api.buiminhhien001.workers.dev https://accounts.google.com https://www.googleapis.com https://www.gstatic.com; frame-src 'self' blob: data: https://accounts.google.com https://www.google.com; worker-src 'self' blob:; media-src 'self' blob: https:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; manifest-src 'self'; upgrade-insecure-requests
 
 /
   Cache-Control: no-cache

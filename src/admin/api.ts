@@ -36,7 +36,7 @@ export type AdminTransaction = {
   paidAt: number | null; transactionId: string | null; entitlementExpiresAt: number | null
 }
 export type AdminPaymentCounts = { orders: number; paidOrders: number; paidCustomers: number; paidAmount: number }
-export type AdminPaymentFilters = { from: string; to: string; status: 'ALL' | AdminTransactionStatus; plan: 'ALL' | '30' | '365' | 'OTHER'; q: string }
+export type AdminPaymentFilters = { from: string; to: string; status: 'ALL' | AdminTransactionStatus; plan: 'ALL' | '30' | '90' | '180' | '365' | 'OTHER'; q: string }
 export type AdminPaymentRow = AdminTransaction & { userId: string; email: string; displayName: string | null; recordedAt: number }
 export type AdminPaymentReport = {
   from: string; to: string; timezone: 'Asia/Ho_Chi_Minh'; generatedAt: number; currency: 'VND'

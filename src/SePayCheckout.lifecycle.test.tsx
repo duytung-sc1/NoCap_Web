@@ -5,11 +5,11 @@ import { SePayCheckout } from './SePayCheckout'
 import type { Entitlement, SePayOrder } from './api'
 import type { Session } from './types'
 
-const api = vi.hoisted(() => ({ create: vi.fn(), check: vi.fn(), entitlement: vi.fn() }))
+const api = vi.hoisted(() => ({ create: vi.fn(), check: vi.fn(), entitlement: vi.fn(), plans: vi.fn() }))
 vi.mock('./api', async importOriginal => ({
   ...await importOriginal<typeof import('./api')>(),
   createSePayOrder: api.create, getSePayOrder: api.check, getEntitlement: api.entitlement,
-  getSePayPlans: async () => ({ plans: [{ id: 'MONTHLY', amount: 29000, regularAmount: 29000, planDays: 30, currency: 'VND', discountPercent: 0 }] }),
+  getSePayPlans: api.plans,
 }))
 const session: Session = { token: 'qa-token', expiresAt: Date.now() / 1000 + 86400,
   user: { id: 'qa-account', email: 'qa@example.test', emailVerified: true } }
@@ -30,6 +30,12 @@ async function openOrder() {
   return screen.findByRole('dialog', { name: 'Thanh toán NoCap Pro' })
 }
 beforeEach(() => {
+  api.plans.mockReset().mockResolvedValue({ plans: [
+    { id: 'MONTHLY', amount: 29000, regularAmount: 29000, planDays: 30, currency: 'VND', discountPercent: 0 },
+    { id: 'QUARTERLY', amount: 78300, regularAmount: 87000, planDays: 90, currency: 'VND', discountPercent: 10 },
+    { id: 'HALF_YEARLY', amount: 139200, regularAmount: 174000, planDays: 180, currency: 'VND', discountPercent: 20 },
+    { id: 'YEARLY', amount: 208800, regularAmount: 348000, planDays: 365, currency: 'VND', discountPercent: 40 },
+  ] })
   api.create.mockReset().mockResolvedValue(order('first'))
   api.check.mockReset()
   api.entitlement.mockReset().mockResolvedValue(entitlement)
@@ -37,6 +43,21 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers() })
 
 describe('payment dialog lifecycle', () => {
+  it.each([
+    ['QUARTERLY', 'Tập trung', 90, 78300, 'NoCap Pro · Tập trung · 3 tháng · 90 ngày', 'Giảm 10%'],
+    ['HALF_YEARLY', 'Đồng hành', 180, 139200, 'NoCap Pro · Đồng hành · 6 tháng · 180 ngày', 'Giảm 20%'],
+  ] as const)('selects %s and shows the server-issued duration and plan name in the payment dialog', async (plan, name, days, amount, label, discount) => {
+    api.create.mockResolvedValue({ ...order('duration-test'), planDays: days, amount })
+    render(<SePayCheckout session={session} entitlement={null} lang="vi" onSignIn={vi.fn()} onPaid={vi.fn()} />)
+    const option = screen.getByRole('radio', { name: new RegExp(name) })
+    await waitFor(() => expect((option as HTMLInputElement).disabled).toBe(false))
+    expect(screen.getByText(discount)).toBeTruthy()
+    fireEvent.click(option)
+    const dialog = await openOrder()
+    expect(api.create).toHaveBeenLastCalledWith(session.token, plan)
+    expect(within(dialog).getByText(label)).toBeTruthy()
+  })
+
   it.each([null, { ...session, token: 'other-token', user: { ...session.user, id: 'other-account' } }])('clears the previous account payment dialog when the session changes to %j', async next => {
     const onPaid = vi.fn()
     const mounted = render(<SePayCheckout session={session} entitlement={null} lang="vi" onSignIn={vi.fn()} onPaid={onPaid} />)

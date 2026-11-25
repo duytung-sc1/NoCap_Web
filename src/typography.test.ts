@@ -54,6 +54,19 @@ describe('mandatory language-specific sans typography', () => {
     stop()
   })
 
+  it('leaves the editor-owned document DOM intact while guarding surrounding Vietnamese text', async () => {
+    const root=document.createElement('main')
+    root.innerHTML='<h2>Tiếng Việt</h2><div class="ProseMirror" contenteditable="true" lang="vi"><p>Chương đầu tiên</p></div>'
+    const stop=installVietnameseTextGuard(root)
+    const paragraph=root.querySelector('.ProseMirror p')!
+    expect(paragraph.hasAttribute('data-nocap-text-language')).toBe(false)
+    paragraph.textContent='Đang viết đoạn tiếp theo'
+    await new Promise(resolve=>setTimeout(resolve,0))
+    expect(paragraph.hasAttribute('data-nocap-text-language')).toBe(false)
+    expect(root.querySelector('h2')?.getAttribute('data-nocap-text-language')).toBe('vi')
+    stop()
+  })
+
   it('loads no serif/mono font or Vietnamese subset of the English family', () => {
     const faces = readFileSync('src/fonts.css', 'utf8')
     expect(faces).not.toMatch(/Literata|Atkinson|plus-jakarta-sans-vietnamese/)

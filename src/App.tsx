@@ -25,7 +25,11 @@ import { SiteThemeQuickSwitch } from './SiteThemePicker'
 import { LibraryFoldersWorkspace } from './LibraryFoldersWorkspace'
 import { HomeFaq } from './HomeFaq'
 import { AndroidDownloadCallout } from './AndroidDownloadCallout'
+import './ReadingWorkspace.css'
 import { CompactNavigation, MobileNavigation } from './ResponsiveNavigation'
+import './WorkspaceNavigation.css'
+import { useWorkspaceSidebar } from './useWorkspaceSidebar'
+import { workspaceGroups } from './workspaces'
 import { ExploreToolbar } from './ExploreToolbar'
 import { BookCard } from './BookCard'
 import { ReadingRecommendations } from './ReadingGenreRecommendations'
@@ -38,7 +42,7 @@ import { folderPath, getLibraryFolderState, LibraryFolderError } from './library
 const ReaderPane = lazy(() => importWithChunkRecovery(() => import('./Reader')).then(module => ({ default: module.ReaderPane })))
 const StealthReader = lazy(() => importWithChunkRecovery(() => import('./stealth/StealthReader')).then(module => ({ default: module.StealthReader })))
 
-import type { Page } from './routing'
+import type { AppRoute, Page } from './routing'
 import { useAppRoute } from './useAppRoute'
 import { applySeo } from './seo'
 import { AccountSettings, type AccountSettingsSection } from './AccountSettings'
@@ -54,6 +58,7 @@ import { clearReaderNoteDraft, emptyReaderNoteDraft, readReaderNoteDraft, writeR
 import { allowsPro, proAccessExpiresAt, verifyProAccess, type ProFeature } from './entitlements'
 
 const AdminWorkspace = lazy(() => importWithChunkRecovery(() => import('./admin/AdminWorkspace')))
+const AuthorWorkspace = lazy(() => importWithChunkRecovery(() => import('./AuthorWorkspace')))
 const ResearchWorkspace = lazy(() => importWithChunkRecovery(() => import('./ResearchWorkspace')).then(module => ({ default: module.ResearchWorkspace })))
 const AnnotationSourceActions = lazy(() => importWithChunkRecovery(() => import('./ResearchWorkspace')).then(module => ({ default: module.AnnotationSourceActions })))
 const ComparisonReader = lazy(() => importWithChunkRecovery(() => import('./ComparisonReader')).then(module => ({ default: module.ComparisonReader })))
@@ -66,6 +71,7 @@ import { ReaderNotesPanel } from './ReaderNotesPanel'
 import { ReaderSearchPanel } from './ReaderSearchPanel'
 import { Volume2 } from 'lucide-react'
 import { ReaderSpeechPanel } from './ReaderSpeechPanel'
+import { ReaderAiPanel } from './ReaderAiPanel'
 import { speechScopeKey, type ReaderSpeechSource } from './readerSpeech'
 import { findTextMatches, type ReaderSearchHit, type ReaderSearchSource } from './readerSearch'
 import { detectReaderFormat } from './readerFormat'
@@ -137,14 +143,26 @@ function bookLabel(book: Book, lang: Lang = 'vi') {
 function App() {
   const initialComfort = useMemo(storedComfort, [])
   const [lang, setLang] = useState<Lang>(getStoredLang)
+  const [authorWorkspaceInstance, setAuthorWorkspaceInstance] = useState(0)
+  const [authorFocus, setAuthorFocus] = useState(false)
+  const authorDirty = useRef(false)
+  const authorLocale = useRef(lang)
+  authorLocale.current = lang
   const toggleLang = () => {
+    if (authorDirty.current && !window.confirm(lang === 'vi' ? 'Đổi ngôn ngữ sẽ đóng bản thảo chưa lưu. Tiếp tục?' : 'Changing language will close the unsaved manuscript. Continue?')) return
     const next: Lang = lang === 'vi' ? 'en' : 'vi'
     setLang(next)
     setNotice('')
     setStoredLang(next)
   }
   const curT = t[lang]
-  const { route, navigate } = useAppRoute()
+  const canNavigate = useCallback((next: AppRoute) => {
+    if (!authorDirty.current || next.kind === 'page' && next.page === 'author') return true
+    if (!window.confirm(authorLocale.current === 'vi' ? 'Bạn có thay đổi bản thảo chưa lưu. Rời trang?' : 'Leave with unsaved manuscript changes?')) return false
+    authorDirty.current = false
+    return true
+  }, [])
+  const { route, navigate } = useAppRoute(canNavigate)
   useEffect(() => { applySeo(route, lang) }, [route, lang])
   useWebAnalytics(route)
   const backgroundPageRef = useRef<Page>('catalog')
@@ -193,7 +211,9 @@ function App() {
   const importFlight = useRef<object | null>(null)
   const pendingNativeImport = useRef<ImportTarget | null>(null)
   const importPending = importResult?.profile === profile && (importResult.status === 'preparing' || importResult.status === 'saving')
-  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const { desktop: desktopSidebar, expanded: sidebarExpanded, setExpanded: setSidebarExpanded, drawerOpen: sidebarOpen, setDrawerOpen: setSidebarOpen } = useWorkspaceSidebar()
+  const landingPage = page === 'home'
+  const workspaceDrawerOpen = !landingPage && !desktopSidebar && sidebarOpen
   const [syncing, setSyncing] = useState(false)
   const [pendingCount, setPendingCount] = useState(0)
   const [online, setOnline] = useState(navigator.onLine)
@@ -225,13 +245,16 @@ function App() {
   const [readerSearchSource, setReaderSearchSource] = useState<ReaderSearchSource | null>(null)
   const [activeSearchHit, setActiveSearchHit] = useState<ReaderSearchHit | null>(null)
   const searchToggle = useRef<HTMLButtonElement>(null)
+  const [aiOpen, setAiOpen] = useState(false)
+  const aiToggle = useRef<HTMLButtonElement>(null)
   const [speechOpen, setSpeechOpen] = useState(false)
-  const speechVisible = speechOpen && !noteOpen && !searchOpen
+  const speechVisible = speechOpen && !noteOpen && !searchOpen && !aiOpen
   const [readerSpeechSource, setReaderSpeechSource] = useState<ReaderSpeechSource | null>(null)
   const speechToggle = useRef<HTMLButtonElement>(null)
   const onReaderSpeechReady = useCallback((source: ReaderSpeechSource | null) => setReaderSpeechSource(() => source), [])
   const onReaderSearchReady = useCallback((source: ReaderSearchSource | null) => setReaderSearchSource(() => source), [])
   const openReaderSearch = useCallback(() => {
+    setAiOpen(false)
     setNoteOpen(false); setSearchOpen(true); setTocOpen(false); setSettingsOpen(false)
     requestAnimationFrame(() => document.querySelector<HTMLInputElement>('#reader-search-panel input[type="search"]')?.focus())
   }, [])
@@ -317,8 +340,10 @@ function App() {
   const openBookRef = useRef<(book: Book) => Promise<boolean>>(async () => false)
   const launchStealthRef = useRef<(book?: Book) => Promise<void>>(async () => {})
   const stealthLaunchBusy = useRef(false)
+  const authorDirtyChanged = useCallback((dirty: boolean) => { authorDirty.current = dirty }, [])
 
   const setPage = useCallback((next: Page) => {
+    if (!canNavigate({ kind: 'page', page: next })) return
     bookOrigin.current = null
     if (next === 'account') setAccountSection('profile')
     closeReaderRef.current()
@@ -327,7 +352,7 @@ function App() {
     backgroundPageRef.current = next
     navigate({ kind: 'page', page: next })
     window.scrollTo({ top: 0 })
-  }, [navigate])
+  }, [navigate, canNavigate, setSidebarOpen])
 
   function exploreRecommendedGenre(categoryId: string) {
     setQuery('')
@@ -340,6 +365,11 @@ function App() {
 
   function navigatePrimary(next: Page) {
     if (page === next || (page === 'libraryMap' && next === 'library')) {
+      if (next === 'author') {
+        if (authorDirty.current && !window.confirm(lang === 'vi' ? 'Về danh sách tác phẩm và bỏ thay đổi chưa lưu?' : 'Return to your works and discard unsaved changes?')) return
+        authorDirty.current = false
+        setAuthorWorkspaceInstance(value => value + 1)
+      }
       setSidebarOpen(false)
       return
     }
@@ -375,12 +405,12 @@ function App() {
     setSidebarOpen(false)
     backgroundPageRef.current = destination
     navigate({ kind: 'page', page: destination }, true)
-  }, [navigate])
+  }, [navigate, setSidebarOpen])
 
   const closeBookDetails = useCallback(() => returnToOrigin('catalog'), [returnToOrigin])
 
   useEffect(() => {
-    if (!sidebarOpen) return
+    if (!workspaceDrawerOpen) return
     const drawer = document.getElementById('app-navigation-drawer')
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const previousOverflow = document.body.style.overflow
@@ -407,7 +437,7 @@ function App() {
       document.body.style.overflow = previousOverflow
       if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true })
     }
-  }, [sidebarOpen])
+  }, [workspaceDrawerOpen, setSidebarOpen])
 
   function rememberBookOrigin() {
     if (route.kind !== 'page') return
@@ -485,6 +515,7 @@ function App() {
         if (settingsOpen) { setSettingsOpen(false); return }
         if (searchOpen) { e.preventDefault(); setSearchOpen(false); setActiveSearchHit(null); searchToggle.current?.focus(); return }
         if (noteOpen) { e.preventDefault(); setNoteOpen(false); notesToggle.current?.focus(); return }
+        if (aiOpen) { e.preventDefault(); setAiOpen(false); (aiToggle.current || document.querySelector<HTMLButtonElement>('.reader-toolbar-more-button'))?.focus(); return }
         if (speechOpen) { e.preventDefault(); setSpeechOpen(false); (speechToggle.current || document.querySelector<HTMLButtonElement>('.reader-toolbar-more-button'))?.focus(); return }
         if (reviewOpen) { setReviewOpen(false); return }
         if (authOpen) { setAuthOpen(false); return }
@@ -497,7 +528,7 @@ function App() {
     }
     window.addEventListener('keydown', onGlobalKey)
     return () => window.removeEventListener('keydown', onGlobalKey)
-  }, [comparison, comparisonChoosing, reader, tocOpen, settingsOpen, noteOpen, searchOpen, speechOpen, reviewOpen, authOpen, selectedBook, stealthActive, returnToOrigin, closeBookDetails, editingAnnotation, deletingAnnotation, annotationBusy, proRequiredFeature, openReaderSearch])
+  }, [comparison, comparisonChoosing, reader, tocOpen, settingsOpen, noteOpen, searchOpen, speechOpen, aiOpen, reviewOpen, authOpen, selectedBook, stealthActive, returnToOrigin, closeBookDetails, editingAnnotation, deletingAnnotation, annotationBusy, proRequiredFeature, openReaderSearch])
 
   useEffect(() => {
     const updateDay = () => setStatsNow(ms())
@@ -1164,6 +1195,10 @@ function App() {
     return <BookCard key={book.id} book={book} lang={lang} progress={Number(progressFor(records, book.id)?.payload.progression || 0)} onOpen={() => void openBook(book)} onStealth={() => void launchStealth(book)} onDetails={() => showBookDetails(book)} onFavorite={book.source === 'local' ? undefined : () => void toggleFavorite(book)} favorite={favorites.has(book.id)} onDelete={book.source === 'local' || book.source === 'cloud' ? () => void deleteBook(book) : undefined} onRemoveFromLibrary={page !== 'catalog' && isPublicLibraryBook(book) ? () => void removePublicBook(book) : undefined} offline={book.source === 'local' || offlineIds.has(book.id)} downloadBusy={downloadBusy === book.id} onDownload={(book.source === 'local' || book.fileUrl) ? () => void downloadBook(book) : undefined} />
   }
 
+  function recentBookCard(book: Book) {
+    return <BookCard key={book.id} book={book} lang={lang} progress={Number(progressFor(records, book.id)?.payload.progression || 0)} onOpen={() => void openBook(book)} onStealth={() => void launchStealth(book)} onDetails={() => showBookDetails(book)} onFavorite={() => void toggleFavorite(book)} favorite={favorites.has(book.id)} offline={book.source === 'local' || offlineIds.has(book.id)} downloadBusy={downloadBusy === book.id} onDownload={(book.source === 'local' || book.fileUrl) ? () => void downloadBook(book) : undefined} />
+  }
+
   async function handleCreateTag() {
     if (!newTagName.trim()) return
     const id = crypto.randomUUID()
@@ -1427,6 +1462,7 @@ async function sha256Hex(file: Blob): Promise<string> {
     setNoteOpen(false); resetReaderNoteDraft(); setNoteNavigation(null); noteFlight.current = null; setNoteSaving(false)
     setSearchOpen(false); setReaderSearchSource(null); setActiveSearchHit(null)
     setSpeechOpen(false); setReaderSpeechSource(null)
+    setAiOpen(false)
     try {
       const [localResult, offlineResult] = await Promise.allSettled([
         getFile(profile, book.id),
@@ -1574,6 +1610,7 @@ async function sha256Hex(file: Blob): Promise<string> {
     resetReaderNoteDraft(); setNoteNavigation(null); noteFlight.current = null; setNoteSaving(false)
     setSearchOpen(false); setReaderSearchSource(null); setActiveSearchHit(null)
     setSpeechOpen(false); setReaderSpeechSource(null)
+    setAiOpen(false)
   }
   closeReaderRef.current = closeReader
 
@@ -1669,7 +1706,7 @@ async function sha256Hex(file: Blob): Promise<string> {
     if (noteFlight.current) return
     changeReaderNoteDraft({ selection: { text, locator }, anchor: { locatorJson: locator, progression: locationRef.current?.progression || 0, chapterTitle: locationRef.current?.chapterTitle || '' } })
     // Keep the selection available to Read selection without replacing its sidebar.
-    if (!speechVisible) setNoteOpen(true)
+    if (!speechVisible && !aiOpen) setNoteOpen(true)
     setSearchOpen(false); setActiveSearchHit(null)
   }
 
@@ -2014,6 +2051,7 @@ async function sha256Hex(file: Blob): Promise<string> {
     { id: 'catalog', label: curT.nav.catalog, icon: Search },
     { id: 'library', label: curT.nav.library, icon: Library },
     { id: 'memory', label: curT.nav.memory, icon: Highlighter },
+    { id: 'author', label: lang === 'vi' ? 'Sáng tác' : 'Write', icon: Edit3 },
     { id: 'stats', label: curT.nav.stats, icon: BarChart3 },
     { id: 'account', label: curT.nav.account, icon: Settings2 },
     ...(isAdmin ? [{ id: 'admin' as const, label: lang === 'vi' ? 'Quản trị' : 'Administration', icon: Settings2 }] : []),
@@ -2027,36 +2065,36 @@ async function sha256Hex(file: Blob): Promise<string> {
     ? (lang === 'vi' ? 'Quay lại tủ sách' : 'Back to library')
     : (lang === 'vi' ? `Quay lại ${readerReturnText}` : `Back to ${readerReturnText}`)
 
-  return <div className="app-shell">
-    <div className="analog-grain-overlay" aria-hidden="true" />
-    <OceanWaves enabled={!reader && !reviewOpen && !comparison} appearance={siteTheme} />
-    <aside id="app-navigation-drawer" className={`sidebar ${sidebarOpen ? 'open' : ''}`} inert={!sidebarOpen}>
-      <div className="brand"><div className="brand-mark"><BookOpen size={24} /></div><div><strong>NoCap</strong><span>Quiet Knowledge Workspace</span></div><button className="mobile-close icon-button" onClick={() => setSidebarOpen(false)} aria-label={translate("Đóng menu", lang)}><X size={20} /></button></div>
+  const landingReading = loadedProfile === profile ? reading : []
+  const landingAnnotations = loadedProfile === profile ? annotations : []
+  const landingStreak = loadedProfile === profile ? readingStreak : 0
+  const workspaceFullScreen = !!reader || readerLoading || !!readerError || !!selectedBook || !!comparison || comparisonChoosing || reviewOpen || authorFocus
+  const desktopSidebarOpen = !landingPage && !workspaceFullScreen && desktopSidebar && sidebarExpanded
+  const sidebarVisible = desktopSidebarOpen || workspaceDrawerOpen
+  const sidebarBlocked = workspaceFullScreen || authOpen || importOpen || tagsCollectionsOpen || conflictModalOpen || editNameOpen || deleteAccountOpen || !!proRequiredFeature
+  return <div className="app-shell" data-page={page} data-sidebar={!landingPage && !workspaceFullScreen ? desktopSidebar ? desktopSidebarOpen ? 'expanded' : 'collapsed' : 'overlay' : 'none'}>
+    {page === 'home' && <div className="analog-grain-overlay" aria-hidden="true" />}
+    <OceanWaves enabled={!reader && !reviewOpen && !comparison && page === 'home'} appearance={siteTheme} />
+    {!landingPage && <aside id="app-navigation-drawer" className={`sidebar ${sidebarVisible ? 'open' : ''}`} inert={!sidebarVisible || sidebarBlocked} aria-label={lang === 'vi' ? 'Điều hướng workspace' : 'Workspace sidebar'}>
+      <div className="brand"><div className="brand-mark"><BookOpen size={24} /></div><div><strong>NoCap</strong><span>Quiet Knowledge Workspace</span></div>{!desktopSidebar && <button className="mobile-close icon-button" onClick={() => setSidebarOpen(false)} aria-label={translate("Đóng menu", lang)}><X size={20} /></button>}</div>
       <div className="sidebar-caption">{curT.nav.mySpace}</div>
       <nav className="main-nav" aria-label={translate("Điều hướng", lang)}>
-        {nav.map(item => <button key={item.id} className={page === item.id || (page === 'libraryMap' && item.id === 'library') ? 'active' : ''} onClick={() => { setPage(item.id); setSidebarOpen(false); setQuery(''); setCategory('all') }}><item.icon size={19} /><span>{item.label}</span></button>)}
+        {workspaceGroups.map(group => <div key={group.id} className="navigation-group"><span>{lang === 'vi' ? group.vi : group.en}</span>{nav.filter(item=>group.pages.includes(item.id)).map(item => <button key={item.id} className={page === item.id || (page === 'libraryMap' && item.id === 'library') ? 'active' : ''} onClick={() => navigatePrimary(item.id)}><item.icon size={19} /><span>{item.label}</span></button>)}</div>)}
       </nav>
       <div className="sidebar-bottom"><div className="sync-summary">{online ? <Cloud size={17} /> : <CloudOff size={17} />}<div><strong>{!session ? curT.nav.guestMode : syncing ? curT.nav.syncing : pendingCount ? curT.nav.pendingShort : curT.nav.autoSyncOn}</strong><small>{session ? (pendingCount ? `${pendingCount} ${curT.nav.pending}` : session.user.email) : curT.nav.loginPrompt}</small></div></div>{!session && <button className="primary wide" onClick={() => setAuthOpen(true)}><LogIn size={16} /> {curT.nav.login}</button>}</div>
-    </aside>
-    {sidebarOpen && <button className="sidebar-shade" aria-label={translate("Đóng menu", lang)} onClick={() => setSidebarOpen(false)} />}
+    </aside>}
+    {workspaceDrawerOpen && <button className="sidebar-shade" aria-label={translate("Đóng menu", lang)} onClick={() => setSidebarOpen(false)} />}
 
-    <main className="main-area" inert={sidebarOpen || !!reader || readerLoading || !!selectedBook || !!comparison || comparisonChoosing || reviewOpen}>
+    <main className="main-area" inert={workspaceDrawerOpen || !!reader || readerLoading || !!selectedBook || !!comparison || comparisonChoosing || reviewOpen}>
       <header className="swiss-header">
+        <div className="workspace-header-start">
+        {!landingPage && <button className="workspace-menu-toggle" onClick={() => desktopSidebar ? setSidebarExpanded(value => !value) : setSidebarOpen(value => !value)} aria-expanded={sidebarVisible} aria-controls="app-navigation-drawer" aria-label={desktopSidebar && sidebarVisible ? (lang === 'vi' ? 'Thu gọn menu' : 'Collapse menu') : translate('Mở menu',lang)}><Menu size={22}/></button>}
         <button type="button" className="swiss-header-brand" onClick={() => { setPage('home'); setQuery(''); setCategory('all') }} aria-label={lang === 'vi' ? 'NoCap · Trang chủ' : 'NoCap · Home'}>
           <div className="swiss-header-logo">
             NOCAP <span>QUIET WORKSPACE</span>
           </div>
         </button>
-        <nav className="swiss-header-nav" aria-label={translate("Menu chính", lang)}>
-          <button className={`swiss-nav-link ${page === 'home' ? 'active' : ''}`} onClick={() => { setPage('home'); setQuery(''); setCategory('all') }}>{curT.nav.home}</button>
-          <button className={`swiss-nav-link ${page === 'catalog' ? 'active' : ''}`} onClick={() => { setPage('catalog'); setQuery(''); setCategory('all') }}>{curT.nav.catalog}</button>
-          <button className={`swiss-nav-link ${page === 'library' || page === 'libraryMap' ? 'active' : ''}`} onClick={() => { setPage('library'); setQuery(''); setCategory('all') }}>{curT.nav.library}</button>
-          <button className={`swiss-nav-link ${page === 'memory' ? 'active' : ''}`} onClick={() => { setPage('memory'); setQuery(''); setCategory('all') }}>{curT.nav.memory}</button>
-          <button className={`swiss-nav-link ${page === 'stats' ? 'active' : ''}`} onClick={() => { setPage('stats'); setQuery(''); setCategory('all') }}>{curT.nav.stats}</button>
-          <button className={`swiss-nav-link ${page === 'account' ? 'active' : ''}`} onClick={() => { setPage('account'); setQuery(''); setCategory('all') }}>{curT.nav.account}</button>
-          {isAdmin && <button className={`swiss-nav-link ${page === 'admin' ? 'active' : ''}`} onClick={() => setPage('admin')}>{lang === 'vi' ? 'Quản trị' : 'Admin'}</button>}
-        </nav>
-        <CompactNavigation page={page} lang={lang} onNavigate={navigatePrimary} />
+        </div>
         <div className="swiss-header-actions">
           <SiteThemeQuickSwitch value={siteTheme} onChange={setSiteTheme} lang={lang} />
           <button
@@ -2070,18 +2108,19 @@ async function sha256Hex(file: Blob): Promise<string> {
             <span style={{ opacity: 0.35 }}>|</span>
             <span style={{ fontSize: '11px', opacity: 0.65 }}>{lang === 'vi' ? 'EN' : 'VI'}</span>
           </button>
-          <span className={`swiss-status-dot ${online ? '' : 'offline'}`}>{online ? curT.header.online : curT.header.offline}</span>
+          {!landingPage && <span className={`swiss-status-dot ${online ? '' : 'offline'}`}>{online ? curT.header.online : curT.header.offline}</span>}
           {!session && (
             <button className="swiss-pill-btn" onClick={() => setAuthOpen(true)} aria-label={curT.header.login} title={curT.header.login}>
               <LogIn size={13} /> <span>{curT.header.login}</span>
             </button>
           )}
-          <button className="profile-button" onClick={() => session ? setPage('account') : setAuthOpen(true)} aria-label={translate("Tài khoản", lang)}>
+          {!landingPage && <button className="profile-button" onClick={() => session ? setPage('account') : setAuthOpen(true)} aria-label={translate("Tài khoản", lang)}>
             {session ? <UserAvatar user={session.user} lang={lang} compact /> : 'G'}
-          </button>
-          <button className="mobile-menu icon-button" onClick={() => setSidebarOpen(true)} aria-label={translate("Mở menu", lang)}><Menu size={22} /></button>
+          </button>}
+          {landingPage && session && <button className="landing-workspace-entry" onClick={() => navigatePrimary('library')}>{lang === 'vi' ? 'Mở NoCap' : 'Open NoCap'}<ArrowRight size={15}/></button>}
         </div>
       </header>
+      {!landingPage && <CompactNavigation page={page} lang={lang} onNavigate={navigatePrimary} />}
 
       <SystemAnnouncements lang={lang} />
 
@@ -2163,15 +2202,15 @@ async function sha256Hex(file: Blob): Promise<string> {
               <div>
                 <span className="editorial-chip sage" style={{ marginBottom: '16px' }}>{curT.showcase.journeyChip}</span>
                 <h3 style={{ fontFamily: 'var(--font-ui)', fontSize: '26px', margin: '14px 0 8px', letterSpacing: '-0.01em' }}>
-                  {reading[0]?.title || curT.showcase.defaultTitle}
+                  {landingReading[0]?.title || curT.showcase.defaultTitle}
                 </h3>
                 <p style={{ color: '#78716c', fontSize: '14px', maxWidth: '520px', lineHeight: '1.6' }}>
-                  {reading[0] ? curT.showcase.readingDesc(reading[0].author || (lang === 'vi' ? 'Tác giả' : 'Author'), Math.round((Number(progressFor(records, reading[0].id)?.payload.progression || 0)) * 100)) : curT.showcase.defaultDesc}
+                  {landingReading[0] ? curT.showcase.readingDesc(landingReading[0].author || (lang === 'vi' ? 'Tác giả' : 'Author'), Math.round((Number(progressFor(records, landingReading[0].id)?.payload.progression || 0)) * 100)) : curT.showcase.defaultDesc}
                 </p>
               </div>
               <div style={{ display: 'flex', gap: '14px', alignItems: 'center', marginTop: '24px' }}>
-                {reading[0] ? (
-                  <button className="pill-btn primary-pill" onClick={() => void openBook(reading[0])}>
+                {landingReading[0] ? (
+                  <button className="pill-btn primary-pill" onClick={() => void openBook(landingReading[0])}>
                     {curT.showcase.continueReading} <ArrowRight size={16} />
                   </button>
                 ) : (
@@ -2202,10 +2241,10 @@ async function sha256Hex(file: Blob): Promise<string> {
               <div className="habit-copy">
                 <span className="editorial-chip peach" style={{ marginBottom: '10px' }}>{curT.showcase.habitChip}</span>
                 <div className="habit-value">
-                  {readingStreak > 0 ? `${readingStreak}D` : '15M'}
+                  {landingStreak > 0 ? `${landingStreak}D` : '15M'}
                 </div>
                 <p className="habit-description">
-                  {readingStreak > 0 ? curT.showcase.habitDesc : curT.showcase.habitDescEmpty}
+                  {landingStreak > 0 ? curT.showcase.habitDesc : curT.showcase.habitDescEmpty}
                 </p>
                 <button className="text-button" onClick={() => setPage('stats')}>{curT.showcase.viewAnalytics} <ArrowRight size={12} /></button>
               </div>
@@ -2215,14 +2254,14 @@ async function sha256Hex(file: Blob): Promise<string> {
               <div>
                 <span className="editorial-chip lavender" style={{ marginBottom: '14px' }}>{curT.showcase.notesChip}</span>
                 <h4 style={{ fontFamily: 'var(--font-ui)', fontSize: '18px', fontStyle: 'italic', fontWeight: '500', color: 'var(--site-text)', margin: '12px 0 8px', lineHeight: '1.5' }}>
-                  {toText(annotations[0]?.payload.text) ? `“${toText(annotations[0]?.payload.text).slice(0, 110)}...”` : curT.showcase.defaultQuote}
+                  {toText(landingAnnotations[0]?.payload.text) ? `“${toText(landingAnnotations[0]?.payload.text).slice(0, 110)}...”` : curT.showcase.defaultQuote}
                 </h4>
                 <p style={{ fontSize: '12px', color: 'var(--site-muted)' }}>
-                  {curT.showcase.notesSaved(annotations.length)}
+                  {curT.showcase.notesSaved(landingAnnotations.length)}
                 </p>
               </div>
               <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
-                {annotations.length > 0 ? (
+                {landingAnnotations.length > 0 ? (
                   <button className="pill-btn invert-pill" onClick={() => void startFlashcardReview()}>
                     <Sparkles size={14} /> {curT.showcase.reviewNow}
                   </button>
@@ -2239,6 +2278,7 @@ async function sha256Hex(file: Blob): Promise<string> {
       </>}
 
       <div className="content">
+        {page === 'author' && (session ? <Suspense fallback={<p role="status">{lang === 'vi' ? 'Đang mở không gian tác giả…' : 'Opening author workspace…'}</p>}><AuthorWorkspace key={`${session.user.id}:${lang}:${authorWorkspaceInstance}`} token={session.token} user={session.user} lang={lang} categories={categories} onDirtyChange={authorDirtyChanged} onFocusChange={setAuthorFocus} /></Suspense> : <div className="empty-state"><h2>{lang === 'vi' ? 'Không gian tác giả' : 'Author workspace'}</h2><p>{lang === 'vi' ? 'Đăng nhập để viết, lưu bản thảo riêng tư và gửi sách duyệt.' : 'Sign in to write, keep private drafts and submit books for review.'}</p><button className="primary" onClick={() => setAuthOpen(true)}>{curT.header.login}</button></div>)}
         {page === 'admin' && (session && adminAccess?.status === 'allowed'
           ? <ReaderErrorBoundary key={session.token} area="admin" lang={lang} onClose={() => setPage('home')}><Suspense fallback={<p role="status">{lang === 'vi' ? 'Đang mở khu vực quản trị…' : 'Opening administration…'}</p>}><AdminWorkspace
             key={session.token}
@@ -2294,9 +2334,9 @@ async function sha256Hex(file: Blob): Promise<string> {
           onOpen={importResult.book ? () => { void openBook(importResult.book!) } : undefined}
           onRetry={beginDocumentImport} onDismiss={() => setImportResult(null)}
         />}
-        {page === 'home' && <>
+        {page === 'home' && loadedProfile === profile && <>
           <SectionHeader title={lang === 'vi' ? 'Đọc tiếp gần đây' : 'Continue Reading'} action={curT.showcase.viewAll} onAction={() => setPage('library')} />
-          {reading.length ? <div className="book-grid">{reading.slice(0, 4).map(book => <BookCard key={book.id} book={book} lang={lang} progress={Number(progressFor(records, book.id)?.payload.progression || 0)} onOpen={() => void openBook(book)} onStealth={() => void launchStealth(book)} onDetails={() => showBookDetails(book)} onFavorite={() => void toggleFavorite(book)} favorite={favorites.has(book.id)} offline={book.source === 'local' || offlineIds.has(book.id)} downloadBusy={downloadBusy === book.id} onDownload={(book.source === 'local' || book.fileUrl) ? () => void downloadBook(book) : undefined} />)}</div> : <div className="empty-state"><BookOpen size={30} /><h3>{lang === 'vi' ? 'Hành trình đọc bắt đầu ở đây' : 'Your reading journey begins here'}</h3><p>{lang === 'vi' ? 'Chọn một cuốn sách hoặc thêm tài liệu của bạn để bắt đầu.' : 'Pick a book or import your own document to begin.'}</p><button className="secondary" onClick={() => setPage('catalog')}>{curT.hero.exploreBtn}</button></div>}
+          {reading.length ? <div className="book-grid">{reading.slice(0,4).map(recentBookCard)}</div> : <div className="empty-state"><BookOpen size={30}/><h3>{lang === 'vi' ? 'Hành trình đọc bắt đầu ở đây' : 'Your reading journey begins here'}</h3><p>{lang === 'vi' ? 'Chọn một cuốn sách hoặc thêm tài liệu của bạn để bắt đầu.' : 'Pick a book or import your own document to begin.'}</p><button className="secondary" onClick={() => setPage('catalog')}>{curT.hero.exploreBtn}</button></div>}
           <ReadingRecommendations lang={lang} genres={recommendations.genres} categories={categories} onExplore={exploreRecommendedGenre} />
           {recommendations.books.length > 0 && <>
             <SectionHeader title={recommendations.genres.length ? (lang === 'vi' ? 'Gợi ý cho bạn' : 'Recommended for You') : (lang === 'vi' ? 'Khám phá sách' : 'Explore books')} action={lang === 'vi' ? 'Xem tất cả' : 'View all'} onAction={() => setPage('catalog')} />
@@ -2511,12 +2551,12 @@ async function sha256Hex(file: Blob): Promise<string> {
         destinationFolders={importDestinationFolders} destinationId={importDestinationId} onDestinationChange={setImportDestinationId}
         saveError={importResult?.profile === profile && importResult.status === 'error' ? importResult.message : undefined}
       />}
-      {!reader && !readerLoading && !readerError && !selectedBook && !comparison && !comparisonChoosing && !reviewOpen && !importOpen && !authOpen && <MobileNavigation
+      {!landingPage && !reader && !readerLoading && !readerError && !selectedBook && !comparison && !comparisonChoosing && !reviewOpen && !importOpen && !authOpen && <MobileNavigation
         page={page}
         lang={lang}
         onNavigate={navigatePrimary}
         onMore={() => setSidebarOpen(true)}
-        moreOpen={sidebarOpen}
+        moreOpen={workspaceDrawerOpen}
       />}
     </main>
 
@@ -2546,7 +2586,7 @@ async function sha256Hex(file: Blob): Promise<string> {
           },
           {
             id: 'search', label: lang === 'vi' ? 'Tìm' : 'Search', primary: true,
-            control: <button ref={searchToggle} className="icon-button reader-search-toggle" title={lang === 'vi' ? 'Tìm trong sách (Ctrl+F / ⌘F)' : 'Search in book (Ctrl+F / ⌘F)'} aria-label={lang === 'vi' ? 'Tìm trong sách' : 'Search in book'} aria-expanded={searchOpen} aria-controls="reader-search-panel" onClick={() => { setSearchOpen(open => !open); setNoteOpen(false); setActiveSearchHit(null) }}><Search size={19} /></button>,
+            control: <button ref={searchToggle} className="icon-button reader-search-toggle" title={lang === 'vi' ? 'Tìm trong sách (Ctrl+F / ⌘F)' : 'Search in book (Ctrl+F / ⌘F)'} aria-label={lang === 'vi' ? 'Tìm trong sách' : 'Search in book'} aria-expanded={searchOpen} aria-controls="reader-search-panel" onClick={() => { setAiOpen(false); setSearchOpen(open => !open); setNoteOpen(false); setActiveSearchHit(null) }}><Search size={19} /></button>,
           },
           {
             id: 'settings', label: lang === 'vi' ? 'Tùy chỉnh đọc' : 'Reading settings',
@@ -2554,15 +2594,19 @@ async function sha256Hex(file: Blob): Promise<string> {
           },
           {
             id: 'speech', label: lang === 'vi' ? 'Đọc thành tiếng' : 'Read aloud',
-            control: <button ref={speechToggle} className={`icon-button reader-speech-toggle${speechVisible ? ' active' : ''}`} title={lang === 'vi' ? 'Đọc thành tiếng · Bản thử' : 'Read aloud · Preview'} aria-label={lang === 'vi' ? 'Đọc thành tiếng' : 'Read aloud'} aria-expanded={speechVisible} aria-controls="reader-speech-panel" onClick={() => { setSpeechOpen(!speechVisible); setNoteOpen(false); setSearchOpen(false); setActiveSearchHit(null) }}><Volume2 size={20} /></button>,
+            control: <button ref={speechToggle} className={`icon-button reader-speech-toggle${speechVisible ? ' active' : ''}`} title={lang === 'vi' ? 'Đọc thành tiếng · Bản thử' : 'Read aloud · Preview'} aria-label={lang === 'vi' ? 'Đọc thành tiếng' : 'Read aloud'} aria-expanded={speechVisible} aria-controls="reader-speech-panel" onClick={() => { setAiOpen(false); setSpeechOpen(!speechVisible); setNoteOpen(false); setSearchOpen(false); setActiveSearchHit(null) }}><Volume2 size={20} /></button>,
           },
+          ...(isAdmin ? [{
+            id: 'ai', label: lang === 'vi' ? 'Trợ lý AI · Admin' : 'AI assistant · Admin',
+            control: <button ref={aiToggle} className={`icon-button${aiOpen ? ' active' : ''}`} title={lang === 'vi' ? 'NoCap AI · Admin thử nghiệm' : 'NoCap AI · Admin preview'} aria-label={lang === 'vi' ? 'Trợ lý AI' : 'AI assistant'} aria-expanded={aiOpen} aria-controls="reader-ai-panel" onClick={() => { setAiOpen(open => !open); setSpeechOpen(false); setNoteOpen(false); setSearchOpen(false); setActiveSearchHit(null) }}><Sparkles size={20} /></button>,
+          }] : []),
           {
             id: 'bookmark', label: currentBookmarked ? (lang === 'vi' ? 'Bỏ dấu trang' : 'Remove bookmark') : (lang === 'vi' ? 'Đánh dấu vị trí' : 'Bookmark position'),
             control: <button className={`icon-button ${currentBookmarked ? 'active' : ''}`} title={currentBookmarked ? (lang === 'vi' ? 'Bỏ dấu trang' : 'Remove bookmark') : (lang === 'vi' ? 'Thêm dấu trang' : 'Add bookmark')} aria-label={currentBookmarked ? (lang === 'vi' ? 'Bỏ dấu trang' : 'Remove bookmark') : (lang === 'vi' ? 'Đánh dấu vị trí' : 'Bookmark position')} aria-pressed={currentBookmarked} disabled={bookmarkSaving === keyFor(profile, reader.book.id)} aria-busy={bookmarkSaving === keyFor(profile, reader.book.id)} onClick={() => void toggleBookmark()}><Bookmark size={20} fill={currentBookmarked ? 'currentColor' : 'none'} /></button>,
           },
           {
             id: 'notes', label: lang === 'vi' ? 'Ghi chú' : 'Notes', primary: true,
-            control: <button ref={notesToggle} className={`reader-notes-toggle ${noteOpen ? 'active' : ''}`} title={lang === 'vi' ? 'Vừa đọc vừa ghi chú' : 'Read and take notes'} aria-label={lang === 'vi' ? 'Bảng ghi chú' : 'Notes panel'} aria-expanded={noteOpen} aria-controls="reader-notes-panel" onClick={() => { setNoteOpen(open => !open); setSearchOpen(false); setActiveSearchHit(null) }}><PanelRightOpen size={18} /><span>{lang === 'vi' ? 'Ghi chú' : 'Notes'}</span></button>,
+            control: <button ref={notesToggle} className={`reader-notes-toggle ${noteOpen ? 'active' : ''}`} title={lang === 'vi' ? 'Vừa đọc vừa ghi chú' : 'Read and take notes'} aria-label={lang === 'vi' ? 'Bảng ghi chú' : 'Notes panel'} aria-expanded={noteOpen} aria-controls="reader-notes-panel" onClick={() => { setAiOpen(false); setNoteOpen(open => !open); setSearchOpen(false); setActiveSearchHit(null) }}><PanelRightOpen size={18} /><span>{lang === 'vi' ? 'Ghi chú' : 'Notes'}</span></button>,
           },
         ]}
       />
@@ -2584,6 +2628,10 @@ async function sha256Hex(file: Blob): Promise<string> {
         {speechOpen && !stealthActive && !comparison && <ReaderSpeechPanel key={`speech:${profile}:${reader.book.id}`} lang={lang} language={reader.book.language} bookTitle={reader.book.title} hidden={!speechVisible}
           source={readerSpeechSource} selection={selection?.text || ''} scopeKey={JSON.stringify([speechScopeKey(location?.locatorJson), navigateTarget, noteNavigation?.requestId, stealthProgressRequest?.requestId])}
           onClose={() => { setSpeechOpen(false); (speechToggle.current || document.querySelector<HTMLButtonElement>('.reader-toolbar-more-button'))?.focus() }} />}
+        {aiOpen && isAdmin && session && !stealthActive && !comparison && <ReaderAiPanel key={`ai:${profile}:${reader.book.id}:${sessionToken}`} lang={lang} token={session.token} bookTitle={reader.book.title}
+          source={readerSpeechSource} locatorJson={location?.locatorJson} chapterTitle={location?.chapterTitle} selection={selection}
+          onNavigate={locator => { setNoteNavigation({ locatorJson: locator, requestId: ++noteNavigationId.current }); setNavigateTarget(null) }}
+          onClose={() => { setAiOpen(false); (aiToggle.current || document.querySelector<HTMLButtonElement>('.reader-toolbar-more-button'))?.focus() }} />}
         <ReaderNotesPanel key={`${profile}:${reader.book.id}`} open={noteOpen} lang={lang} bookTitle={reader.book.title}
           records={readerNotes} note={noteText} color={noteColor} quote={selection?.text || ''} saving={noteSaving}
           drawing={noteDrawing} onDrawingChange={changeReaderDrawing}
@@ -3087,7 +3135,7 @@ export function AuthDialog({ lang, onClose, onSuccess }: { lang: Lang; onClose: 
           <div className="auth-divider"><span>{mode === 'register' ? (lang === 'vi' ? 'hoặc đăng ký bằng email' : 'or register with email') : (lang === 'vi' ? 'hoặc đăng nhập bằng mật khẩu' : 'or sign in with a password')}</span></div>
         )}
         <form onSubmit={event => void submit(event)}>
-          <label>{mode === 'login' ? (lang === 'vi' ? 'Email hoặc tên đăng nhập' : 'Email or username') : 'Email'}<input name={mode === 'login' ? 'username' : 'email'} type={mode === 'login' ? 'text' : 'email'} autoComplete={mode === 'login' ? 'username' : 'email'} autoCapitalize="none" spellCheck={false} required maxLength={254} value={email} onChange={event => setEmail(event.target.value)} placeholder={mode === 'login' ? (lang === 'vi' ? 'Email hoặc tên đăng nhập' : 'Email or username') : 'email@example.com'} /></label>
+          <label>Email<input name="email" type="email" autoComplete="email" autoCapitalize="none" spellCheck={false} required maxLength={254} value={email} onChange={event => setEmail(event.target.value)} placeholder="email@example.com" /></label>
           {mode !== 'forgot' && <label>{copy.password}<input name="password" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} minLength={mode === 'register' ? 8 : undefined} required value={password} onChange={event => setPassword(event.target.value)} placeholder={mode === 'register' ? copy.newPasswordPlaceholder : copy.passwordPlaceholder} /></label>}
           {mode !== 'forgot' && <>
             <label className="auth-remember"><input name="remember-login" type="checkbox" checked={rememberLogin} disabled={busy} onChange={event => setRememberLogin(event.target.checked)} aria-describedby="auth-remember-help" /><span>{copy.rememberLogin}</span></label>

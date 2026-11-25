@@ -1951,6 +1951,8 @@ body, .main-area {
 .pro-plan-option input { width: 18px; height: 18px; margin: 3px 0 0; accent-color: #147d70; flex: 0 0 auto; }
 .pro-plan-copy { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
 .pro-plan-discount { background: #147d70; color: #fff; border-radius: 999px; padding: 3px 8px; font-size: 12px; font-weight: 700; }
+.pro-plan-duration { flex-basis: 100%; font-size: 12px; line-height: 1.7; }
+.pro-plan-note { font-size: 12px; line-height: 1.8; margin: 8px 0 16px; }
 .pro-plan-price { display: flex; flex-direction: column; gap: 4px; flex-basis: 100%; font-size: 20px; overflow-wrap: anywhere; }
 .pro-plan-price del { font-size: 13px; color: #536573; }
 

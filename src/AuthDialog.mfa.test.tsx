@@ -17,7 +17,7 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers() })
 function setup() { return render(<AuthDialog lang="vi" onClose={mocks.close} onSuccess={mocks.success} />) }
 async function firstFactor() {
-  fireEvent.change(screen.getByLabelText('Email hoặc tên đăng nhập'), { target: { value: 'administrator' } })
+  fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'admin@example.test' } })
   fireEvent.change(screen.getByLabelText('Mật khẩu'), { target: { value: 'Fixture-Password-Only!' } })
   fireEvent.submit(screen.getByLabelText('Mật khẩu').closest('form')!)
   await screen.findByRole('heading', { name: 'Xác minh hai bước' })
@@ -36,7 +36,7 @@ describe('administrator MFA sign-in', () => {
     expect([...Array(localStorage.length)].map((_, index) => localStorage.getItem(localStorage.key(index)!)).join('')).not.toContain('Fixture-Password-Only!')
     submitCode('123456')
     await act(async () => { await Promise.resolve() })
-    expect(mocks.login).toHaveBeenLastCalledWith('administrator', 'Fixture-Password-Only!', '123456')
+    expect(mocks.login).toHaveBeenLastCalledWith('admin@example.test', 'Fixture-Password-Only!', '123456')
     expect(mocks.success).toHaveBeenCalledWith(account, true)
   })
 
@@ -70,7 +70,7 @@ describe('administrator MFA sign-in', () => {
     vi.useFakeTimers(); vi.setSystemTime(new Date('2026-10-31T10:00:00Z'))
     const view = setup()
     await act(async () => {
-      fireEvent.change(screen.getByLabelText('Email hoặc tên đăng nhập'), { target: { value: 'administrator' } })
+      fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'admin@example.test' } })
       fireEvent.change(screen.getByLabelText('Mật khẩu'), { target: { value: 'Fixture-Password-Only!' } })
       fireEvent.submit(screen.getByLabelText('Mật khẩu').closest('form')!); await Promise.resolve()
     })

@@ -1,4 +1,5 @@
 import type { AdminPaymentReport } from './api'
+import { proPlanLabel } from '../proPlans'
 
 const cell = (value: string | number | null | undefined) => {
   let safe = String(value ?? '')
@@ -17,13 +18,13 @@ export function paymentReportCsv(data: AdminPaymentReport) {
     ['summary', 'orders', 'paid_orders', 'distinct_paying_customers', 'paid_amount_vnd'],
     ['total', data.summary.orders, data.summary.paidOrders, data.summary.paidCustomers, data.summary.paidAmount],
     ['undated_paid_orders_excluded_all_dates', data.undatedPaidOrders], [],
-    ['plan_days', 'orders', 'paid_orders', 'distinct_paying_customers', 'paid_amount_vnd'],
-    ...data.plans.map(row => [row.planDays, row.orders, row.paidOrders, row.paidCustomers, row.paidAmount]), [],
+    ['plan_days', 'orders', 'paid_orders', 'distinct_paying_customers', 'paid_amount_vnd', 'plan_label'],
+    ...data.plans.map(row => [row.planDays, row.orders, row.paidOrders, row.paidCustomers, row.paidAmount, proPlanLabel(row.planDays, 'vi')]), [],
     ['date_vietnam', 'orders', 'paid_orders', 'distinct_paying_customers', 'paid_amount_vnd'],
     ...data.daily.map(row => [row.date, row.orders, row.paidOrders, row.paidCustomers, row.paidAmount]), [],
     ['status', 'orders'], ...data.statuses.map(row => [row.status, row.count]), [],
-    ['order_id', 'user_id', 'email', 'display_name', 'payment_code', 'plan_days', 'amount_vnd', 'status', 'created_at_utc', 'paid_at_utc', 'recorded_at_utc', 'transaction_id', 'pro_expires_at_utc'],
-    ...data.items.map(row => [row.id, row.userId, row.email, row.displayName, row.paymentCode, row.planDays, row.amount, row.status, iso(row.createdAt), iso(row.paidAt), iso(row.recordedAt), row.transactionId, row.status === 'PAID' ? iso(row.entitlementExpiresAt) : '']),
+    ['order_id', 'user_id', 'email', 'display_name', 'payment_code', 'plan_days', 'amount_vnd', 'status', 'created_at_utc', 'paid_at_utc', 'recorded_at_utc', 'transaction_id', 'pro_expires_at_utc', 'plan_label'],
+    ...data.items.map(row => [row.id, row.userId, row.email, row.displayName, row.paymentCode, row.planDays, row.amount, row.status, iso(row.createdAt), iso(row.paidAt), iso(row.recordedAt), row.transactionId, row.status === 'PAID' ? iso(row.entitlementExpiresAt) : '', proPlanLabel(row.planDays, 'vi')]),
   ]
   return '\uFEFF' + rows.map(row => row.map(cell).join(',')).join('\r\n')
 }

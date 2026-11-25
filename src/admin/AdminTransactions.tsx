@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { proPlanLabel } from '../proPlans'
 import { RefreshCw } from 'lucide-react'
 import { ApiError } from '../api'
 import type { Lang } from '../i18n'
@@ -67,7 +68,7 @@ function TransactionHistory({ token, user, lang, onError, onClose, onSignIn }: A
       year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short',
     })}</time>
   }
-  const duration = (days: number) => days === 365 ? text('1 năm · 365 ngày', '1 year · 365 days') : days === 30 ? text('30 ngày', '30 days') : text(`${days} ngày`, `${days} days`)
+  const duration = (days: number) => proPlanLabel(days, lang)
   const hasActiveGrant = user.adminGrantStatus === 'ACTIVE' && !!user.adminGrantExpiresAt && user.adminGrantExpiresAt > openedAt
   const refresh = () => setRevision(value => value + 1)
 

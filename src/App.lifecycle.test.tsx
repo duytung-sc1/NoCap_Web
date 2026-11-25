@@ -102,7 +102,7 @@ function file(id: string): LocalFile {
 async function openLogin(identifier = session.user.email) {
   fireEvent.click(screen.getAllByRole('button', { name: 'Đăng nhập' })[0])
   const dialog = screen.getByRole('dialog', { name: 'Chào mừng quay lại.' })
-  fireEvent.change(within(dialog).getByLabelText('Email hoặc tên đăng nhập'), { target: { value: identifier } })
+  fireEvent.change(within(dialog).getByLabelText('Email'), { target: { value: identifier } })
   fireEvent.change(within(dialog).getByLabelText('Mật khẩu'), { target: { value: 'qa-password' } })
   fireEvent.submit(dialog.querySelector('form')!)
   return dialog
@@ -138,6 +138,90 @@ beforeEach(() => {
   fixtures.searchBook.mockReset().mockResolvedValue({ hits: [], truncated: false, scanned: 1, total: 1, textAvailable: true })
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks(); delete (window as unknown as { google?: unknown }).google })
+
+it.each([false,true])('keeps the original landing page with browser documents (signed in: %s)',async signedIn=>{
+  if(signedIn)saveSession(session)
+  fixtures.getFiles.mockResolvedValue([file('QA document')])
+  render(<App/>)
+  await screen.findByRole('heading',{name:'Đọc tiếp gần đây'})
+  expect(screen.getByRole('heading',{name:'NOCAP',level:1}).closest('.swiss-hero')).toBeTruthy()
+  expect(document.querySelector('.swiss-philosophy-section')).toBeTruthy()
+  expect(document.querySelector('.swiss-showcase-section')).toBeTruthy()
+  expect(document.querySelector('.reader-home')).toBeNull()
+  expect(document.getElementById('app-navigation-drawer')).toBeNull()
+  expect(screen.queryByRole('button',{name:'Mở menu'})).toBeNull()
+  expect(document.querySelector('.workspace-switcher')).toBeNull()
+  expect(document.querySelector('.workspace-context-nav')).toBeNull()
+  expect(document.querySelector('.mobile-primary-nav')).toBeNull()
+  const header=within(document.querySelector('.swiss-header')!)
+  if(signedIn){
+    expect(header.queryByRole('button',{name:'Đăng nhập'})).toBeNull()
+    fireEvent.click(header.getByRole('button',{name:'Mở NoCap'}))
+  }else{
+    expect(header.queryByRole('button',{name:'Mở NoCap'})).toBeNull()
+    expect(header.getByRole('button',{name:'Đăng nhập'})).toBeTruthy()
+    fireEvent.click(within(document.querySelector('.swiss-hero')!).getByRole('button',{name:'Khám phá thư viện'}))
+  }
+  await waitFor(()=>expect(window.location.pathname).toBe(signedIn?'/library':'/explore'))
+  fireEvent.click(screen.getByRole('button',{name:'Mở menu'}))
+  expect(document.getElementById('app-navigation-drawer')?.classList.contains('open')).toBe(true)
+  fireEvent.keyDown(document,{key:'Escape'})
+  expect(document.body.style.overflow).not.toBe('hidden')
+  fireEvent.click(screen.getByRole('button',{name:'NoCap · Trang chủ'}))
+  expect(document.getElementById('app-navigation-drawer')).toBeNull()
+  expect(document.querySelector('main')?.hasAttribute('inert')).toBe(false)
+})
+
+it('keeps desktop navigation expanded without locking content and switches cleanly to the mobile drawer',async()=>{
+  let desktop=true
+  const listeners=new Set<()=>void>()
+  const media={get matches(){return desktop},addEventListener:(_event:string,listener:()=>void)=>listeners.add(listener),removeEventListener:(_event:string,listener:()=>void)=>listeners.delete(listener)}
+  vi.stubGlobal('matchMedia',()=>media)
+  try {
+    window.history.replaceState(null,'','/explore')
+    render(<App/>)
+    expect(document.querySelector('.app-shell')?.getAttribute('data-sidebar')).toBe('expanded')
+    expect(document.querySelector('main')?.hasAttribute('inert')).toBe(false)
+    expect(document.body.style.overflow).not.toBe('hidden')
+    expect(document.querySelector('.sidebar-shade')).toBeNull()
+    fireEvent.click(screen.getByRole('button',{name:'Thu gọn menu'}))
+    expect(document.querySelector('.app-shell')?.getAttribute('data-sidebar')).toBe('collapsed')
+    expect(document.getElementById('app-navigation-drawer')?.hasAttribute('inert')).toBe(true)
+    fireEvent.click(within(document.querySelector('footer')!).getByRole('button',{name:'Tủ sách'}))
+    expect(document.querySelector('.app-shell')?.getAttribute('data-sidebar')).toBe('collapsed')
+    fireEvent.click(screen.getByRole('button',{name:'Mở menu'}))
+    expect(document.querySelector('.app-shell')?.getAttribute('data-sidebar')).toBe('expanded')
+    act(()=>{desktop=false;listeners.forEach(listener=>listener())})
+    expect(document.querySelector('.app-shell')?.getAttribute('data-sidebar')).toBe('overlay')
+    expect(document.querySelector('.sidebar-shade')).toBeNull()
+    fireEvent.click(screen.getByRole('button',{name:'Mở menu'}))
+    expect(document.querySelector('main')?.hasAttribute('inert')).toBe(true)
+    expect(document.body.style.overflow).toBe('hidden')
+    act(()=>{desktop=true;listeners.forEach(listener=>listener())})
+    expect(document.querySelector('.app-shell')?.getAttribute('data-sidebar')).toBe('expanded')
+    expect(document.body.style.overflow).not.toBe('hidden')
+    expect(document.querySelector('main')?.hasAttribute('inert')).toBe(false)
+    expect(document.querySelector('.sidebar-shade')).toBeNull()
+    fireEvent.click(screen.getByRole('button',{name:'NoCap · Trang chủ'}))
+    expect(document.getElementById('app-navigation-drawer')).toBeNull()
+  } finally {vi.unstubAllGlobals()}
+})
+
+it('gives a full-screen reader its width and restores the desktop sidebar on return',async()=>{
+  vi.stubGlobal('matchMedia',()=>({matches:true,addEventListener:vi.fn(),removeEventListener:vi.fn()}))
+  try {
+    fixtures.getFiles.mockResolvedValue([file('QA document')]);fixtures.getFile.mockResolvedValue(file('QA document'))
+    window.history.replaceState(null,'','/library')
+    render(<App/>)
+    await screen.findByRole('button',{name:'QA document'})
+    fireEvent.click(screen.getByRole('button',{name:'Bắt đầu đọc'}))
+    await screen.findByText('QA reader content')
+    expect(document.querySelector('.app-shell')?.getAttribute('data-sidebar')).toBe('none')
+    expect(document.getElementById('app-navigation-drawer')?.hasAttribute('inert')).toBe(true)
+    fireEvent.click(screen.getByRole('button',{name:'Quay lại tủ sách'}))
+    await waitFor(()=>expect(document.querySelector('.app-shell')?.getAttribute('data-sidebar')).toBe('expanded'))
+  } finally {vi.unstubAllGlobals()}
+})
 
 describe('reading-based genre suggestions', () => {
   const recommendationProfile = 'DEVICE_LOCAL'
@@ -1543,7 +1627,7 @@ describe('account and reader lifecycle', () => {
     expect(checkbox.checked).toBe(true)
     if (!remember) fireEvent.click(checkbox)
     expect(within(dialog).getByText(remember ? 'Giữ đăng nhập trên thiết bị này khi mở lại trình duyệt.' : 'Chỉ giữ đăng nhập trong tab hiện tại.')).toBeTruthy()
-    fireEvent.change(within(dialog).getByLabelText('Email hoặc tên đăng nhập'), { target: { value: session.user.email } })
+    fireEvent.change(within(dialog).getByLabelText('Email'), { target: { value: session.user.email } })
     const password = within(dialog).getByLabelText('Mật khẩu') as HTMLInputElement
     expect(password.autocomplete).toBe('current-password')
     fireEvent.change(password, { target: { value: 'qa-password-do-not-persist' } })
@@ -1567,7 +1651,7 @@ describe('account and reader lifecycle', () => {
     const checkbox = within(dialog).getByRole('checkbox', { name: 'Ghi nhớ đăng nhập' }) as HTMLInputElement
     expect(checkbox.checked).toBe(false)
     fireEvent.click(checkbox)
-    fireEvent.change(within(dialog).getByLabelText('Email hoặc tên đăng nhập'), { target: { value: session.user.email } })
+    fireEvent.change(within(dialog).getByLabelText('Email'), { target: { value: session.user.email } })
     fireEvent.change(within(dialog).getByLabelText('Mật khẩu'), { target: { value: 'qa-password' } })
     fireEvent.submit(dialog.querySelector('form')!)
     expect(await within(dialog).findByRole('status')).toBeTruthy()
@@ -1832,26 +1916,26 @@ describe('account and reader lifecycle', () => {
     await waitFor(() => expect(fixtures.adminRequest).toHaveBeenCalledWith(session.token, 'overview', expect.any(AbortSignal)))
   })
 
-  it('accepts the administrator login name while registration and recovery still require email', async () => {
+  it('accepts the administrator email while registration and recovery also require email', async () => {
     window.history.replaceState(null, '', '/admin')
     fixtures.login.mockResolvedValue(session)
-    fixtures.adminIdentity.mockResolvedValue({ id: session.user.id, email: session.user.email, name: 'administrator', photoUrl: null, adminExpiresAt: Date.now() + 3600000 })
+    fixtures.adminIdentity.mockResolvedValue({ id: session.user.id, email: session.user.email, name: 'Gnut_dz_pro', photoUrl: null, adminExpiresAt: Date.now() + 3600000 })
     render(<App />)
     fireEvent.click(screen.getAllByRole('button', { name: 'Đăng nhập' })[0])
     const dialog = screen.getByRole('dialog', { name: 'Chào mừng quay lại.' })
-    const identifier = within(dialog).getByLabelText('Email hoặc tên đăng nhập') as HTMLInputElement
-    expect(identifier.type).toBe('text'); expect(identifier.autocomplete).toBe('username')
+    const identifier = within(dialog).getByLabelText('Email') as HTMLInputElement
+    expect(identifier.type).toBe('email'); expect(identifier.autocomplete).toBe('email')
     fireEvent.click(within(dialog).getByRole('button', { name: 'Tạo tài khoản' }))
     expect((within(dialog).getByLabelText('Email') as HTMLInputElement).type).toBe('email')
     fireEvent.click(within(dialog).getByRole('button', { name: 'Đăng nhập' }))
     fireEvent.click(within(dialog).getByRole('button', { name: 'Quên mật khẩu?' }))
     expect((within(dialog).getByLabelText('Email') as HTMLInputElement).type).toBe('email')
     fireEvent.click(within(dialog).getByRole('button', { name: 'Đăng nhập' }))
-    fireEvent.change(within(dialog).getByLabelText('Email hoặc tên đăng nhập'), { target: { value: 'administrator' } })
+    fireEvent.change(within(dialog).getByLabelText('Email'), { target: { value: 'admin@example.test' } })
     fireEvent.change(within(dialog).getByLabelText('Mật khẩu'), { target: { value: 'qa-password' } })
     fireEvent.submit(dialog.querySelector('form')!)
     expect(await screen.findByRole('heading', { name: 'Quản trị thư viện' })).toBeTruthy()
-    expect(fixtures.login).toHaveBeenCalledWith('administrator', 'qa-password')
+    expect(fixtures.login).toHaveBeenCalledWith('admin@example.test', 'qa-password')
   })
 
   it('denies ordinary accounts a directly entered /admin route', async () => {
@@ -1885,7 +1969,7 @@ describe('account and reader lifecycle', () => {
     fixtures.adminIdentity.mockResolvedValue({ id: session.user.id, email: session.user.email, photoUrl: null, adminExpiresAt: Date.now() + 3600000 })
     render(<App />)
     expect(await screen.findByRole('button', { name: 'Mở khu vực quản trị' })).toBeTruthy()
-    expect(screen.getAllByRole('button', { name: 'Quản trị' })).toHaveLength(2)
+    expect(screen.getAllByRole('button', { name: 'Quản trị' })).toHaveLength(1)
   })
 
   it('removes the workspace and admin menu while rechecking revoked privileges', async () => {

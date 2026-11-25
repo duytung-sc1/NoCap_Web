@@ -34,7 +34,7 @@ describe('administrator transaction history', () => {
     expect(within(table).getByText('sepay-order-1')).toBeTruthy()
     expect(within(table).getByText('sepay-bank-987')).toBeTruthy()
     expect(within(table).getByText('₫208,800')).toBeTruthy()
-    expect(within(table).getByText('1 year · 365 days')).toBeTruthy()
+    expect(within(table).getByText('Steady · 1 year · 365 days')).toBeTruthy()
     expect(within(table).getByText('Paid')).toBeTruthy()
     const dates = table.querySelectorAll('time')
     expect(dates.length).toBe(4)

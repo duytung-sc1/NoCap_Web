@@ -1,4 +1,5 @@
 import type { Book, Category, Session, SyncOperation, User } from './types'
+import type { ProPlanId } from './proPlans'
 
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'https://nocap-ebook-api.buiminhhien001.workers.dev').replace(/\/$/, '')
 
@@ -49,12 +50,12 @@ async function parseError(response: Response): Promise<never> {
   throw new ApiError(response.status, result?.error?.message || `Máy chủ trả về lỗi ${response.status}`, result?.error?.code)
 }
 
-export async function api<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
+export async function api<T>(path: string, options: RequestInit = {}, token?: string, timeoutMs = 20000): Promise<T> {
   const headers = new Headers(options.headers)
   if (token) headers.set('Authorization', `Bearer ${token}`)
   if (options.body && !(options.body instanceof Blob)) headers.set('Content-Type', 'application/json')
   try {
-    return await fetchWithTimeout(`${API_BASE}${path}`, { ...options, headers, cache: 'no-store' }, 20000, async response => {
+    return await fetchWithTimeout(`${API_BASE}${path}`, { ...options, headers, cache: 'no-store' }, timeoutMs, async response => {
       if (!response.ok) return parseError(response)
       return response.json() as Promise<T>
     })
@@ -169,7 +170,7 @@ export type SePayOrder = {
   qrUrl: string
 }
 
-export type SePayPlanId = 'MONTHLY' | 'YEARLY'
+export type SePayPlanId = ProPlanId
 export type SePayPlan = {
   id: SePayPlanId; amount: number; planDays: number; currency: 'VND'
   discountPercent: number; regularAmount: number

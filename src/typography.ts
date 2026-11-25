@@ -40,6 +40,9 @@ export function applyDocumentTypography(document: Document, declared?: string) {
 export function installVietnameseTextGuard(root: HTMLElement) {
   const mark = (element: Element) => {
     if (element.matches('script,style,iframe')) return
+    // ProseMirror owns its document DOM; injected attributes trigger a redraw loop.
+    // The editor sets its own language from the complete chapter instead.
+    if (element.closest('.ProseMirror')) return
     const selected = element instanceof HTMLSelectElement ? element.selectedOptions[0] : undefined
     const value = selected?.textContent || (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement ? element.value : '')
     const directText = Array.from(element.childNodes).filter(node => node.nodeType === 3).map(node => node.textContent || '').join(' ')

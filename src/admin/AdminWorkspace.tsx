@@ -9,8 +9,9 @@ import { AdminTransactions } from './AdminTransactions'
 import { AdminAnalytics } from './AdminAnalytics'
 import { AdminPayments } from './AdminPayments'
 import { AdminSecurity } from './AdminSecurity'
+import { AdminAuthorSubmissions } from './AdminAuthorSubmissions'
 
-type View = 'overview' | 'analytics' | 'payments' | 'catalog' | 'categories' | 'users' | 'announcements' | 'storage' | 'audit' | 'security'
+type View = 'overview' | 'analytics' | 'payments' | 'catalog' | 'categories' | 'users' | 'announcements' | 'storage' | 'audit' | 'security' | 'submissions'
 type Dataset = { overview?: Overview; catalog?: PageResult<CatalogRow>; categories?: PageResult<AdminCategory>; users?: PageResult<AdminUser>; announcements?: PageResult<Announcement>; audit?: PageResult<AuditEntry> }
 type Modal = { kind: 'book'; row?: CatalogRow } | { kind: 'category'; item?: AdminCategory }
   | { kind: 'announcement'; item?: Announcement } | { kind: 'conflicts'; user: AdminUser } | { kind: 'transactions'; user: AdminUser } | { kind: 'avatar' }
@@ -84,6 +85,7 @@ export default function AdminWorkspace({ token, admin, lang, onSignIn, onCatalog
     { id: 'analytics' as const, label: text('Thống kê Web', 'Web Analytics'), icon: BarChart3 },
     { id: 'payments' as const, label: text('Giao dịch & Pro', 'Payments & Pro'), icon: CreditCard },
     { id: 'catalog' as const, label: text('Sách', 'Books'), icon: BookOpen },
+    { id: 'submissions' as const, label: text('Duyệt tác phẩm', 'Author submissions'), icon: BookOpen },
     { id: 'categories' as const, label: text('Thể loại', 'Categories'), icon: Tags },
     { id: 'users' as const, label: text('Người dùng & Pro', 'Users & Pro'), icon: Users },
     { id: 'announcements' as const, label: text('Thông báo', 'Announcements'), icon: Megaphone },
@@ -106,7 +108,7 @@ export default function AdminWorkspace({ token, admin, lang, onSignIn, onCatalog
   }, [token])
   useEffect(() => {
     const controller = new AbortController()
-    const paths: Record<View, string> = { overview: 'overview', analytics: '', payments: '', security: '', catalog: `catalog?page=${page}&q=${encodeURIComponent(search)}`, categories: 'categories', users: `users?page=${page}&q=${encodeURIComponent(search)}`, announcements: 'announcements', storage: '', audit: `audit?page=${page}` }
+    const paths: Record<View, string> = { overview: 'overview', analytics: '', payments: '', security: '', submissions: '', catalog: `catalog?page=${page}&q=${encodeURIComponent(search)}`, categories: 'categories', users: `users?page=${page}&q=${encodeURIComponent(search)}`, announcements: 'announcements', storage: '', audit: `audit?page=${page}` }
     const path = paths[view]
     void (path ? adminRequest<unknown>(token, path, controller.signal) : Promise.resolve(null)).then(value => {
       if (!controller.signal.aborted) { setResource({ key, data: path ? { [view]: value } : {} }); setAnnouncementNow(Date.now()) }
@@ -225,6 +227,7 @@ export default function AdminWorkspace({ token, admin, lang, onSignIn, onCatalog
       {view === 'analytics' && <AdminAnalytics token={token} lang={lang} onError={handleFailure} onSignIn={signInAgain} />}
       {view === 'payments' && <AdminPayments token={token} lang={lang} onError={handleFailure} onSignIn={signInAgain} />}
       {view === 'security' && <AdminSecurity key={`${token}:${lang}:${revision}`} token={token} lang={lang} onFailure={handleFailure} />}
+      {view === 'submissions' && <AdminAuthorSubmissions key={`${token}:${lang}:${revision}`} token={token} lang={lang} onFailure={handleFailure} onCatalogChanged={onCatalogChanged} />}
       {loaded?.error && <div role="alert" className="admin-notice"><p>{loaded.error}</p>{button(text('Thử lại', 'Retry'), () => setRevision(n => n + 1))}</div>}
       {data?.overview && <><div className="admin-metrics">{[
         [text('Sách', 'Books'), data.overview.books], [text('Thể loại', 'Categories'), data.overview.categories], [text('Người dùng', 'Users'), data.overview.users],

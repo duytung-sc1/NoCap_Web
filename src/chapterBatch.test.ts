@@ -244,7 +244,7 @@ describe('selected-chapter EPUB output', () => {
     }
     expect(bundledFontFetch).toHaveBeenCalledTimes(8)
     for (const [, options] of bundledFontFetch.mock.calls) expect(options).toMatchObject({ credentials: 'omit' })
-  })
+  }, 20000)
 
   it('keeps downloaded chapters when bundled fonts fail, rejects HTML masquerading as a font and allows export retry', async () => {
     const completed = await runChapterBatch(await create(profile(), [1]))

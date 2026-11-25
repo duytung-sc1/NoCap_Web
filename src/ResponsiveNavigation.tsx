@@ -1,14 +1,11 @@
 import type { MouseEvent } from 'react'
-import { BookMarked, Compass, Library, Menu } from 'lucide-react'
+import { BookOpen, Compass, Menu, PenLine } from 'lucide-react'
 import { t, type Lang } from './i18n'
 import { routePath, type Page } from './routing'
+import { contextPages, workspaceChoices, workspaceForPage } from './workspaces'
 import './ResponsiveNavigation.css'
 
-const destinations = [
-  { page: 'catalog', icon: Compass },
-  { page: 'library', icon: Library },
-  { page: 'memory', icon: BookMarked },
-] as const
+const workspaceIcons = { public: Compass, reader: BookOpen, author: PenLine }
 
 type NavigationProps = {
   page: Page | 'notFound'
@@ -24,12 +21,12 @@ function followPage(event: MouseEvent<HTMLAnchorElement>, page: Page, onNavigate
 
 export function CompactNavigation({ page, lang, onNavigate }: NavigationProps) {
   const activePage = page === 'libraryMap' ? 'library' : page
-  return <nav className="compact-primary-nav" lang={lang} aria-label={lang === 'vi' ? 'Truy cập nhanh' : 'Quick navigation'}>
-    {destinations.map(item => <a key={item.page}
-      href={routePath({ kind: 'page', page: item.page })}
-      aria-current={activePage === item.page ? 'page' : undefined}
-      onClick={event => followPage(event, item.page, onNavigate)}>
-      {t[lang].nav[item.page]}
+  return <nav className="compact-primary-nav workspace-context-nav" lang={lang} aria-label={lang === 'vi' ? 'Điều hướng không gian' : 'Workspace navigation'}>
+    {contextPages(page).map(destination => <a key={destination}
+      href={routePath({ kind: 'page', page: destination })}
+      aria-current={activePage === destination ? 'page' : undefined}
+      onClick={event => followPage(event, destination, onNavigate)}>
+      {destination === 'author' ? (lang === 'vi' ? 'Tác phẩm của bạn' : 'Your works') : t[lang].nav[destination as keyof typeof t.vi.nav] as string}
     </a>)}
   </nav>
 }
@@ -38,18 +35,18 @@ export function MobileNavigation({ page, lang, onNavigate, onMore, moreOpen }: N
   onMore: () => void
   moreOpen: boolean
 }) {
-  const activePage = page === 'libraryMap' ? 'library' : page
-  const primaryPage = destinations.some(item => item.page === activePage)
+  const activeWorkspace = workspaceForPage(page)
+  const primaryPage = !!activeWorkspace
   return <>
     <div className="mobile-primary-nav-spacer" aria-hidden="true" />
-    <nav className="mobile-primary-nav" lang={lang} aria-label={lang === 'vi' ? 'Điều hướng chính' : 'Main navigation'}>
-      {destinations.map(item => <a key={item.page}
+    <nav className="mobile-primary-nav" lang={lang} inert={moreOpen} aria-label={lang === 'vi' ? 'Điều hướng chính' : 'Main navigation'}>
+      {workspaceChoices(lang).map(item => { const Icon = workspaceIcons[item.id]; return <a key={item.id}
         href={routePath({ kind: 'page', page: item.page })}
-        aria-current={activePage === item.page ? 'page' : undefined}
+        aria-current={activeWorkspace === item.id ? 'true' : undefined}
         onClick={event => followPage(event, item.page, onNavigate)}>
-        <item.icon size={21} aria-hidden="true" strokeWidth={activePage === item.page ? 2.2 : 1.8} />
-        <span>{t[lang].nav[item.page]}</span>
-      </a>)}
+        <Icon size={21} aria-hidden="true" strokeWidth={activeWorkspace === item.id ? 2.2 : 1.8} />
+        <span>{item.label}</span>
+      </a>})}
       <button type="button" onClick={onMore} aria-expanded={moreOpen} aria-controls="app-navigation-drawer"
         data-active={!primaryPage || moreOpen ? 'true' : undefined}>
         <Menu size={21} aria-hidden="true" strokeWidth={1.8} />
