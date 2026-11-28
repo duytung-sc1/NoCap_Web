@@ -21,12 +21,13 @@ describe('Pro upgrade prompts', () => {
     expect(html).not.toContain('Markdown')
     expect(html).not.toContain('Stealth Reading')
   })
-  it('explains PDF export and keeps ordinary notes free in both languages', () => {
+  it('describes the supported Pro export formats in both languages', () => {
     for (const lang of ['vi', 'en'] as const) {
       const html = renderToStaticMarkup(<ProRequiredDialog feature="KNOWLEDGE_EXPORT" lang={lang} onClose={() => {}} onPlans={() => {}} />)
       expect(html).toContain('PDF')
-      expect(html).not.toContain('Markdown')
-      expect(html).toContain(lang === 'vi' ? 'Xem và sửa ghi chú vẫn miễn phí' : 'Viewing and editing notes remain free')
+      expect(html).toContain('Markdown')
+      expect(html).toContain('CSV')
+      expect(html).toContain(lang === 'vi' ? 'theo sách và chủ đề' : 'by book or topic')
     }
   })
 })
