@@ -6,7 +6,7 @@ import { askReadingAi, readingAiStatus } from './readingAi'
 import { ApiError } from './api'
 
 vi.mock('./readingAi', () => ({ askReadingAi: vi.fn(), readingAiStatus: vi.fn() }))
-const status = { available: true, provider: 'Groq', model: 'openai/gpt-oss-120b', dailyLimit: 10, maxTextLength: 20000, access: 'admin' as const }
+const status = { available: true, provider: 'Groq', model: 'openai/gpt-oss-120b', dailyLimit: 10, maxTextLength: 20000, access: 'verified' as const }
 const result = { answer: 'Ghi chú giúp tìm lại ý tưởng. [1]', model: status.model, sourceLabel: 'Chương 1', truncated: false, remaining: 9 }
 const source = vi.fn(async () => ({ text: 'Nội dung sách đang đọc.', label: 'Chương 1', truncated: false }))
 const props = () => ({ lang: 'vi' as const, token: 'test-session', bookTitle: 'Sách kiểm thử', source, locatorJson: '{"type":"PDF","pageNumber":3}', selection: null, onNavigate: vi.fn(), onClose: vi.fn() })
@@ -23,21 +23,13 @@ async function allowAndSummarize() {
   fireEvent.click(screen.getByRole('button', { name: 'Tóm tắt' }))
 }
 
-describe('NoCap AI admin pilot', () => {
-  it('translates only the explicit selection after consent without extracting or replacing the original document', async () => {
-    render(<ReaderAiPanel {...props()} source={null} selection={{text:'Read a book.',locator:'selected-source'}} />)
-    await screen.findByText(/10 yêu cầu\/ngày/)
-    fireEvent.click(screen.getByRole('checkbox'))
-    fireEvent.click(screen.getByRole('button',{name:'Dịch đoạn này'}))
-    await screen.findByText(result.answer)
-    expect(askReadingAi).toHaveBeenCalledWith('test-session',expect.objectContaining({mode:'translate',text:'Read a book.',targetLanguage:'vi',consent:true}),expect.any(AbortSignal))
-    expect(source).not.toHaveBeenCalled()
-  })
+describe('NoCap AI verified-account pilot', () => {
   it('does not extract or transmit document text before consent and an explicit action', async () => {
     render(<ReaderAiPanel {...props()} />)
     await screen.findByText(/10 yêu cầu\/ngày/)
     expect(screen.getByRole('checkbox').closest('label')?.textContent).toContain('tới Groq')
     expect((screen.getByRole('button', { name: 'Tóm tắt' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.queryByRole('button', { name: /dịch/i })).toBeNull()
     expect(source).not.toHaveBeenCalled()
     expect(askReadingAi).not.toHaveBeenCalled()
     await allowAndSummarize()
@@ -99,5 +91,19 @@ describe('NoCap AI admin pilot', () => {
     await screen.findByText('AI đang tạm tắt hoặc chưa được cấu hình.')
     fireEvent.click(screen.getByRole('checkbox'))
     expect((screen.getByRole('button', { name: 'Tóm tắt' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('shows a spent Free trial and checks the live allowance again after an upgrade', async () => {
+    vi.mocked(readingAiStatus)
+      .mockResolvedValueOnce({ ...status, quota: { plan: 'FREE', period: 'trial', remaining: 0, limit: 10, resetAt: null } })
+      .mockResolvedValueOnce({ ...status, quota: { plan: 'PRO', period: 'day', remaining: 30, limit: 30, resetAt: Date.now() + 60000 } })
+    render(<ReaderAiPanel {...props()} />)
+    await screen.findByText(/0\/10 lượt AI dùng thử/)
+    fireEvent.click(screen.getByRole('checkbox'))
+    expect((screen.getByRole('button', { name: 'Tóm tắt' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Cập nhật hạn mức' }))
+    await screen.findByText(/30\/30 lượt AI hôm nay/)
+    expect((screen.getByRole('button', { name: 'Tóm tắt' }) as HTMLButtonElement).disabled).toBe(false)
+    expect(askReadingAi).not.toHaveBeenCalled()
   })
 })

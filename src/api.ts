@@ -176,8 +176,8 @@ export type SePayPlan = {
   discountPercent: number; regularAmount: number
 }
 
-export async function getSePayPlans(token: string): Promise<{ plans: SePayPlan[] }> {
-  return api('/api/v1/billing/sepay/plans', {}, token)
+export async function getSePayPlans(): Promise<{ plans: SePayPlan[] }> {
+  return api('/api/v1/billing/sepay/plans')
 }
 
 export async function createSePayOrder(token: string, plan?: SePayPlanId): Promise<SePayOrder> {

@@ -60,6 +60,12 @@ export type AdminAcquisition = {
   devices: (AdminAcquisitionCounts & { device: 'desktop' | 'mobile' | 'tablet' | 'unknown' })[]
   sourcesTruncated: boolean; campaignsTruncated: boolean
 }
+export type AccountActivity = {
+  activeAccounts: number
+  returningAccounts: number
+  coreAccounts: number
+  features: { type: string; count: number; accounts: number; returningAccounts: number }[]
+}
 export type AdminAnalytics = {
   enabled: boolean; trackingStartedAt: number | null; timezone: 'Asia/Ho_Chi_Minh'
   days: AdminAnalyticsDays; from: string; to: string; generatedAt: number
@@ -68,6 +74,8 @@ export type AdminAnalytics = {
   topPages: { page: string; pageViews: number; visitors: number; activeMs: number }[]
   events: { type: string; count: number }[]
   acquisition?: AdminAcquisition
+  accounts?: AccountActivity & { startedAt: number | null }
+  simulatedAccounts?: AccountActivity
 }
 
 // Use the logged-in reader's session, never dashboard cookies or a client-side role.

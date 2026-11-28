@@ -13,7 +13,7 @@ it('lets a guest opt out without signing in and remembers the browser choice', (
   fireEvent.click(choice)
   expect(choice.checked).toBe(false)
   expect(localStorage.getItem(ANALYTICS_PREFERENCE_KEY)).toBe('1')
-  expect(screen.getByText(/Không liên kết với tài khoản/)).toBeTruthy()
+  expect(screen.getByText(/không ghép với mã trình duyệt/)).toBeTruthy()
 })
 
 it('honors browser privacy signals even when usage statistics were previously allowed', () => {

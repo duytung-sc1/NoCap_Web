@@ -15,7 +15,9 @@ export function ProRequiredDialog({ feature, lang, onClose, onPlans }: {
     ADVANCED_READING_MEMORY: vi
       ? 'Tạo thẻ ôn tập tự động cần gói Pro đang còn hiệu lực. Đọc sách, sửa ghi chú và thêm từng thẻ ôn vẫn miễn phí.'
       : 'Automatic review-card generation requires an active Pro plan. Reading, editing notes, and manually adding review cards remain free.',
-    KNOWLEDGE_EXPORT: vi ? 'Xuất trích dẫn, ghi chú và dấu trang thành tệp PDF cần gói Pro đang còn hiệu lực. Xem và sửa ghi chú vẫn miễn phí.' : 'Exporting highlights, notes and bookmarks to a PDF file requires an active Pro plan. Viewing and editing notes remain free.',
+    KNOWLEDGE_EXPORT: vi ? 'Xuất trích dẫn, ghi chú và dấu trang thành tệp PDF cần gói Pro đang còn hiệu lực. Pro cũng hỗ trợ xuất Markdown hoặc CSV theo sách và chủ đề.' : 'Exporting highlights, notes and bookmarks to PDF requires an active Pro plan. Pro also offers Markdown and CSV export by book or topic.',
+    SMART_SHELVES: vi ? 'Lưu bộ lọc cho tủ sách thông minh cần gói Pro đang còn hiệu lực.' : 'Saving filters for smart shelves requires an active Pro plan.',
+    LIBRARY_CONTENT_SEARCH: vi ? 'Tìm nội dung trong nhiều tài liệu cùng lúc cần gói Pro đang còn hiệu lực.' : 'Searching content across multiple documents requires an active Pro plan.',
   }
   return <div className="modal-shade pro-required-shade"><div className="dialog" role="dialog" aria-modal="true" aria-labelledby="pro-required-title">
     <h2 id="pro-required-title">{feature === 'STEALTH_READING' ? (vi ? 'Đọc ẩn · NoCap Pro' : 'Stealth Reading · NoCap Pro') : (vi ? 'Tính năng NoCap Pro' : 'NoCap Pro feature')}</h2>

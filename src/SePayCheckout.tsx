@@ -1,30 +1,34 @@
 import { useEffect, useRef, useState } from 'react'
 import { CreditCard, RotateCw, X } from 'lucide-react'
 import { createSePayOrder, getEntitlement, getSePayOrder, getSePayPlans, type Entitlement, type SePayOrder, type SePayPlan, type SePayPlanId } from './api'
-import { PRO_PLAN_IDS, proPlanDays, proPlanDuration, proPlanLabel, proPlanName } from './proPlans'
+import { proPlanLabel } from './proPlans'
+import { allowsPro } from './entitlements'
 import type { Session } from './types'
 import type { Lang } from './i18n'
 import { readableError } from './sync'
 import { trackWebFeature } from './webAnalytics'
+import { WorkspacePricing } from './WorkspacePricing'
 
 type Props = {
   session: Session | null; entitlement: Entitlement | null; lang: Lang
-  onSignIn: () => void; onPaid: (value: Entitlement) => void
+  onSignIn: () => void; onPaid: (value: Entitlement) => void; onExplore?: () => void
 }
 
 export function SePayCheckout(props: Props) {
+  const [selectedPlan, setSelectedPlan] = useState<SePayPlanId>('MONTHLY')
   // Orders, quote requests and in-flight locks belong to one authenticated session.
-  return <Checkout key={JSON.stringify([props.session?.token, props.session?.user.id])} {...props} />
+  return <Checkout key={JSON.stringify([props.session?.token, props.session?.user.id])} {...props} selectedPlan={selectedPlan} onSelectPlan={setSelectedPlan} />
 }
 
-function Checkout({ session, entitlement, lang, onSignIn, onPaid }: Props) {
+function Checkout({ session, entitlement, lang, onSignIn, onPaid, onExplore, selectedPlan, onSelectPlan }: Props & {
+  selectedPlan: SePayPlanId; onSelectPlan: (id: SePayPlanId) => void
+}) {
   const vi = lang === 'vi'
   const [order, setOrder] = useState<SePayOrder | null>(null)
   const [creating, setCreating] = useState(false)
   const [checking, setChecking] = useState(false)
   const [message, setMessage] = useState('')
-  const [selectedPlan, setSelectedPlan] = useState<SePayPlanId>('MONTHLY')
-  const [quote, setQuote] = useState<{ token: string; plans: SePayPlan[]; error: string } | null>(null)
+  const [currentQuote, setQuote] = useState<{ plans: SePayPlan[]; error: string } | null>(null)
   const [quoteRetry, setQuoteRetry] = useState(0)
   const [paidRetry, setPaidRetry] = useState(0)
   const [expiredTransfer, setExpiredTransfer] = useState<{ id: string; expiresAt: number } | null>(null)
@@ -44,9 +48,8 @@ function Checkout({ session, entitlement, lang, onSignIn, onPaid }: Props) {
   const orderStatus = order?.status
   const orderExpiresAt = order?.expiresAt
   const transferExpired = orderStatus === 'PENDING' && expiredTransfer?.id === orderId && expiredTransfer?.expiresAt === orderExpiresAt
-  const currentQuote = quote?.token === session?.token ? quote : null
   const selectedQuote = currentQuote?.plans.find(plan => plan.id === selectedPlan)
-  const price = (amount: number) => new Intl.NumberFormat(vi ? 'vi-VN' : 'en-US', { style: 'currency', currency: 'VND' }).format(amount)
+  const activePro = allowsPro(entitlement, session)
 
   function replaceOrder(value: SePayOrder | null) {
     orderRef.current = value
@@ -71,14 +74,12 @@ function Checkout({ session, entitlement, lang, onSignIn, onPaid }: Props) {
   }, [orderId, orderStatus, orderExpiresAt])
 
   useEffect(() => {
-    if (!session) return
     let active = true
-    const token = session.token
-    void getSePayPlans(token).then(value => {
-      if (active) setQuote({ token, plans: value.plans, error: '' })
-    }).catch(error => { if (active) setQuote({ token, plans: [], error: readableError(error, lang) }) })
+    void getSePayPlans().then(value => {
+      if (active) setQuote({ plans: value.plans, error: '' })
+    }).catch(error => { if (active) setQuote({ plans: [], error: readableError(error, lang) }) })
     return () => { active = false }
-  }, [session, quoteRetry, lang])
+  }, [quoteRetry, lang])
 
   async function createOrder() {
     if (!session) { onSignIn(); return }
@@ -88,7 +89,7 @@ function Checkout({ session, entitlement, lang, onSignIn, onPaid }: Props) {
     const token = session.token
     try {
       const value = await createSePayOrder(token, selectedPlan)
-      if (sessionRef.current?.token === token) { replaceOrder(value); trackWebFeature('checkout_start', 'account') }
+      if (sessionRef.current?.token === token) { replaceOrder(value); trackWebFeature('checkout_start') }
     } catch (error) {
       if (sessionRef.current?.token === token) setMessage(readableError(error, lang))
     } finally { creatingRef.current = false; setCreating(false) }
@@ -149,32 +150,19 @@ function Checkout({ session, entitlement, lang, onSignIn, onPaid }: Props) {
   }
 
   const statuses = vi ? { PENDING: 'Đang chờ chuyển khoản', PROCESSING: 'Đang xác nhận thanh toán', PAID: 'Đã thanh toán', EXPIRED: 'Đơn đã hết hạn' } : { PENDING: 'Awaiting transfer', PROCESSING: 'Confirming payment', PAID: 'Paid', EXPIRED: 'Order expired' }
-  return <section className="settings-card">
-    <h2>NoCap Pro · SePay</h2>
-    <p className="muted">{vi ? 'Thanh toán chuyển khoản bằng mã QR. NoCap tự xác nhận và cập nhật gói sau khi nhận được giao dịch.' : 'Pay by bank-transfer QR. NoCap confirms the transfer and updates your plan automatically.'}</p>
-    <div className="pro-benefits"><p>{vi ? 'Free: đọc sách, ghi chú và ôn tập từng thẻ.' : 'Free: reading, notes and individual review cards.'}</p><p>{vi ? 'Pro: Đọc ẩn, tạo thẻ ôn tự động và xuất ghi chú PDF trên Web; các tính năng Pro tương ứng trên Android. Xuất Anki hiện có trên Android.' : 'Pro: Stealth Reading, automatic review-card generation and PDF notes export on Web, plus corresponding Pro features on Android. Anki export is currently available on Android.'}</p></div>
-    <fieldset className="pro-plan-options">
-      <legend>{vi ? 'Chọn gói NoCap Pro' : 'Choose your NoCap Pro plan'}</legend>
-      {PRO_PLAN_IDS.map(id => {
-        const plan = currentQuote?.plans.find(value => value.id === id)
-        return <label key={id} className={`pro-plan-option ${selectedPlan === id ? 'selected' : ''}`}>
-          <input type="radio" name="pro-plan" value={id} checked={selectedPlan === id} onChange={() => setSelectedPlan(id)} disabled={creating || (!!session && !plan)} />
-          <span className="pro-plan-copy">
-            <strong>{proPlanName(id, lang)}</strong>
-            <small className="pro-plan-duration">{proPlanDuration(plan?.planDays ?? proPlanDays(id), lang)}</small>
-            {!!plan?.discountPercent && <span className="pro-plan-discount">{vi ? `Giảm ${plan.discountPercent}%` : `${plan.discountPercent}% off`}</span>}
-            {plan && <span className="pro-plan-price">{plan.discountPercent > 0 && <del>{price(plan.regularAmount)}</del>}<b>{price(plan.amount)}</b></span>}
-          </span>
-        </label>
-      })}
-    </fieldset>
-    <p className="muted pro-plan-note">{vi ? 'Các gói có cùng quyền lợi Pro, khác thời hạn sử dụng và mức ưu đãi. Gia hạn sẽ cộng tiếp thời gian Pro còn lại.' : 'All plans share the same Pro benefits and differ in duration and savings. Renewals extend your remaining Pro period.'}</p>
-    {session && !currentQuote && <p className="muted" role="status">{vi ? 'Đang tải giá gói…' : 'Loading plan prices…'}</p>}
-    {currentQuote?.error && <><p className="form-message" role="alert">{currentQuote.error}</p><button className="secondary" onClick={() => setQuoteRetry(value => value + 1)}>{vi ? 'Tải lại giá gói' : 'Reload plan prices'}</button></>}
-    <button className="secondary" onClick={() => void createOrder()} disabled={creating || (!!session && !selectedQuote)}>
-      <CreditCard size={17} /> {creating ? (vi ? 'Đang tạo đơn…' : 'Creating order…') : !session ? (vi ? 'Đăng nhập để nâng cấp' : 'Sign in to upgrade') : entitlement?.plan === 'PRO' ? (vi ? 'Gia hạn qua SePay' : 'Renew via SePay') : (vi ? 'Nâng cấp qua SePay' : 'Upgrade via SePay')}
-    </button>
-    {!order && message && <p className="form-message" role="alert">{message}</p>}
+  return <>
+    <WorkspacePricing
+      lang={lang} plan={selectedPlan} plans={currentQuote?.plans ?? []} signedIn={!!session} activePro={activePro} busy={creating}
+      onPlan={id => { onSelectPlan(id); setMessage('') }} onExplore={onExplore}
+      checkout={<>
+        {!currentQuote && <p className="muted" role="status">{vi ? 'Đang tải giá gói…' : 'Loading plan prices…'}</p>}
+        {currentQuote?.error && <><p className="form-message" role="alert">{currentQuote.error}</p><button type="button" className="secondary" onClick={() => setQuoteRetry(value => value + 1)}>{vi ? 'Tải lại giá gói' : 'Reload plan prices'}</button></>}
+        {!order && message && <p className="form-message" role="alert">{message}</p>}
+        <button type="button" className="primary" onClick={() => void createOrder()} disabled={creating || (!!session && !selectedQuote)}>
+          <CreditCard size={17} aria-hidden="true" /> {creating ? (vi ? 'Đang tạo đơn…' : 'Creating order…') : !session ? (vi ? 'Đăng nhập để nâng cấp' : 'Sign in to upgrade') : activePro ? (vi ? 'Gia hạn qua SePay' : 'Renew via SePay') : (vi ? 'Nâng cấp qua SePay' : 'Upgrade via SePay')}
+        </button>
+      </>}
+    />
     {order && <div className="modal-shade" onMouseDown={event => { if (event.target === event.currentTarget) closeOrder() }}>
       <div className="dialog payment-dialog" role="dialog" aria-modal="true" aria-label={vi ? 'Thanh toán NoCap Pro' : 'NoCap Pro payment'}>
         <button className="icon-button dialog-close" onClick={closeOrder} aria-label={vi ? 'Đóng thanh toán' : 'Close payment'}><X size={19} /></button>
@@ -197,5 +185,5 @@ function Checkout({ session, entitlement, lang, onSignIn, onPaid }: Props) {
         {order.status !== 'EXPIRED' && <button className="secondary" onClick={() => void checkOrder()} disabled={checking}><RotateCw size={16} /> {checking ? (vi ? 'Đang kiểm tra…' : 'Checking…') : (vi ? 'Kiểm tra thanh toán' : 'Check payment')}</button>}
       </div>
     </div>}
-  </section>
+  </>
 }

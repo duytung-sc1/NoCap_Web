@@ -30,7 +30,12 @@ export function applySeo(route: AppRoute, lang: Lang) {
   const page = route.kind === 'page' && (route.page === 'home' || route.page === 'catalog')
     ? publicPages[route.page]
     : null
-  const data = page?.[lang] ?? (lang === 'vi'
+  const pricing = route.kind === 'page' && route.page === 'pricing'
+  const data = page?.[lang] ?? (pricing
+    ? lang === 'vi'
+      ? { title: 'Bảng giá | NoCap', description: 'So sánh quyền lợi và chọn kỳ thanh toán trong workspace NoCap.' }
+      : { title: 'Pricing | NoCap', description: 'Compare plan benefits and select a payment term in your NoCap workspace.' }
+    : lang === 'vi'
     ? { title: 'Không gian cá nhân | NoCap', description: 'Không gian cá nhân trên NoCap.' }
     : { title: 'Personal workspace | NoCap', description: 'Your personal workspace on NoCap.' })
   document.documentElement.lang = lang
@@ -42,11 +47,11 @@ export function applySeo(route: AppRoute, lang: Lang) {
   setMeta('property', 'og:type', 'website')
   setMeta('property', 'og:site_name', 'NoCap')
   setMeta('property', 'og:locale', lang === 'vi' ? 'vi_VN' : 'en_US')
-  setMeta('property', 'og:image', `${ORIGIN}/nocap-512.png`)
+  setMeta('property', 'og:image', `${ORIGIN}/brand/nocap-logo-512.png`)
   setMeta('name', 'twitter:card', 'summary')
   setMeta('name', 'twitter:title', data.title)
   setMeta('name', 'twitter:description', data.description)
-  setMeta('name', 'twitter:image', `${ORIGIN}/nocap-512.png`)
+  setMeta('name', 'twitter:image', `${ORIGIN}/brand/nocap-logo-512.png`)
 
   const canonical = document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]')
   const ogUrl = document.head.querySelector<HTMLMetaElement>('meta[property="og:url"]')

@@ -38,7 +38,7 @@ export function BookCard({
     : book.source === 'cloud' ? labels.bookCard.cloudPersonal
       : book.language === 'vi' ? labels.bookCard.vietnamese : labels.bookCard.ebook
   const percentage = Math.round(Math.max(0, Math.min(1, progress || 0)) * 100)
-  const stealthLabel = labels.bookCard.stealthRead || (lang === 'vi' ? 'Đọc ẩn công sở · Pro (F2)' : 'Stealth Read · Pro (F2)')
+  const stealthLabel = labels.bookCard.stealthRead
   const downloadLabel = downloadBusy ? labels.download.preparing : labels.bookCard.downloadFile
   const favoriteLabel = favorite ? labels.bookCard.unfavorite : labels.bookCard.favorite
   const removeLabel = lang === 'vi' ? 'Gỡ khỏi tủ sách' : 'Remove from library'

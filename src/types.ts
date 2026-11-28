@@ -9,6 +9,7 @@ export type Book = {
   language?: string
   format?: string
   source?: string
+  license?: string
   fileSizeBytes?: number
 }
 

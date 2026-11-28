@@ -3,7 +3,6 @@ import { AlignJustify, AlignLeft, BookOpen, CreditCard, Edit3, LogOut, Palette, 
 import type { Entitlement } from './api'
 import { allowsPro } from './entitlements'
 import { t, type Lang } from './i18n'
-import { SePayCheckout } from './SePayCheckout'
 import type { FontFamily, Session, TextAlignment, User } from './types'
 import './AccountSettings.css'
 import { WebAnalyticsPreference } from './WebAnalyticsPreference'
@@ -28,7 +27,7 @@ interface Props {
   onSignOut: () => void
   onEditName: () => void
   onDeleteAccount: () => void
-  onPaid: (entitlement: Entitlement) => void
+  onPricing: () => void
   onUserUpdated: (token: string, user: User) => boolean
   onSessionExpired: (token: string) => void
   onAdmin?: () => void
@@ -37,7 +36,7 @@ interface Props {
 }
 
 export function AccountSettings({ session, entitlement, lang, now, section, onSectionChange, comfort,
-  onComfortChange, onSignIn, onSignOut, onEditName, onDeleteAccount, onPaid, onUserUpdated, onSessionExpired, onAdmin, siteTheme, onSiteThemeChange }: Props) {
+  onComfortChange, onSignIn, onSignOut, onEditName, onDeleteAccount, onPricing, onUserUpdated, onSessionExpired, onAdmin, siteTheme, onSiteThemeChange }: Props) {
   const curT = t[lang]
   const labels = curT.accountPage
   const { fontSize, textAlignment, theme } = comfort
@@ -47,7 +46,7 @@ export function AccountSettings({ session, entitlement, lang, now, section, onSe
   const displayName = session?.user.displayName || session?.user.email || ''
   const sections = [
     { id: 'profile' as const, label: labels.accountHeading, icon: <UserRound size={17} /> },
-    { id: 'pro' as const, label: 'NoCap Pro', icon: <CreditCard size={17} /> },
+    { id: 'pro' as const, label: lang === 'vi' ? 'Gói của bạn' : 'Your plan', icon: <CreditCard size={17} /> },
     { id: 'reading' as const, label: labels.readingSettingsNav, icon: <BookOpen size={17} /> },
     { id: 'appearance' as const, label: lang === 'vi' ? 'Giao diện' : 'Appearance', icon: <Palette size={17} /> },
   ]
@@ -120,7 +119,13 @@ export function AccountSettings({ session, entitlement, lang, now, section, onSe
         </div>
 
         <div id="account-panel-pro" className={`account-settings-panel account-settings-pro ${section === 'pro' ? 'active' : ''}`}>
-          <SePayCheckout key={session?.token || 'guest'} session={session} entitlement={entitlement} lang={lang} onSignIn={onSignIn} onPaid={onPaid} />
+          <section className="settings-card">
+            <h2>{lang === 'vi' ? 'Gói của bạn' : 'Your plan'}</h2>
+            <p>{labels.currentPlan} <strong>{hasPro ? 'NoCap Pro' : 'Free'}</strong>{validUntil && ` · ${validUntil}`}</p>
+            <button type="button" className="secondary" onClick={onPricing}>
+              {hasPro ? (lang === 'vi' ? 'Xem giá và gia hạn' : 'View pricing and renew') : (lang === 'vi' ? 'Xem bảng giá' : 'View pricing')}
+            </button>
+          </section>
         </div>
 
         <div id="account-panel-reading" className={`account-settings-panel account-settings-reading ${section === 'reading' ? 'active' : ''}`}>

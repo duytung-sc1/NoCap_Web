@@ -41,22 +41,30 @@ export async function mutate(profile: string, kind: SyncKind, id: string, payloa
   await saveLocalMutation(profile, kind, id, payload, deleted, localOnly)
 }
 
-export async function syncNow(session: Session): Promise<{ conflicts: number; changes: number }> {
+export async function syncNow(session: Session): Promise<{ conflicts: number; changes: number; storageBlocked?: true }> {
   const profile = profileFor(session)
   // Reject a revoked or expired session before mutating local sync state.
   await getUser(session.token)
   let conflicts = 0
+  const blockedDocuments = new Set<string>()
   const operations = await getPending(profile)
   const priority = (item: PendingOperation) => item.operation.kind === 'categories' ? 0 : item.operation.kind === 'catalog_books' ? 1 : 2
   operations.sort((a, b) => priority(a) - priority(b))
   for (const snapshot of operations) {
+    if (blockedDocuments.has(String(snapshot.operation.payload.book_id ?? ''))) continue
     if (snapshot.conflicted) { conflicts++; continue }
     const item = await claimPendingOperation(snapshot.key)
     if (!item) continue
     // A restored private document must exist in this account's blob storage
     // before another device receives its catalog record. Failed uploads leave
     // the operation pending, so an offline restore can retry when back online.
-    await uploadRestoredFile(profile, session.token, item.operation, item.needsBlobUpload)
+    try {
+      await uploadRestoredFile(profile, session.token, item.operation, item.needsBlobUpload)
+    } catch (error) {
+      if (!(error instanceof ApiError) || error.code !== 'STORAGE_LIMIT') throw error
+      blockedDocuments.add(String(item.operation.payload.id))
+      continue
+    }
     // A restore can replace this operation while its old blob is uploading.
     // Only the operation that still owns the outbox slot may be published.
     if (!await updatePendingOperation(item, { needsBlobUpload: false })) continue
@@ -85,7 +93,7 @@ export async function syncNow(session: Session): Promise<{ conflicts: number; ch
     })
     count += await applyRemoteChanges(profile, changes, result.cursor)
     cursor = result.cursor
-    if (!result.hasMore) return { conflicts, changes: count }
+    if (!result.hasMore) return { conflicts, changes: count, ...(blockedDocuments.size ? { storageBlocked: true } : {}) }
   }
   throw new Error('Có quá nhiều thay đổi để tải một lần. Vui lòng đồng bộ lại.')
 }

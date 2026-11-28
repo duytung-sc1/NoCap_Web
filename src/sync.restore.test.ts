@@ -2,7 +2,8 @@ import 'fake-indexeddb/auto'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createLibraryBackup, restoreLibraryBackup } from './backup'
 import { saveFile, saveRecord, getPending } from './store'
-import { syncNow } from './sync'
+import { mutate, syncNow } from './sync'
+import { ApiError } from './api'
 import type { Session, SyncOperation } from './types'
 
 const { upload, push, order } = vi.hoisted(() => ({ upload: vi.fn(), push: vi.fn(), order: [] as string[] }))
@@ -64,6 +65,25 @@ it('uploads the new restored bytes after a previous snapshot could not upload', 
   expect(push.mock.calls[0][1].opId).not.toBe(original.operation.opId)
   expect(push.mock.calls[0][1].payload.title).toBe('new snapshot')
   expect(await getPending(profile)).toEqual([])
+})
+
+it('leaves an over-quota document pending while syncing another document', async () => {
+  const { session, profile, bookId } = account()
+  const allowed = `web-${crypto.randomUUID()}`
+  await restoreLibraryBackup(profile, await snapshot(bookId, 'over quota'))
+  await restoreLibraryBackup(profile, await snapshot(allowed, 'allowed'))
+  const noteId = crypto.randomUUID()
+  await mutate(profile, 'bookmarks', noteId, { book_id: bookId, note: 'private pending bookmark' })
+  const error = Object.assign(new ApiError(413, 'Cloud quota reached', 'STORAGE_LIMIT'), { code: 'STORAGE_LIMIT' })
+  upload.mockImplementationOnce(async (_token, _hash, blob: Blob) => {
+    if (await blob.text() === 'over quota') throw error
+  })
+  upload.mockImplementationOnce(async (_token, _hash, blob: Blob) => {
+    if (await blob.text() === 'over quota') throw error
+  })
+  expect(await syncNow(session)).toMatchObject({ storageBlocked: true })
+  expect(push.mock.calls.map(([, operation]) => operation.payload.id)).toEqual([allowed])
+  expect((await getPending(profile)).map(item => item.operation.kind).sort()).toEqual(['bookmarks', 'catalog_books'])
 })
 
 it('does not publish an obsolete snapshot when restore replaces it during the blob upload', async () => {

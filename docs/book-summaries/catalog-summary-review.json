@@ -1,0 +1,2623 @@
+{
+  "catalogCount": 201,
+  "counts": {
+    "prepared": 101,
+    "kept": 80,
+    "unverified": 19,
+    "author_provided": 1
+  },
+  "notes": "Prepared descriptions are intended for the public catalog. Unverified items have no summary and should show the fallback until a source is checked. Author-provided descriptions are left untouched.",
+  "books": [
+    {
+      "id": "author-1bb8c7aa-439b-4b9a-9518-9716eafe2b29",
+      "title": "Thangbomay",
+      "author": "Tirs",
+      "language": "vi",
+      "source": "NoCap Authors",
+      "status": "author_provided",
+      "summary": "Thangchabomay\n",
+      "license": null,
+      "sources": []
+    },
+    {
+      "id": "gutenberg-100",
+      "title": "The Complete Works of William Shakespeare",
+      "author": "Shakespeare, William",
+      "language": "en",
+      "source": "gutendex",
+      "status": "prepared",
+      "summary": "This collection gathers Shakespeare's plays, poems and sonnets in one edition, from the histories and comedies to the great tragedies. It includes enduring characters such as Hamlet, Macbeth, Lear, Rosalind and Falstaff, and the sonnets' meditations on love and time. Readers can follow the range of Shakespeare's language, stagecraft and insight into power, jealousy and mercy.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/100"
+      ]
+    },
+    {
+      "id": "gutenberg-11",
+      "title": "Alice's Adventures in Wonderland",
+      "author": "Carroll, Lewis",
+      "language": "en",
+      "source": "Project Gutenberg / Gutendex",
+      "status": "prepared",
+      "summary": "Alice follows a bored girl down a rabbit hole into a world where nothing behaves as it should. She meets the White Rabbit, the Cheshire Cat, the Mad Hatter and the Queen of Hearts, and grows and shrinks as she tries to make sense of the rules. The story blends nonsense, wordplay and satire into one of the most influential children's books in English.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/11"
+      ]
+    },
+    {
+      "id": "gutenberg-120",
+      "title": "Treasure Island",
+      "author": "Stevenson, Robert Louis",
+      "language": "en",
+      "source": "Project Gutenberg / Gutendex",
+      "status": "prepared",
+      "summary": "Young Jim Hawkins finds a treasure map in the belongings of a dead pirate and sets sail with Squire Trelawney and Dr Livesey to find the island. The crew includes the charming one-legged cook Long John Silver, whose loyalty is not what it seems. Mutiny, hidden treasure and danger test Jim's courage and judgment.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/120"
+      ]
+    },
+    {
+      "id": "gutenberg-1260",
+      "title": "Jane Eyre: An Autobiography",
+      "author": "Brontë, Charlotte",
+      "language": "en",
+      "source": "gutendex",
+      "status": "prepared",
+      "summary": "Jane Eyre is an orphan raised by a cruel aunt and sent to the harsh Lowood school, where she learns endurance and independence. She becomes a governess at Thornfield Hall and falls in love with its brooding master, Edward Rochester. A secret in the house forces her to choose between passion, principle and her own self-respect.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/1260"
+      ]
+    },
+    {
+      "id": "gutenberg-1342",
+      "title": "Pride and Prejudice",
+      "author": "Austen, Jane",
+      "language": "en",
+      "source": "Project Gutenberg / Gutendex",
+      "status": "prepared",
+      "summary": "Elizabeth Bennet and her four sisters grow up in a household where marriage is the great question of the future. She clashes with the proud Mr Darcy, whose first proposal is as arrogant as it is unexpected, while the charming Mr Wickham seems to offer a different kind of attention. Misjudgment and self-knowledge slowly clear the way for a truer understanding.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/1342"
+      ]
+    },
+    {
+      "id": "gutenberg-145",
+      "title": "Middlemarch",
+      "author": "Eliot, George",
+      "language": "en",
+      "source": "gutendex",
+      "status": "prepared",
+      "summary": "Middlemarch follows the lives of several families in a provincial English town around the time of the Reform Bill. Dorothea Brooke marries the dry scholar Casaubon in search of a great purpose, while the doctor Tertius Lydgate tries to reform medicine and falls into debt. The novel traces ambition, marriage and compromise across a whole community.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/145"
+      ]
+    },
+    {
+      "id": "gutenberg-1513",
+      "title": "Romeo and Juliet",
+      "author": "Shakespeare, William",
+      "language": "en",
+      "source": "gutendex",
+      "status": "prepared",
+      "summary": "In Verona, Romeo Montague and Juliet Capulet meet at a feast and fall in love despite the feud between their families. They marry in secret, but a street fight and a failed plan drive them toward a tragic end. The play is a study of young love, haste and the cost of inherited hatred.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/1513"
+      ]
+    },
+    {
+      "id": "gutenberg-1661",
+      "title": "The Adventures of Sherlock Holmes",
+      "author": "Doyle, Arthur Conan",
+      "language": "en",
+      "source": "Project Gutenberg / Gutendex",
+      "status": "prepared",
+      "summary": "This collection introduces Sherlock Holmes and Dr Watson through a series of cases that show the detective's powers of observation. Among them are the adventures of the Red-Headed League, the Speckled Band and the Blue Carbuncle. Each story is a compact puzzle in which small details reveal larger crimes.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/1661"
+      ]
+    },
+    {
+      "id": "gutenberg-1727",
+      "title": "The Odyssey: Rendered into English prose for the use of those who cannot read the original",
+      "author": "Homer",
+      "language": "en",
+      "source": "gutendex",
+      "status": "prepared",
+      "summary": "The Odyssey follows Odysseus as he tries to return home to Ithaca after the Trojan War. His journey is delayed by monsters, enchantresses, storms and the anger of Poseidon, while his wife Penelope and son Telemachus wait under pressure from suitors. The poem is a foundational story of endurance, cunning and homecoming.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/1727"
+      ]
+    },
+    {
+      "id": "gutenberg-17460",
+      "title": "Lorna Doone: A Romance of Exmoor",
+      "author": "Blackmore, R. D. (Richard Doddridge)",
+      "language": "en",
+      "source": "gutendex",
+      "status": "prepared",
+      "summary": "John Ridd, a farmer in Exmoor, falls in love with Lorna Doone, a young woman raised among the outlaw Doone family. Their love is complicated by the feud between the Doones and the surrounding communities, and by the secret of Lorna's birth. The novel blends romance, local history and adventure in the West Country.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/17460"
+      ]
+    },
+    {
+      "id": "gutenberg-18459",
+      "title": "Hypnerotomachia: The Strife of Loue in a Dreame",
+      "author": "Colonna, Francesco",
+      "language": "en",
+      "source": "gutendex",
+      "status": "prepared",
+      "summary": "The Hypnerotomachia Poliphili is a Renaissance allegorical romance in which Poliphilo wanders through a dream landscape in search of his beloved Polia. He encounters gardens, ruins, inscriptions and architectural wonders that turn the journey into a meditation on love, art and antiquity. The work is famous for its woodcuts and its experimental language.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/18459"
+      ]
+    },
+    {
+      "id": "gutenberg-18857",
+      "title": "A Journey to the Centre of the Earth",
+      "author": "Verne, Jules",
+      "language": "en",
+      "source": "gutendex",
+      "status": "prepared",
+      "summary": "Professor Lidenbrock deciphers a runic message that points to a passage into the earth's interior. With his nephew Axel and a guide, he descends through volcanic tunnels into a hidden world of caverns, underground seas and prehistoric life. The novel combines scientific speculation with a classic adventure.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/18857"
+      ]
+    },
+    {
+      "id": "gutenberg-19476",
+      "title": "A Honeymoon in Space",
+      "author": "Griffith, George Chetwynd",
+      "language": "en",
+      "source": "gutendex",
+      "status": "unverified",
+      "summary": "",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/19476"
+      ]
+    },
+    {
+      "id": "gutenberg-19771",
+      "title": "Henrietta Temple: A Love Story",
+      "author": "Disraeli, Benjamin, Earl of Beaconsfield",
+      "language": "en",
+      "source": "gutendex",
+      "status": "unverified",
+      "summary": "",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/19771"
+      ]
+    },
+    {
+      "id": "gutenberg-20203",
+      "title": "Autobiography of Benjamin Franklin",
+      "author": "Franklin, Benjamin",
+      "language": "en",
+      "source": "gutendex",
+      "status": "prepared",
+      "summary": "Benjamin Franklin recounts his rise from a printer's apprentice in Boston to a leading figure in Philadelphia and the American Revolution. He describes his reading, his business, his experiments and his efforts at self-improvement. The book is a classic account of colonial American life and of a deliberate project of self-education.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/20203"
+      ]
+    },
+    {
+      "id": "gutenberg-209",
+      "title": "The Turn of the Screw",
+      "author": "James, Henry",
+      "language": "en",
+      "source": "gutendex",
+      "status": "prepared",
+      "summary": "A young governess takes charge of two children at a remote English estate and soon becomes convinced that the house is haunted. She believes the ghosts of a former valet and governess are corrupting the children, but no one else sees what she sees. The story is a famously ambiguous ghost tale about trust, repression and uncertainty.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/209"
+      ]
+    },
+    {
+      "id": "gutenberg-21839",
+      "title": "Sense and Sensibility",
+      "author": "Austen, Jane",
+      "language": "en",
+      "source": "gutendex",
+      "status": "prepared",
+      "summary": "Elinor and Marianne Dashwood lose their home and must live on a small income with their mother and younger sister. Elinor is cautious and hides her feelings, while Marianne is impulsive and romantic. Their experiences with love and disappointment test the balance between sense and sensibility.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/21839"
+      ]
+    },
+    {
+      "id": "gutenberg-22163",
+      "title": "The Rover Boys on the Farm; or, Last Days at Putnam Hall",
+      "author": "Stratemeyer, Edward",
+      "language": "en",
+      "source": "gutendex",
+      "status": "unverified",
+      "summary": "",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/22163"
+      ]
+    },
+    {
+      "id": "gutenberg-2465",
+      "title": "Carmen",
+      "author": "Mérimée, Prosper",
+      "language": "en",
+      "source": "gutendex",
+      "status": "prepared",
+      "summary": "The narrator meets the bandit Don José and hears the story of his ruin. José, a soldier, falls under the spell of Carmen, a free-spirited cigarette-factory worker involved with smugglers. Jealousy and Carmen's refusal to be possessed drive the story to its fatal end.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/2465"
+      ]
+    },
+    {
+      "id": "gutenberg-2554",
+      "title": "Crime and Punishment",
+      "author": "Dostoyevsky, Fyodor",
+      "language": "en",
+      "source": "gutendex",
+      "status": "prepared",
+      "summary": "Rodion Raskolnikov, a poor student in St Petersburg, convinces himself that he can commit murder for a higher purpose. After killing a pawnbroker, he is tormented by fear, guilt and the detective Porfiry's quiet pressure. The novel follows his psychological unraveling and his search for confession and redemption.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/2554"
+      ]
+    },
+    {
+      "id": "gutenberg-26563",
+      "title": "The Crack of Doom",
+      "author": "Cromie, Robert",
+      "language": "en",
+      "source": "gutendex",
+      "status": "unverified",
+      "summary": "",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/26563"
+      ]
+    },
+    {
+      "id": "gutenberg-2680",
+      "title": "Meditations",
+      "author": "Marcus Aurelius, Emperor of Rome",
+      "language": "en",
+      "source": "gutendex",
+      "status": "prepared",
+      "summary": "The Meditations are the private notes of the Roman emperor Marcus Aurelius, written as reminders to himself. They discuss duty, self-control, mortality and the need to accept what cannot be changed. The book is a practical Stoic guide to living with integrity under pressure.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/2680"
+      ]
+    },
+    {
+      "id": "gutenberg-2701",
+      "title": "Moby Dick; Or, The Whale",
+      "author": "Melville, Herman",
+      "language": "en",
+      "source": "Project Gutenberg / Gutendex",
+      "status": "prepared",
+      "summary": "Ishmael, a restless sailor, joins the whaling ship Pequod and meets its captain, Ahab, who has lost a leg to the white whale Moby Dick. Ahab turns the voyage into a hunt for revenge, drawing the crew into his obsession. The novel combines adventure, natural history and a meditation on fate and human will.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/2701"
+      ]
+    },
+    {
+      "id": "gutenberg-27997",
+      "title": "Robert Orange: Being a Continuation of the History of Robert Orange",
+      "author": "Hobbes, John Oliver",
+      "language": "en",
+      "source": "gutendex",
+      "status": "unverified",
+      "summary": "",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/27997"
+      ]
+    },
+    {
+      "id": "gutenberg-28203",
+      "title": "Moods",
+      "author": "Alcott, Louisa May",
+      "language": "en",
+      "source": "gutendex",
+      "status": "unverified",
+      "summary": "",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/28203"
+      ]
+    },
+    {
+      "id": "gutenberg-2852",
+      "title": "The Hound of the Baskervilles",
+      "author": "Doyle, Arthur Conan",
+      "language": "en",
+      "source": "gutendex",
+      "status": "prepared",
+      "summary": "Sherlock Holmes and Dr Watson investigate the legend of a demonic hound that is said to haunt the Baskerville family. Sir Charles Baskerville has died on the moor, and his heir arrives from America to take up the estate. Holmes sends Watson ahead to Devon, where the fog, the moor and an escaped convict hide the truth.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/2852"
+      ]
+    },
+    {
+      "id": "gutenberg-31472",
+      "title": "Cynthia's Chauffeur",
+      "author": "Tracy, Louis",
+      "language": "en",
+      "source": "gutendex",
+      "status": "unverified",
+      "summary": "",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/31472"
+      ]
+    },
+    {
+      "id": "gutenberg-31635",
+      "title": "The Silent Barrier",
+      "author": "Tracy, Louis",
+      "language": "en",
+      "source": "gutendex",
+      "status": "unverified",
+      "summary": "",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/31635"
+      ]
+    },
+    {
+      "id": "gutenberg-32155",
+      "title": "The Love Letters of Henry VIII to Anne Boleyn; With Notes",
+      "author": "Henry VIII, King of England",
+      "language": "en",
+      "source": "gutendex",
+      "status": "prepared",
+      "summary": "This collection gathers the surviving letters Henry VIII wrote to Anne Boleyn before their marriage. They reveal the king's courtship, his impatience and the political and religious crisis that followed his desire for an annulment. The letters are a primary source for one of the most consequential episodes in English history.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/32155"
+      ]
+    },
+    {
+      "id": "gutenberg-3268",
+      "title": "The Mysteries of Udolpho",
+      "author": "Radcliffe, Ann Ward",
+      "language": "en",
+      "source": "gutendex",
+      "status": "prepared",
+      "summary": "Emily St Aubert is left orphaned and placed under the care of her aunt and the sinister Montoni, who takes her to the remote castle of Udolpho. There she faces mysterious sounds, locked rooms and threats to her inheritance and freedom. The novel is a founding work of Gothic fiction, blending suspense, sensibility and landscape.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/3268"
+      ]
+    },
+    {
+      "id": "gutenberg-3296",
+      "title": "The Confessions of St. Augustine",
+      "author": "Augustine, of Hippo, Saint",
+      "language": "en",
+      "source": "gutendex",
+      "status": "prepared",
+      "summary": "Augustine's Confessions trace his life from childhood and youthful restlessness to his conversion to Christianity. He describes his studies, his loves, his Manichaean period and his struggles with sin and doubt. The book is both an autobiography and a long prayer about memory, time and the search for God.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/3296"
+      ]
+    },
+    {
+      "id": "gutenberg-34413",
+      "title": "The Love Letters of Mary Wollstonecraft to Gilbert Imlay",
+      "author": "Wollstonecraft, Mary",
+      "language": "en",
+      "source": "gutendex",
+      "status": "prepared",
+      "summary": "These letters were written by Mary Wollstonecraft to the American Gilbert Imlay during their relationship in revolutionary France and England. They record her love, her anxiety and her grief when the relationship failed. The collection is a personal document of an independent woman's emotional life and a valuable source for her biography.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/34413"
+      ]
+    },
+    {
+      "id": "gutenberg-345",
+      "title": "Dracula",
+      "author": "Stoker, Bram",
+      "language": "en",
+      "source": "gutendex",
+      "status": "prepared",
+      "summary": "Jonathan Harker travels to Transylvania to help Count Dracula buy property in England, and discovers that his host is a vampire. Dracula moves to England, where Lucy Westenra and Mina Murray become caught in his influence. Professor Van Helsing and a small group of friends try to stop him before he spreads his power further.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/345"
+      ]
+    },
+    {
+      "id": "gutenberg-35548",
+      "title": "Doctor Cupid: A Novel",
+      "author": "Broughton, Rhoda",
+      "language": "en",
+      "source": "gutendex",
+      "status": "unverified",
+      "summary": "",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/35548"
+      ]
+    },
+    {
+      "id": "gutenberg-36462",
+      "title": "King Arthur and the Knights of the Round Table",
+      "author": "Malory, Thomas, Sir",
+      "language": "en",
+      "source": "gutendex",
+      "status": "prepared",
+      "summary": "This edition presents the Arthurian legends associated with Sir Thomas Malory, from Arthur's birth and the sword in the stone to the fellowship of the Round Table. It follows Lancelot, Guinevere, Gawain and the quest for the Holy Grail. The stories explore chivalry, loyalty, love and the downfall of a kingdom.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/36462"
+      ]
+    },
+    {
+      "id": "gutenberg-36725",
+      "title": "On the Cross: A Romance of the Passion Play at Oberammergau",
+      "author": "Hillern, Wilhelmine von",
+      "language": "en",
+      "source": "gutendex",
+      "status": "unverified",
+      "summary": "",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/36725"
+      ]
+    },
+    {
+      "id": "gutenberg-37106",
+      "title": "Little Women; Or, Meg, Jo, Beth, and Amy",
+      "author": "Alcott, Louisa May",
+      "language": "en",
+      "source": "gutendex",
+      "status": "prepared",
+      "summary": "Little Women follows the four March sisters, Meg, Jo, Beth and Amy, as they grow up in New England during the Civil War. Their father is away, and the family must manage with limited money while each sister pursues her own hopes. The novel is about work, sisterhood, love and the different ways of becoming an adult.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/37106"
+      ]
+    },
+    {
+      "id": "gutenberg-42389",
+      "title": "The Pirate: Andrew Lang Edition",
+      "author": "Scott, Walter",
+      "language": "en",
+      "source": "gutendex",
+      "status": "prepared",
+      "summary": "Walter Scott's The Pirate is set in the Orkney and Shetland islands, where a mysterious stranger arrives among a community of fishermen and landowners. The story involves piracy, hidden identity and a contested inheritance. It combines local colour and romance with the tension of a remote society on the edge of the law.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/42389"
+      ]
+    },
+    {
+      "id": "gutenberg-42681",
+      "title": "The Hero of the People: A Historical Romance of Love, Liberty and Loyalty",
+      "author": "Dumas, Alexandre",
+      "language": "en",
+      "source": "gutendex",
+      "status": "unverified",
+      "summary": "",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/42681"
+      ]
+    },
+    {
+      "id": "gutenberg-43",
+      "title": "The strange case of Dr. Jekyll and Mr. Hyde",
+      "author": "Stevenson, Robert Louis",
+      "language": "en",
+      "source": "gutendex",
+      "status": "prepared",
+      "summary": "Mr Utterson, a London lawyer, becomes curious about the relationship between his respectable friend Dr Henry Jekyll and the violent Edward Hyde. As Hyde's crimes grow, Utterson investigates the truth behind Jekyll's experiments. The novella is a study of duality, repression and the danger of dividing the self.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/43"
+      ]
+    },
+    {
+      "id": "gutenberg-46276",
+      "title": "The Treasure of Pearls: A Romance of Adventures in California",
+      "author": "Aimard, Gustave",
+      "language": "en",
+      "source": "gutendex",
+      "status": "unverified",
+      "summary": "",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/46276"
+      ]
+    },
+    {
+      "id": "gutenberg-468",
+      "title": "Manon Lescaut",
+      "author": "Prévost, abbé",
+      "language": "en",
+      "source": "gutendex",
+      "status": "prepared",
+      "summary": "The Chevalier des Grieux tells the story of his love for Manon Lescaut, a young woman whose charm and appetite for pleasure lead them into debt and exile. Their passion repeatedly collides with family duty, money and social judgment. The novel is a classic of doomed love and moral ambiguity.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/468"
+      ]
+    },
+    {
+      "id": "gutenberg-48296",
+      "title": "Linnet: A Romance",
+      "author": "Allen, Grant",
+      "language": "en",
+      "source": "gutendex",
+      "status": "unverified",
+      "summary": "",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/48296"
+      ]
+    },
+    {
+      "id": "gutenberg-48320",
+      "title": "Adventures of Sherlock Holmes: Illustrated",
+      "author": "Doyle, Arthur Conan",
+      "language": "en",
+      "source": "gutendex",
+      "status": "prepared",
+      "summary": "This illustrated collection presents the early Sherlock Holmes stories, including the cases that established his reputation and his partnership with Dr Watson. The plots turn on observation, disguise and deduction as Holmes untangles crimes that baffle the police. The edition adds illustrations to the original adventures.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/48320"
+      ]
+    },
+    {
+      "id": "gutenberg-49987",
+      "title": "Forest Days: A Romance of Old Times",
+      "author": "James, G. P. R. (George Payne Rainsford)",
+      "language": "en",
+      "source": "gutendex",
+      "status": "unverified",
+      "summary": "",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/49987"
+      ]
+    },
+    {
+      "id": "gutenberg-51649",
+      "title": "The Mysteries of London, v. 4/4",
+      "author": "Reynolds, George W. M. (George William MacArthur)",
+      "language": "en",
+      "source": "gutendex",
+      "status": "unverified",
+      "summary": "",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/51649"
+      ]
+    },
+    {
+      "id": "gutenberg-53154",
+      "title": "Cameron of Lochiel",
+      "author": "Aubert de Gaspé, Philippe",
+      "language": "en",
+      "source": "gutendex",
+      "status": "unverified",
+      "summary": "",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/53154"
+      ]
+    },
+    {
+      "id": "gutenberg-53416",
+      "title": "Only a girl's love",
+      "author": "Garvice, Charles",
+      "language": "en",
+      "source": "gutendex",
+      "status": "unverified",
+      "summary": "",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/53416"
+      ]
+    },
+    {
+      "id": "gutenberg-53874",
+      "title": "Under the Red Dragon: A Novel",
+      "author": "Grant, James",
+      "language": "en",
+      "source": "gutendex",
+      "status": "unverified",
+      "summary": "",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/53874"
+      ]
+    },
+    {
+      "id": "gutenberg-55179",
+      "title": "One of the Six Hundred: A Novel",
+      "author": "Grant, James",
+      "language": "en",
+      "source": "gutendex",
+      "status": "unverified",
+      "summary": "",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/55179"
+      ]
+    },
+    {
+      "id": "gutenberg-564",
+      "title": "The Mystery of Edwin Drood",
+      "author": "Dickens, Charles",
+      "language": "en",
+      "source": "gutendex",
+      "status": "prepared",
+      "summary": "Charles Dickens's last novel begins with John Jasper, a choirmaster in Cloisterham, and his nephew Edwin Drood, who is engaged to Rosa Bud. Jasper's secret passion for Rosa and Edwin's disappearance create a mystery that the novel never resolves. The book is famous both for its atmosphere and for its unfinished state.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/564"
+      ]
+    },
+    {
+      "id": "gutenberg-59828",
+      "title": "The String of Pearls; Or, The Barber of Fleet Street. A Domestic Romance.",
+      "author": "Prest, Thomas Peckett; Rymer, James Malcolm",
+      "language": "en",
+      "source": "gutendex",
+      "status": "prepared",
+      "summary": "This Victorian penny dreadful is the original tale of Sweeney Todd, a barber in Fleet Street who is suspected of murdering his customers. The story follows a young woman, Johanna, and the sailor Mark Ingestrie as they become entangled in Todd's crimes. It is a melodrama of London streets, hidden identities and revenge.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/59828"
+      ]
+    },
+    {
+      "id": "gutenberg-601",
+      "title": "The Monk: A Romance",
+      "author": "Lewis, M. G. (Matthew Gregory)",
+      "language": "en",
+      "source": "gutendex",
+      "status": "prepared",
+      "summary": "Ambrosio, a celebrated monk in Madrid, is admired for his piety but is gradually drawn into temptation by the demonic Matilda. His fall involves lust, murder and the supernatural, and the novel follows the ruin of several characters caught in his orbit. The Monk is a landmark of Gothic fiction, known for its intensity and transgression.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/601"
+      ]
+    },
+    {
+      "id": "gutenberg-70854",
+      "title": "The Countess of Pembroke's Arcadia",
+      "author": "Sidney, Philip",
+      "language": "en",
+      "source": "gutendex",
+      "status": "prepared",
+      "summary": "Sir Philip Sidney's Arcadia is a pastoral romance set in a fictional region of Greece, where princes and shepherds pursue love and adventure. The narrative weaves together disguises, oracles and political conflict in a highly patterned prose. It is one of the major works of Elizabethan literature and a model for later romance.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/70854"
+      ]
+    },
+    {
+      "id": "gutenberg-76",
+      "title": "Adventures of Huckleberry Finn",
+      "author": "Twain, Mark",
+      "language": "en",
+      "source": "Project Gutenberg / Gutendex",
+      "status": "prepared",
+      "summary": "Huckleberry Finn runs away from his abusive father and travels down the Mississippi with Jim, an enslaved man who is escaping to freedom. Their raft journey brings them into contact with feuds, con men and the moral contradictions of the antebellum South. Huck's growing loyalty to Jim forces him to question what society has taught him.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/76"
+      ]
+    },
+    {
+      "id": "gutenberg-76639",
+      "title": "Eloisa: Or, a Series of Original Letters",
+      "author": "Rousseau, Jean-Jacques",
+      "language": "en",
+      "source": "gutendex",
+      "status": "prepared",
+      "summary": "Rousseau's Eloisa, or the New Heloise, is an epistolary novel about the love between the tutor Saint-Preux and his pupil Julie. Their passion is opposed by Julie's family and by the demands of duty and reputation. The novel explores love, virtue and the conflict between feeling and social order.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/76639"
+      ]
+    },
+    {
+      "id": "gutenberg-84",
+      "title": "Frankenstein; or, the modern prometheus",
+      "author": "Shelley, Mary Wollstonecraft",
+      "language": "en",
+      "source": "Project Gutenberg / Gutendex",
+      "status": "prepared",
+      "summary": "Victor Frankenstein, a young scientist, discovers the secret of giving life and creates a creature from assembled body parts. Horrified by his own work, he abandons the creature, who is left to learn about the world alone. The novel follows the consequences of that abandonment and the creature's demand for recognition.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/84"
+      ]
+    },
+    {
+      "id": "gutenberg-98",
+      "title": "A Tale of Two Cities",
+      "author": "Dickens, Charles",
+      "language": "en",
+      "source": "Project Gutenberg / Gutendex",
+      "status": "prepared",
+      "summary": "The novel moves between London and Paris before and during the French Revolution. Charles Darnay, a French aristocrat living in England, is drawn back to Paris and condemned, while Sydney Carton, a dissolute lawyer, finds a chance to act selflessly. The story is about sacrifice, resurrection and the violence of history.",
+      "license": "Public domain (Project Gutenberg)",
+      "sources": [
+        "https://www.gutenberg.org/ebooks/98"
+      ]
+    },
+    {
+      "id": "se-anna-sewell-black-beauty",
+      "title": "Black Beauty",
+      "author": "Anna Sewell",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "Black Beauty is a horse's first-person account of his life, beginning as a carefree foal on an English farm. Kind and cruel owners, stablemates and changing fortunes show how working horses were treated in Victorian England. The novel follows his journey through good homes and hard labour, and it argues for kindness and better treatment of animals.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Black%20Beauty"
+      ]
+    },
+    {
+      "id": "se-arthur-conan-doyle-a-study-in-scarlet",
+      "title": "A Study in Scarlet",
+      "author": "Arthur Conan Doyle",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "Dr John Watson, newly returned from Afghanistan, meets the brilliant detective Sherlock Holmes and becomes his flatmate at 221B Baker Street. A corpse in an empty house and a cryptic message draw them into a murder investigation that baffles Scotland Yard. The trail leads through London and back to a story of love and revenge in the American West.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=A%20Study%20in%20Scarlet"
+      ]
+    },
+    {
+      "id": "se-arthur-conan-doyle-the-lost-world",
+      "title": "The Lost World",
+      "author": "Arthur Conan Doyle",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "Professor Challenger claims that dinosaurs still survive on a remote South American plateau, and a newspaper expedition sets out to prove him right. The party includes the sceptical Professor Summerlee and the reporter Edward Malone, who narrates. They find a land of prehistoric creatures and warring tribes, and must survive long enough to bring evidence home.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Lost%20World"
+      ]
+    },
+    {
+      "id": "se-arthur-conan-doyle-the-sign-of-the-four",
+      "title": "The Sign of the Four",
+      "author": "Arthur Conan Doyle",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "Mary Morstan brings Sherlock Holmes a puzzle: her father vanished years ago, and she has since received pearls from an unknown sender. With Dr Watson, Holmes follows a trail of stolen treasure, a one-legged man and a secret pact made in colonial India. The case draws Watson closer to Mary and tests Holmes's deductions.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Sign%20of%20the%20Four"
+      ]
+    },
+    {
+      "id": "se-booker-t-washington-up-from-slavery",
+      "title": "Up from Slavery",
+      "author": "Booker T. Washington",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "Booker T. Washington recounts his childhood in slavery, his struggle for education after emancipation, and his work building Tuskegee Institute. The memoir describes the daily realities of the post-Civil War South and his belief in self-help, industrial education and gradual progress. It is both a personal story and an argument about how Black Americans might advance in a hostile society.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Up%20from%20Slavery"
+      ]
+    },
+    {
+      "id": "se-charles-dickens-a-christmas-carol",
+      "title": "A Christmas Carol",
+      "author": "Charles Dickens",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "Ebenezer Scrooge is a cold, miserly London businessman who dismisses Christmas and everyone who celebrates it. On Christmas Eve he is visited by the ghost of his late partner and three spirits who show him his past, present and future. Confronted with the consequences of his life, Scrooge must decide whether to change before it is too late.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=A%20Christmas%20Carol"
+      ]
+    },
+    {
+      "id": "se-charles-dickens-bleak-house",
+      "title": "Bleak House",
+      "author": "Charles Dickens",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "Esther Summerson narrates much of this vast Victorian novel, which centres on a generations-long legal case, Jarndyce and Jarndyce. Around the lawsuit gather orphans, lawyers, philanthropists and the aristocratic Dedlocks, whose secrets reach across London and the countryside. Dickens satirises the courts and shows how the case damages nearly everyone it touches.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Bleak%20House"
+      ]
+    },
+    {
+      "id": "se-charles-dickens-david-copperfield",
+      "title": "David Copperfield",
+      "author": "Charles Dickens",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "David Copperfield looks back on his life from childhood to adulthood, beginning with a happy early home that is broken by a cruel stepfather. He endures a brutal school, factory work and the loss of people he loves, while meeting characters such as the loyal Peggotty, the scheming Uriah Heep and the eccentric Mr Micawber. The novel follows his struggle to become a writer and to build a home of his own.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=David%20Copperfield"
+      ]
+    },
+    {
+      "id": "se-charles-dickens-great-expectations",
+      "title": "Great Expectations",
+      "author": "Charles Dickens",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "Philip Pirrip, called Pip, is a poor orphan raised by his sister and her kind husband, the blacksmith Joe Gargery. An encounter with an escaped convict and visits to the decaying house of Miss Havisham and the beautiful Estella fill him with shame about his background. When an unknown benefactor gives him money, Pip goes to London to become a gentleman, only to learn that his expectations rest on a dangerous secret.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Great%20Expectations"
+      ]
+    },
+    {
+      "id": "se-charles-dickens-hard-times",
+      "title": "Hard Times",
+      "author": "Charles Dickens",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "In the industrial town of Coketown, Thomas Gradgrind raises his children on facts alone and dismisses imagination as useless. His daughter Louisa is pushed into a loveless marriage, while his son Tom drifts into crime and the workers struggle under mill owners. The novel follows the consequences of a philosophy that treats people as machines.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Hard%20Times"
+      ]
+    },
+    {
+      "id": "se-charles-dickens-oliver-twist",
+      "title": "Oliver Twist",
+      "author": "Charles Dickens",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "Oliver Twist is born in a workhouse and escapes to London, where he falls in with a gang of young pickpockets run by the elderly Fagin. He is taken in by the kind Mr Brownlow but is drawn back into the criminal world by the violent Bill Sikes. The novel follows Oliver's search for safety and the secrets of his parentage.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Oliver%20Twist"
+      ]
+    },
+    {
+      "id": "se-daniel-defoe-the-life-and-adventures-of-robinson-crusoe",
+      "title": "The Life and Adventures of Robinson Crusoe",
+      "author": "Daniel Defoe",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "Robinson Crusoe defies his family's wishes and goes to sea, surviving shipwreck and slavery before a storm leaves him alone on a deserted island. He builds a shelter, learns to farm and hunt, and keeps a journal through years of isolation. The arrival of footprints and later a man he names Friday changes his solitary life.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Life%20and%20Adventures%20of%20Robinson%20Crusoe"
+      ]
+    },
+    {
+      "id": "se-ebooks-adam-smith-the-wealth-of-nations",
+      "title": "The Wealth of Nations",
+      "author": "Adam Smith",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "Adam Smith lays the foundation of classical economics.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Wealth%20of%20Nations"
+      ]
+    },
+    {
+      "id": "se-ebooks-alexandre-dumas-the-count-of-monte-cristo-chapman-and-hall",
+      "title": "The Count of Monte Cristo",
+      "author": "Alexandre Dumas",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "A man seeks revenge for having been falsely imprisoned years earlier.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Count%20of%20Monte%20Cristo"
+      ]
+    },
+    {
+      "id": "se-ebooks-alexandre-dumas-the-three-musketeers-william-robson",
+      "title": "The Three Musketeers",
+      "author": "Alexandre Dumas",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "A young Gascon moves to Paris to join the King’s Musketeers where he starts to investigate the kidnapping of his landlord’s wife.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Three%20Musketeers"
+      ]
+    },
+    {
+      "id": "se-ebooks-alexandre-dumas-twenty-years-after-estes-and-lauriat",
+      "title": "Twenty Years After",
+      "author": "Alexandre Dumas",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "Four musketeers are drawn back together by current events after many years apart, try to save Charles I from Cromwell, and are pursued by the now-grown son of a former female adversary.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Twenty%20Years%20After"
+      ]
+    },
+    {
+      "id": "se-ebooks-anne-bronte-the-tenant-of-wildfell-hall",
+      "title": "The Tenant of Wildfell Hall",
+      "author": "Anne Brontë",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "When a mysterious young widow arrives in a small rural area, gossip blackens her name before her true story is eventually discovered by a male admirer.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Tenant%20of%20Wildfell%20Hall"
+      ]
+    },
+    {
+      "id": "se-ebooks-anton-chekhov-the-cherry-orchard-constance-garnett",
+      "title": "The Cherry Orchard",
+      "author": "Anton Chekhov",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "A heavily indebted landowner and her family return to Russia in an attempt to save her estate from being auctioned off.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Cherry%20Orchard"
+      ]
+    },
+    {
+      "id": "se-ebooks-aristotle-nicomachean-ethics-f-h-peters",
+      "title": "Nicomachean Ethics",
+      "author": "Aristotle",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "Aristotle examines how one may live in the most thriving, excellent manner.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Nicomachean%20Ethics"
+      ]
+    },
+    {
+      "id": "se-ebooks-arthur-conan-doyle-the-memoirs-of-sherlock-holmes",
+      "title": "The Memoirs of Sherlock Holmes",
+      "author": "Arthur Conan Doyle",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "The world’s first consulting detective and his companion investigate further crimes and mysteries, culminating in a life-or-death struggle with an evil nemesis.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Memoirs%20of%20Sherlock%20Holmes"
+      ]
+    },
+    {
+      "id": "se-ebooks-arthur-conan-doyle-the-return-of-sherlock-holmes",
+      "title": "The Return of Sherlock Holmes",
+      "author": "Arthur Conan Doyle",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "The world’s first consulting detective returns to London after having faked his death some years before, and investigates a series of baffling mysteries.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Return%20of%20Sherlock%20Holmes"
+      ]
+    },
+    {
+      "id": "se-ebooks-arthur-conan-doyle-the-valley-of-fear",
+      "title": "The Valley of Fear",
+      "author": "Arthur Conan Doyle",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "The final novel in Sir Arthur Conan Doyle’s Sherlock Holmes series follows the eponymous hero as he investigates a Sussex murder seemingly connected with a secret society.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Valley%20of%20Fear"
+      ]
+    },
+    {
+      "id": "se-ebooks-charles-darwin-the-origin-of-species",
+      "title": "The Origin of Species",
+      "author": "Charles Darwin",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "A distinguished amateur scientist lays out the evidence for the origin of species by means of natural selection.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Origin%20of%20Species"
+      ]
+    },
+    {
+      "id": "se-ebooks-charles-dickens-little-dorrit",
+      "title": "Little Dorrit",
+      "author": "Charles Dickens",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "After returning home from a long period spent working in China, a man tries to assist a family forced to live in a debtor’s prison.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Little%20Dorrit"
+      ]
+    },
+    {
+      "id": "se-ebooks-charles-dickens-nicholas-nickleby",
+      "title": "Nicholas Nickleby",
+      "author": "Charles Dickens",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "A brother and sister, made destitute by the death of their father, struggle to succeed despite the callous indifference of their corrupt uncle.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Nicholas%20Nickleby"
+      ]
+    },
+    {
+      "id": "se-ebooks-charles-dickens-the-pickwick-papers",
+      "title": "The Pickwick Papers",
+      "author": "Charles Dickens",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "An elderly gentleman and his friends travel around Britain and have a series of comic adventures.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Pickwick%20Papers"
+      ]
+    },
+    {
+      "id": "se-ebooks-charlotte-bronte-villette",
+      "title": "Villette",
+      "author": "Charlotte Brontë",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "A young woman travels from England to the fictional town of Villette where she makes new connections and encounters people from her past.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Villette"
+      ]
+    },
+    {
+      "id": "se-ebooks-confucius-analects-james-legge",
+      "title": "Analects",
+      "author": "Confucius",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "The paradigmatic Chinese sage expounds on leading an ethical and fulfilled life.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Analects"
+      ]
+    },
+    {
+      "id": "se-ebooks-dante-alighieri-the-divine-comedy-henry-wadsworth-longfellow",
+      "title": "The Divine Comedy",
+      "author": "Dante Alighieri",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "Dante journeys through Hell, Purgatory, and Heaven in order to receive salvation and to find divine love.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Divine%20Comedy"
+      ]
+    },
+    {
+      "id": "se-ebooks-edgar-allan-poe-short-fiction",
+      "title": "Short Fiction",
+      "author": "Edgar Allan Poe",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "A collection of Edgar Allan Poe’s short fiction, ordered by date of publication.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Short%20Fiction"
+      ]
+    },
+    {
+      "id": "se-ebooks-edith-wharton-the-age-of-innocence",
+      "title": "The Age of Innocence",
+      "author": "Edith Wharton",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "Upper-class New York gentleman Newland Archer is set to wed May Welland in a picture-perfect union, until the bride’s disgraced cousin returns from overseas and threatens to draw his love away.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Age%20of%20Innocence"
+      ]
+    },
+    {
+      "id": "se-ebooks-edith-wharton-the-house-of-mirth",
+      "title": "The House of Mirth",
+      "author": "Edith Wharton",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "A New York socialite struggles to maintain a place among her wealthy friends in the face of her own diminished finances and fading youth.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20House%20of%20Mirth"
+      ]
+    },
+    {
+      "id": "se-ebooks-emile-zola-germinal-havelock-ellis",
+      "title": "Germinal",
+      "author": "Émile Zola",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "A new resident of a poor coal mining town in 1860s France begins learning about socialist principles, and convinces the town to go on strike.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Germinal"
+      ]
+    },
+    {
+      "id": "se-ebooks-f-scott-fitzgerald-the-great-gatsby",
+      "title": "The Great Gatsby",
+      "author": "F. Scott Fitzgerald",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "The decadent and mysterious Jay Gatsby pursues the American Dream in Jazz Age New York.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Great%20Gatsby"
+      ]
+    },
+    {
+      "id": "se-ebooks-franz-kafka-the-castle-willa-muir-edwin-muir",
+      "title": "The Castle",
+      "author": "Franz Kafka",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "A land surveyor accepts an appointment in a distant town, but is surprised to find that he is unwanted there.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Castle"
+      ]
+    },
+    {
+      "id": "se-ebooks-friedrich-nietzsche-thus-spake-zarathustra-thomas-common",
+      "title": "Thus Spake Zarathustra",
+      "author": "Friedrich Nietzsche",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "After ten years spent in solitude, Zarathustra goes back amongst men to share his accumulated wisdom and prepare humanity for the Overman.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Thus%20Spake%20Zarathustra"
+      ]
+    },
+    {
+      "id": "se-ebooks-fyodor-dostoevsky-notes-from-underground-constance-garnett",
+      "title": "Notes from Underground",
+      "author": "Fyodor Dostoevsky",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "A man living alone in St. Petersburg writes memoirs describing his alienation from modern society.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Notes%20from%20Underground"
+      ]
+    },
+    {
+      "id": "se-ebooks-fyodor-dostoevsky-the-brothers-karamazov-constance-garnett",
+      "title": "The Brothers Karamazov",
+      "author": "Fyodor Dostoevsky",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "A dispute over inheritance between father and son escalates into a family feud.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Brothers%20Karamazov"
+      ]
+    },
+    {
+      "id": "se-ebooks-fyodor-dostoevsky-the-gambler-c-j-hogarth",
+      "title": "The Gambler",
+      "author": "Fyodor Dostoevsky",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "A Russian tutor deals with the outcomes of the allure of roulette.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Gambler"
+      ]
+    },
+    {
+      "id": "se-ebooks-fyodor-dostoevsky-the-idiot-eva-m-martin",
+      "title": "The Idiot",
+      "author": "Fyodor Dostoevsky",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "An epileptic prince becomes entangled in Russian high society.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Idiot"
+      ]
+    },
+    {
+      "id": "se-ebooks-george-eliot-silas-marner",
+      "title": "Silas Marner",
+      "author": "George Eliot",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "A miserly weaver’s isolated life is transformed by the theft of his precious money and the sudden appearance of an abandoned infant, whom he adopts and raises.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Silas%20Marner"
+      ]
+    },
+    {
+      "id": "se-ebooks-george-eliot-the-mill-on-the-floss",
+      "title": "The Mill on the Floss",
+      "author": "George Eliot",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "The lives of two young people are thrown into disarray when their father, the owner of a mill, is bankrupted by an unwise legal dispute.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Mill%20on%20the%20Floss"
+      ]
+    },
+    {
+      "id": "se-ebooks-gustave-flaubert-madame-bovary-eleanor-marx-aveling",
+      "title": "Madame Bovary",
+      "author": "Gustave Flaubert",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "A middle-class country wife tries to satisfy her yearnings for a luxurious life by engaging in various affairs.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Madame%20Bovary"
+      ]
+    },
+    {
+      "id": "se-ebooks-h-g-wells-the-first-men-in-the-moon",
+      "title": "The First Men in the Moon",
+      "author": "H. G. Wells",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "Two British men become the first humans to reach the Moon.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20First%20Men%20in%20the%20Moon"
+      ]
+    },
+    {
+      "id": "se-ebooks-h-g-wells-the-war-of-the-worlds",
+      "title": "The War of the Worlds",
+      "author": "H. G. Wells",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "The first-person narrative of the Martian invasion of 19th-century Earth.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20War%20of%20the%20Worlds"
+      ]
+    },
+    {
+      "id": "se-ebooks-henry-james-the-portrait-of-a-lady",
+      "title": "The Portrait of a Lady",
+      "author": "Henry James",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "A young American woman travelling through Europe excites both admiration and intrigue.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Portrait%20of%20a%20Lady"
+      ]
+    },
+    {
+      "id": "se-ebooks-herman-melville-typee",
+      "title": "Typee",
+      "author": "Herman Melville",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "Two seamen escape from their service onboard a whaling ship, only to find themselves trapped among savages in the Marquesas Islands.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Typee"
+      ]
+    },
+    {
+      "id": "se-ebooks-homer-the-iliad-william-cullen-bryant",
+      "title": "The Iliad",
+      "author": "Homer",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "The epic poem which follows a Greek warrior who refuses to give up his prize of war.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Iliad"
+      ]
+    },
+    {
+      "id": "se-ebooks-honore-de-balzac-father-goriot-ellen-marriage",
+      "title": "Father Goriot",
+      "author": "Honoré de Balzac",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "A young man tries to climb up the cutthroat Parisian social ladder during the Bourbon Restoration.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Father%20Goriot"
+      ]
+    },
+    {
+      "id": "se-ebooks-ivan-turgenev-fathers-and-children-constance-garnett",
+      "title": "Fathers and Children",
+      "author": "Ivan Turgenev",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "Arkady returns to his father’s estate accompanied by his friend from university—a nihilist.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Fathers%20and%20Children"
+      ]
+    },
+    {
+      "id": "se-ebooks-jean-jacques-rousseau-the-social-contract-g-d-h-cole",
+      "title": "The Social Contract",
+      "author": "Jean-Jacques Rousseau",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "Rousseau explores the political philosophy of authority originating from the consent of the people.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Social%20Contract"
+      ]
+    },
+    {
+      "id": "se-ebooks-john-stuart-mill-on-liberty",
+      "title": "On Liberty",
+      "author": "John Stuart Mill",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "Mill’s famous essay that applies a utilitarian ethical system to systems of government.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=On%20Liberty"
+      ]
+    },
+    {
+      "id": "se-ebooks-joseph-conrad-lord-jim",
+      "title": "Lord Jim",
+      "author": "Joseph Conrad",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "Haunted by the part he played in a shipping disaster, young British seaman Jim escapes to an island in the South Seas to build his future.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Lord%20Jim"
+      ]
+    },
+    {
+      "id": "se-ebooks-joseph-conrad-nostromo",
+      "title": "Nostromo",
+      "author": "Joseph Conrad",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "The fictitious South American republic of Costaguana is in the midst of a civil war and the citizens of the coastal town of Sulaco turn to Nostromo for help.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Nostromo"
+      ]
+    },
+    {
+      "id": "se-ebooks-joseph-conrad-the-secret-agent",
+      "title": "The Secret Agent",
+      "author": "Joseph Conrad",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "A spy in London is ordered to stage a bombing to foment political and social chaos.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Secret%20Agent"
+      ]
+    },
+    {
+      "id": "se-ebooks-joseph-conrad-under-western-eyes",
+      "title": "Under Western Eyes",
+      "author": "Joseph Conrad",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "A university student in St. Petersburg is drawn into the activities of a revolutionary group against his will.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Under%20Western%20Eyes"
+      ]
+    },
+    {
+      "id": "se-ebooks-jules-verne-around-the-world-in-eighty-days-george-makepeace-towle",
+      "title": "Around the World in Eighty Days",
+      "author": "Jules Verne",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "On a bet, an eccentric Victorian gentleman races to circumnavigate the globe.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Around%20the%20World%20in%20Eighty%20Days"
+      ]
+    },
+    {
+      "id": "se-ebooks-jules-verne-from-the-earth-to-the-moon-ward-lock-co",
+      "title": "From the Earth to the Moon",
+      "author": "Jules Verne",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "After the end of the Civil War, the Baltimore Gun Club decides to apply its engineering expertise to the design of a cannon capable of shooting a projectile to the Moon.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=From%20the%20Earth%20to%20the%20Moon"
+      ]
+    },
+    {
+      "id": "se-ebooks-jules-verne-journey-to-the-center-of-the-earth-f-a-malleson",
+      "title": "Journey to the Center of the Earth",
+      "author": "Jules Verne",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "Prompted by a mysterious Icelandic manuscript, a professor and his nephew, with the aid of a local guide, adventure to the center of the earth through the crater of a dormant volcano.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Journey%20to%20the%20Center%20of%20the%20Earth"
+      ]
+    },
+    {
+      "id": "se-ebooks-jules-verne-the-mysterious-island-stephen-w-white",
+      "title": "The Mysterious Island",
+      "author": "Jules Verne",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "Five Americans, balloon-wrecked on a deserted island, must find a way to survive while revealing the island’s strange mysteries.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Mysterious%20Island"
+      ]
+    },
+    {
+      "id": "se-ebooks-kahlil-gibran-the-prophet",
+      "title": "The Prophet",
+      "author": "Kahlil Gibran",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "A collection of prose poetry on themes such as love, beauty, and religion.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Prophet"
+      ]
+    },
+    {
+      "id": "se-ebooks-karl-marx-friedrich-engels-the-communist-manifesto-samuel-moore",
+      "title": "The Communist Manifesto",
+      "author": "Karl Marx",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "Karl Marx and Friedrich Engels’ classic analysis of modern industrial society and call for Working Class revolution.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Communist%20Manifesto"
+      ]
+    },
+    {
+      "id": "se-ebooks-kenneth-grahame-the-wind-in-the-willows",
+      "title": "The Wind in the Willows",
+      "author": "Kenneth Grahame",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "Four animals adventure through the bucolic English countryside.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Wind%20in%20the%20Willows"
+      ]
+    },
+    {
+      "id": "se-ebooks-laozi-tao-te-ching-james-legge",
+      "title": "Tao Te Ching",
+      "author": "Laozi",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "One of the fundamental texts of the Tao philosophy and religion.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Tao%20Te%20Ching"
+      ]
+    },
+    {
+      "id": "se-ebooks-leo-tolstoy-anna-karenina-constance-garnett",
+      "title": "Anna Karenina",
+      "author": "Leo Tolstoy",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "A socialite starts an affair with a cavalry officer, against a backdrop of wealthy family life in Imperialist Russia.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Anna%20Karenina"
+      ]
+    },
+    {
+      "id": "se-ebooks-leo-tolstoy-resurrection-louise-maude",
+      "title": "Resurrection",
+      "author": "Leo Tolstoy",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "A Russian landlord makes reparations to the woman he wronged in his youth.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Resurrection"
+      ]
+    },
+    {
+      "id": "se-ebooks-leo-tolstoy-war-and-peace-louise-maude-aylmer-maude",
+      "title": "War and Peace",
+      "author": "Leo Tolstoy",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "The story of five families in Russia during the Napoleonic Wars.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=War%20and%20Peace"
+      ]
+    },
+    {
+      "id": "se-ebooks-mark-twain-a-connecticut-yankee-in-king-arthurs-court",
+      "title": "A Connecticut Yankee in King Arthur’s Court",
+      "author": "Mark Twain",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "An engineer from 19th-century Connecticut is sent back in time to King Arthur’s medieval England.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=A%20Connecticut%20Yankee%20in%20King%20Arthur%E2%80%99s%20Court"
+      ]
+    },
+    {
+      "id": "se-ebooks-mark-twain-the-prince-and-the-pauper",
+      "title": "The Prince and the Pauper",
+      "author": "Mark Twain",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "The Prince of England and a pauper find their identities switched.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Prince%20and%20the%20Pauper"
+      ]
+    },
+    {
+      "id": "se-ebooks-miguel-de-cervantes-saavedra-don-quixote-john-ormsby",
+      "title": "Don Quixote",
+      "author": "Miguel de Cervantes Saavedra",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "A mad knight-errant and his down-to-earth squire encounter adventure in the Spanish countryside.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Don%20Quixote"
+      ]
+    },
+    {
+      "id": "se-ebooks-moliere-tartuffe-curtis-hidden-page",
+      "title": "Tartuffe",
+      "author": "Molière",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "A father announces his daughter will marry Tartuffe, a sanctimonious fraud and hypocrite.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Tartuffe"
+      ]
+    },
+    {
+      "id": "se-ebooks-niccolo-machiavelli-the-prince-w-k-marriott",
+      "title": "The Prince",
+      "author": "Niccolò Machiavelli",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "The classic treatise on how to tyrannize one’s subjects.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Prince"
+      ]
+    },
+    {
+      "id": "se-ebooks-nikolai-gogol-dead-souls-c-j-hogarth",
+      "title": "Dead Souls",
+      "author": "Nikolai Gogol",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "Pavel Chichikov travels through Russia buying the titles of dead serfs.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Dead%20Souls"
+      ]
+    },
+    {
+      "id": "se-ebooks-oscar-wilde-the-importance-of-being-earnest",
+      "title": "The Importance of Being Earnest",
+      "author": "Oscar Wilde",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "A comedy skewering Victorian high society.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Importance%20of%20Being%20Earnest"
+      ]
+    },
+    {
+      "id": "se-ebooks-plato-dialogues-benjamin-jowett",
+      "title": "Dialogues",
+      "author": "Plato",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "A collection of Plato’s dialogues.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Dialogues"
+      ]
+    },
+    {
+      "id": "se-ebooks-sun-tzu-the-art-of-war-lionel-giles",
+      "title": "The Art of War",
+      "author": "Sun Tzu",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "An ancient Chinese classic discussing the art of war.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Art%20of%20War"
+      ]
+    },
+    {
+      "id": "se-ebooks-thomas-hardy-jude-the-obscure",
+      "title": "Jude the Obscure",
+      "author": "Thomas Hardy",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "A promising young man’s life is marred by failure, tragedy, and loss.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Jude%20the%20Obscure"
+      ]
+    },
+    {
+      "id": "se-ebooks-thomas-hardy-the-mayor-of-casterbridge",
+      "title": "The Mayor of Casterbridge",
+      "author": "Thomas Hardy",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "Filled with remorse after abandoning his wife and baby daughter, Michael Henchard, an out-of-work hay-trusser, resolves to set his life on a better path.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Mayor%20of%20Casterbridge"
+      ]
+    },
+    {
+      "id": "se-ebooks-thomas-hobbes-leviathan",
+      "title": "Leviathan",
+      "author": "Thomas Hobbes",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "Hobbes explores a vision of the ideal state, in which people cede certain freedoms to a sovereign power in exchange for security and stability.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Leviathan"
+      ]
+    },
+    {
+      "id": "se-ebooks-thomas-paine-the-rights-of-man",
+      "title": "The Rights of Man",
+      "author": "Thomas Paine",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "A philosopher and political activist presents a forceful argument in favor of the principles of the French Revolution and of republicanism in general, together with a condemnation of monarchy and hereditary power in general.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Rights%20of%20Man"
+      ]
+    },
+    {
+      "id": "se-ebooks-victor-hugo-les-miserables-isabel-f-hapgood",
+      "title": "Les Misérables",
+      "author": "Victor Hugo",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "An escaped convict steals two candlesticks and uses the proceeds to redeem himself and become an honest man.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Les%20Mis%C3%A9rables"
+      ]
+    },
+    {
+      "id": "se-ebooks-victor-hugo-notre-dame-de-paris-isabel-f-hapgood",
+      "title": "Notre-Dame de Paris",
+      "author": "Victor Hugo",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "An archdeacon of Notre-Dame and his bellringer fall in love with the same gypsy, with tragic results.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Notre-Dame%20de%20Paris"
+      ]
+    },
+    {
+      "id": "se-ebooks-virgil-the-aeneid-john-dryden",
+      "title": "The Aeneid",
+      "author": "Virgil",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "The legendary hero Aeneas flees the city of Troy with his father and young son, and travels to Italy to become the ancestor of the Romans.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Aeneid"
+      ]
+    },
+    {
+      "id": "se-ebooks-voltaire-candide-the-modern-library",
+      "title": "Candide",
+      "author": "Voltaire",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "A witty satire that tells of the young Candide’s attempts to stay optimistic through a series of incredible hardships.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Candide"
+      ]
+    },
+    {
+      "id": "se-ebooks-w-e-b-du-bois-the-souls-of-black-folk",
+      "title": "The Souls of Black Folk",
+      "author": "W. E. B. Du Bois",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "A seminal collection of essays on the African-American experience.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Souls%20of%20Black%20Folk"
+      ]
+    },
+    {
+      "id": "se-ebooks-washington-irving-the-sketchbook-of-geoffrey-crayon-gent",
+      "title": "The Sketchbook of Geoffrey Crayon, Gent.",
+      "author": "Washington Irving",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "A collection of 34 essays and short stories, including “The Legend of Sleepy Hollow” and “Rip Van Winkle.”",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Sketchbook%20of%20Geoffrey%20Crayon%2C%20Gent."
+      ]
+    },
+    {
+      "id": "se-ebooks-william-shakespeare-a-midsummer-nights-dream",
+      "title": "A Midsummer Night’s Dream",
+      "author": "William Shakespeare",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "This comedy follows four lovers and a thespian who become bewitched by fairies.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=A%20Midsummer%20Night%E2%80%99s%20Dream"
+      ]
+    },
+    {
+      "id": "se-ebooks-william-shakespeare-hamlet",
+      "title": "Hamlet",
+      "author": "William Shakespeare",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "The ghost of the King of Denmark tells his son, Hamlet, to avenge his death.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Hamlet"
+      ]
+    },
+    {
+      "id": "se-ebooks-william-shakespeare-king-lear",
+      "title": "King Lear",
+      "author": "William Shakespeare",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "An aging king divides his kingdom between his two eldest daughters, slighting the third, and comes to bitterly regret his decision.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=King%20Lear"
+      ]
+    },
+    {
+      "id": "se-ebooks-william-shakespeare-macbeth",
+      "title": "Macbeth",
+      "author": "William Shakespeare",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "An ambitious general murders the King of Scotland and takes the throne for himself—and then he must deal with the consequences.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Macbeth"
+      ]
+    },
+    {
+      "id": "se-ebooks-william-shakespeare-othello",
+      "title": "Othello",
+      "author": "William Shakespeare",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "Jealousy destroys the marriage between an older black man and a younger white woman in 1500s Venice.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Othello"
+      ]
+    },
+    {
+      "id": "se-ebooks-william-shakespeare-the-tempest",
+      "title": "The Tempest",
+      "author": "William Shakespeare",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "kept",
+      "summary": "A magic-induced tempest shipwrecks the king of Naples and his crew on an island inhabited by the usurped duke of Milan.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Tempest"
+      ]
+    },
+    {
+      "id": "se-emily-bronte-wuthering-heights",
+      "title": "Wuthering Heights",
+      "author": "Emily Brontë",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "The novel is framed by Mr Lockwood, who rents Thrushcross Grange and learns the history of the neighbouring Wuthering Heights. He hears how Heathcliff, an abandoned child taken in by the Earnshaw family, loved Catherine Earnshaw and was degraded after her brother's cruelty. Their passion and the revenge it breeds shadow the next generation.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Wuthering%20Heights"
+      ]
+    },
+    {
+      "id": "se-frances-hodgson-burnett-the-secret-garden",
+      "title": "The Secret Garden",
+      "author": "Frances Hodgson Burnett",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "Mary Lennox, a sour child raised in colonial India, is sent to her uncle's great house on the Yorkshire moors after her parents die. She discovers a walled garden that has been locked for years and, with a local boy named Dickon, begins to restore it. The work brings her and her sickly cousin Colin back to health and opens the house to life.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Secret%20Garden"
+      ]
+    },
+    {
+      "id": "se-frederick-douglass-narrative-of-the-life-of-frederick-douglass",
+      "title": "Narrative of the Life of Frederick Douglass",
+      "author": "Frederick Douglass",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "Frederick Douglass recounts his birth into slavery in Maryland, his separation from his mother, and the brutality he witnessed and suffered. He describes how literacy and resistance changed him, including his fight with an overseer and his escape to the North. The narrative is both a personal testimony and a powerful argument against slavery.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Narrative%20of%20the%20Life%20of%20Frederick%20Douglass"
+      ]
+    },
+    {
+      "id": "se-h-g-wells-the-invisible-man",
+      "title": "The Invisible Man",
+      "author": "H. G. Wells",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "A stranger wrapped in bandages arrives at a Sussex inn and keeps to himself, arousing suspicion among the villagers. He is Griffin, a scientist who has made himself invisible but cannot reverse the process, and his temper turns to violence. The story follows his increasingly desperate attempts to survive and the hunt that closes in on him.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Invisible%20Man"
+      ]
+    },
+    {
+      "id": "se-h-g-wells-the-island-of-doctor-moreau",
+      "title": "The Island of Doctor Moreau",
+      "author": "H. G. Wells",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "Edward Prendick is rescued from a shipwreck and brought to a remote island owned by the physiologist Dr Moreau. There he discovers that Moreau performs cruel experiments on animals, shaping them into human-like creatures. Prendick must survive among the Beast Folk and confront what the doctor's science has made.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Island%20of%20Doctor%20Moreau"
+      ]
+    },
+    {
+      "id": "se-h-g-wells-the-time-machine",
+      "title": "The Time Machine",
+      "author": "H. G. Wells",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "A Victorian inventor travels far into the future and finds a world divided between the gentle Eloi and the underground Morlocks. He explores the decaying remains of civilisation and tries to understand what happened to humanity. His journey ends even farther ahead, in a dying world, before he returns to tell his story.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Time%20Machine"
+      ]
+    },
+    {
+      "id": "se-h-rider-haggard-king-solomons-mines",
+      "title": "King Solomon’s Mines",
+      "author": "H. Rider Haggard",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "Allan Quatermain, an experienced hunter, is hired by Sir Henry Curtis to find his missing brother and the legendary diamond mines of King Solomon. With Captain Good and a party of porters, they cross deserts and mountains into a hidden kingdom. The adventure combines treasure hunting with a dangerous succession struggle among the local people.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=King%20Solomon%E2%80%99s%20Mines"
+      ]
+    },
+    {
+      "id": "se-h-rider-haggard-she",
+      "title": "She",
+      "author": "H. Rider Haggard",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "Horace Holly and his ward Leo Vincey travel to Africa to follow an ancient family legend about a lost civilisation. They reach the kingdom of Kôr, ruled by Ayesha, a beautiful and terrifying woman who claims to have lived for centuries. Her power and her love for Leo drive the story toward its strange conclusion.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=She"
+      ]
+    },
+    {
+      "id": "se-henry-david-thoreau-walden",
+      "title": "Walden",
+      "author": "Henry David Thoreau",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "Henry David Thoreau describes the two years he spent living in a small cabin by Walden Pond, near Concord, Massachusetts. He writes about building the cabin, growing food, observing nature and simplifying his needs. The book is both a nature diary and an argument for self-reliance, attention and a life lived deliberately.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Walden"
+      ]
+    },
+    {
+      "id": "se-jack-london-the-call-of-the-wild",
+      "title": "The Call of the Wild",
+      "author": "Jack London",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "Buck, a large domestic dog, is stolen from a California ranch and sold into the Klondike gold rush. He learns to survive as a sled dog, enduring brutal work, changing masters and the rivalry of other dogs. Gradually his civilised habits fall away and the call of the wild grows stronger.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Call%20of%20the%20Wild"
+      ]
+    },
+    {
+      "id": "se-jack-london-white-fang",
+      "title": "White Fang",
+      "author": "Jack London",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "White Fang is a wolf-dog born in the frozen North, where survival depends on strength and cunning. He passes from the wild to a Native American camp and then to a cruel white man who uses him in dogfights. A kind master, Weedon Scott, eventually tries to tame him and bring him into a gentler life.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=White%20Fang"
+      ]
+    },
+    {
+      "id": "se-jane-austen-emma",
+      "title": "Emma",
+      "author": "Jane Austen",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "Emma Woodhouse is clever, rich and convinced she knows what is best for everyone in her small English village. She takes on the matchmaking of her friend Harriet Smith, ignoring the warnings of her neighbour Mr Knightley. Her schemes produce misunderstandings and self-discovery before she learns where her own heart lies.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Emma"
+      ]
+    },
+    {
+      "id": "se-jane-austen-mansfield-park",
+      "title": "Mansfield Park",
+      "author": "Jane Austen",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "Fanny Price is sent as a poor relation to live with her wealthy cousins at Mansfield Park. She grows up quiet and observant among the Bertram family, whose elegance hides selfishness and moral weakness. When the Crawford siblings arrive, Fanny must judge their charm and remain true to her own principles.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Mansfield%20Park"
+      ]
+    },
+    {
+      "id": "se-jane-austen-northanger-abbey",
+      "title": "Northanger Abbey",
+      "author": "Jane Austen",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "Catherine Morland, a young woman with a taste for Gothic novels, is invited to Bath and then to Northanger Abbey. She imagines intrigue and danger in the ordinary household of the Tilney family, and her fantasies lead to embarrassment. The novel gently mocks Gothic conventions while following Catherine's growth into sense.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Northanger%20Abbey"
+      ]
+    },
+    {
+      "id": "se-jane-austen-persuasion",
+      "title": "Persuasion",
+      "author": "Jane Austen",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "Anne Elliot, the sensible daughter of a vain baronet, once refused a proposal from the naval officer Frederick Wentworth on the advice of her family. Years later, with the family in debt and Wentworth returned as a successful captain, they meet again. The novel follows Anne's quiet endurance and the second chance she and Wentworth may have.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Persuasion"
+      ]
+    },
+    {
+      "id": "se-jonathan-swift-gullivers-travels",
+      "title": "Gulliver’s Travels",
+      "author": "Jonathan Swift",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "Lemuel Gulliver, a ship's surgeon, is shipwrecked and finds himself in a series of strange lands. He meets the tiny Lilliputians, the giant Brobdingnagians and the rational horses of Houyhnhnm land, among others. The travels are an adventure story and a satire of human pride, politics and reason.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Gulliver%E2%80%99s%20Travels"
+      ]
+    },
+    {
+      "id": "se-l-frank-baum-the-wonderful-wizard-of-oz",
+      "title": "The Wonderful Wizard of Oz",
+      "author": "L. Frank Baum",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "Dorothy Gale is carried by a cyclone from Kansas to the magical land of Oz, where she meets the Scarecrow, the Tin Woodman and the Cowardly Lion. They travel to the Emerald City to ask the Wizard for what each of them lacks. Their journey tests courage, kindness and the discovery that the power they seek may already be theirs.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Wonderful%20Wizard%20of%20Oz"
+      ]
+    },
+    {
+      "id": "se-l-m-montgomery-anne-of-green-gables",
+      "title": "Anne of Green Gables",
+      "author": "L. M. Montgomery",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "Matthew and Marilla Cuthbert intend to adopt a boy to help on their farm in Avonlea, but a mix-up brings them the talkative orphan Anne Shirley. Anne's imagination and temper disrupt the quiet household and win over the community. The novel follows her education, friendships and growing sense of belonging.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Anne%20of%20Green%20Gables"
+      ]
+    },
+    {
+      "id": "se-mark-twain-the-adventures-of-tom-sawyer",
+      "title": "The Adventures of Tom Sawyer",
+      "author": "Mark Twain",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "Tom Sawyer grows up in the fictional town of St Petersburg on the Mississippi, skipping school and chasing adventure with his friends. He witnesses a midnight murder, runs away to an island and attends his own funeral. The novel mixes comedy and danger as Tom learns about responsibility and the adult world.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Adventures%20of%20Tom%20Sawyer"
+      ]
+    },
+    {
+      "id": "se-nathaniel-hawthorne-the-scarlet-letter",
+      "title": "The Scarlet Letter",
+      "author": "Nathaniel Hawthorne",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "Hester Prynne is condemned to wear a scarlet letter A after bearing a child out of wedlock in Puritan Boston. She refuses to name the father, the minister Arthur Dimmesdale, who is consumed by hidden guilt. The novel explores shame, hypocrisy and the cost of secrets in a rigid community.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Scarlet%20Letter"
+      ]
+    },
+    {
+      "id": "se-oscar-wilde-the-picture-of-dorian-gray",
+      "title": "The Picture of Dorian Gray",
+      "author": "Oscar Wilde",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "Dorian Gray, a beautiful young man, sits for a portrait by the artist Basil Hallward and is persuaded by Lord Henry Wotton that youth and pleasure are all that matter. He wishes the portrait would age instead of him, and the wish comes true. As Dorian's life becomes cruel and corrupt, the painting records the damage.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Picture%20of%20Dorian%20Gray"
+      ]
+    },
+    {
+      "id": "se-rudyard-kipling-kim",
+      "title": "Kim",
+      "author": "Rudyard Kipling",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "Kimball O'Hara, an orphaned Irish boy, grows up on the streets of Lahore and becomes involved in the Great Game of imperial intelligence. He travels with a Tibetan lama while also working for British agents. The novel follows his education, his loyalty to the lama and his place between two worlds.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Kim"
+      ]
+    },
+    {
+      "id": "se-rudyard-kipling-the-jungle-book",
+      "title": "The Jungle Book",
+      "author": "Rudyard Kipling",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "Mowgli, a boy raised by wolves in the Indian jungle, learns the law of the jungle from Baloo the bear and Bagheera the panther. He faces the tiger Shere Khan and the monkey people, and must decide where he belongs. The collection also includes stories of other animals and the world beyond the jungle.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Jungle%20Book"
+      ]
+    },
+    {
+      "id": "se-stephen-crane-the-red-badge-of-courage",
+      "title": "The Red Badge of Courage",
+      "author": "Stephen Crane",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "Henry Fleming, a young Union soldier, dreams of glory and enlists in the American Civil War. When the fighting comes, fear overwhelms him and he flees, then struggles with shame and the desire for a wound that would prove his courage. The novel follows his return to the regiment and his changing understanding of bravery.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Red%20Badge%20of%20Courage"
+      ]
+    },
+    {
+      "id": "se-thomas-hardy-far-from-the-madding-crowd",
+      "title": "Far from the Madding Crowd",
+      "author": "Thomas Hardy",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "Bathsheba Everdene inherits a farm in Wessex and becomes the object of three very different suitors. Gabriel Oak, a shepherd, loves her steadily; the wealthy Boldwood is obsessive; and the soldier Sergeant Troy is reckless. The novel follows Bathsheba's choices and the consequences for the people around her.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Far%20from%20the%20Madding%20Crowd"
+      ]
+    },
+    {
+      "id": "se-thomas-hardy-tess-of-the-durbervilles",
+      "title": "Tess of the d’Urbervilles",
+      "author": "Thomas Hardy",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "Tess Durbeyfield, the daughter of a poor rural family, is sent to claim kinship with the wealthy d'Urbervilles. There she meets Alec d'Urberville, whose attentions change her life, and later the idealistic Angel Clare. The novel follows Tess's struggle against social judgment and the double standard that punishes her.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=Tess%20of%20the%20d%E2%80%99Urbervilles"
+      ]
+    },
+    {
+      "id": "se-wilkie-collins-the-moonstone",
+      "title": "The Moonstone",
+      "author": "Wilkie Collins",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "A large diamond brought from India is given to Rachel Verinder on her birthday and vanishes the same night. The household is thrown into confusion, and the mystery is told through several witnesses, including the servant Gabriel Betteredge and the detective Sergeant Cuff. The novel follows the diamond's history and the secrets behind its theft.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Moonstone"
+      ]
+    },
+    {
+      "id": "se-wilkie-collins-the-woman-in-white",
+      "title": "The Woman in White",
+      "author": "Wilkie Collins",
+      "language": "en",
+      "source": "Standard Ebooks",
+      "status": "prepared",
+      "summary": "Walter Hartright, a drawing teacher, meets a mysterious woman dressed in white on a lonely road and learns that she has escaped from an asylum. He later becomes involved with the family at Limmeridge House and discovers a conspiracy involving identity, inheritance and a dangerous secret. The novel is told through multiple narrators and documents.",
+      "license": "Public domain; edition contributions CC0 1.0",
+      "sources": [
+        "https://standardebooks.org/ebooks?query=The%20Woman%20in%20White"
+      ]
+    },
+    {
+      "id": "ws-vi-binh-ngo-dai-cao",
+      "title": "Bình Ngô đại cáo",
+      "author": "Nguyễn Trãi",
+      "language": "vi",
+      "source": "Wikisource tiếng Việt",
+      "status": "prepared",
+      "summary": "Bình Ngô đại cáo là áng văn chính luận Nguyễn Trãi viết thay lời Lê Lợi sau khi đánh thắng quân Minh. Tác phẩm nêu tư tưởng nhân nghĩa, kể lại tội ác của giặc và quá trình khởi nghĩa Lam Sơn. Phần cuối tuyên bố nền hòa bình và khẳng định chủ quyền, truyền thống văn hiến của Đại Việt.",
+      "license": "Phạm vi công cộng (Wikisource)",
+      "sources": [
+        "https://vi.wikisource.org/wiki/B%C3%ACnh_Ng%C3%B4_%C4%91%E1%BA%A1i_c%C3%A1o"
+      ]
+    },
+    {
+      "id": "ws-vi-chinh-phu-ngam",
+      "title": "Chinh phụ ngâm",
+      "author": "Đặng Trần Côn; Đoàn Thị Điểm",
+      "language": "vi",
+      "source": "Wikisource tiếng Việt",
+      "status": "prepared",
+      "summary": "Chinh phụ ngâm là khúc ngâm dài viết bằng chữ Hán, bản diễn Nôm nổi tiếng của Đoàn Thị Điểm. Tác phẩm thể hiện nỗi sầu của người vợ có chồng ra trận, từ lúc tiễn biệt đến những năm tháng cô đơn. Qua nỗi nhớ và cảnh chờ đợi, tác phẩm lên án chiến tranh phi nghĩa và khát vọng hạnh phúc lứa đôi.",
+      "license": "Phạm vi công cộng (Wikisource)",
+      "sources": [
+        "https://vi.wikisource.org/wiki/Chinh_ph%E1%BB%A5_ng%C3%A2m"
+      ]
+    },
+    {
+      "id": "ws-vi-cung-oan-ngam-khuc",
+      "title": "Cung oán ngâm khúc",
+      "author": "Nguyễn Gia Thiều",
+      "language": "vi",
+      "source": "Wikisource tiếng Việt",
+      "status": "prepared",
+      "summary": "Cung oán ngâm khúc là khúc ngâm viết bằng chữ Nôm của Nguyễn Gia Thiều. Tác phẩm mượn lời một cung nữ tài sắc bị thất sủng để nói về nỗi cô đơn, phai tàn và sự bất công trong chốn cung đình. Qua đó, tác giả gửi gắm nỗi xót xa cho thân phận con người và phê phán chế độ cung tần.",
+      "license": "Phạm vi công cộng (Wikisource)",
+      "sources": [
+        "https://vi.wikisource.org/wiki/Cung_o%C3%A1n_ng%C3%A2m_kh%C3%BAc_%28b%E1%BA%A3n_Edmond_Nordemann_1905%29"
+      ]
+    },
+    {
+      "id": "ws-vi-dai-nam-quoc-su-dien-ca",
+      "title": "Đại Nam Quốc sử Diễn ca",
+      "author": "Lê Ngô Cát; Phạm Đình Toái",
+      "language": "vi",
+      "source": "Wikisource tiếng Việt",
+      "status": "prepared",
+      "summary": "Đại Nam Quốc sử Diễn ca là bộ sử ca do Lê Ngô Cát soạn, Phạm Đình Toái nhuận sắc. Tác phẩm kể lịch sử Việt Nam từ thời Hồng Bàng đến đầu triều Nguyễn bằng thể lục bát. Nội dung khái quát các triều đại, nhân vật và sự kiện lớn, nhằm giáo dục lòng yêu nước và hiểu biết lịch sử.",
+      "license": "Phạm vi công cộng (Wikisource)",
+      "sources": [
+        "https://vi.wikisource.org/wiki/%C4%90%E1%BA%A1i_Nam_Qu%E1%BB%91c_s%E1%BB%AD_Di%E1%BB%85n_ca"
+      ]
+    },
+    {
+      "id": "ws-vi-dai-viet-su-ky",
+      "title": "Đại Việt sử ký toàn thư",
+      "author": "Ngô Sĩ Liên",
+      "language": "vi",
+      "source": "Wikisource tiếng Việt",
+      "status": "prepared",
+      "summary": "Đại Việt sử ký toàn thư là bộ chính sử lớn của Việt Nam, do Ngô Sĩ Liên và các sử gia triều Lê biên soạn. Tác phẩm ghi chép lịch sử Đại Việt từ thời dựng nước đến thế kỷ XV, theo thể biên niên. Đây là nguồn tư liệu quan trọng về các triều đại, chính trị, quân sự và văn hóa.",
+      "license": "Phạm vi công cộng (Wikisource)",
+      "sources": [
+        "https://vi.wikisource.org/wiki/%C4%90%E1%BA%A1i_Vi%E1%BB%87t_s%E1%BB%AD_k%C3%BD_to%C3%A0n_th%C6%B0"
+      ]
+    },
+    {
+      "id": "ws-vi-doi-cach-mang-phan-boi-chau",
+      "title": "Đời cách mạng Phan Bội Châu",
+      "author": "Phan Bội Châu",
+      "language": "vi",
+      "source": "Wikisource tiếng Việt",
+      "status": "prepared",
+      "summary": "Đời cách mạng Phan Bội Châu là hồi ký của nhà chí sĩ yêu nước Phan Bội Châu. Tác phẩm kể lại cuộc đời hoạt động cách mạng của ông, từ phong trào Duy Tân, Đông Du đến những năm tháng bị giam lỏng. Qua đó, người đọc hiểu thêm về lịch sử Việt Nam đầu thế kỷ XX và tinh thần yêu nước của một thế hệ.",
+      "license": "Phạm vi công cộng (Wikisource)",
+      "sources": [
+        "https://vi.wikisource.org/wiki/%C4%90%E1%BB%9Di_c%C3%A1ch_m%E1%BA%A1ng_Phan_B%E1%BB%99i_Ch%C3%A2u"
+      ]
+    },
+    {
+      "id": "ws-vi-hoang-le-nhat-thong-chi",
+      "title": "Hoàng Lê nhất thống chí",
+      "author": "Ngô gia văn phái",
+      "language": "vi",
+      "source": "Wikisource tiếng Việt",
+      "status": "prepared",
+      "summary": "Hoàng Lê nhất thống chí là tiểu thuyết lịch sử của nhóm Ngô gia văn phái. Tác phẩm ghi lại giai đoạn cuối triều Lê, sự nổi dậy của Tây Sơn và chiến thắng Ngọc Hồi – Đống Đa của vua Quang Trung. Tác phẩm khắc họa nhiều nhân vật lịch sử và phản ánh những biến động chính trị thời bấy giờ.",
+      "license": "Phạm vi công cộng (Wikisource)",
+      "sources": [
+        "https://vi.wikisource.org/wiki/Ho%C3%A0ng_L%C3%AA_nh%E1%BA%A5t_th%E1%BB%91ng_ch%C3%AD"
+      ]
+    },
+    {
+      "id": "ws-vi-kieu",
+      "title": "Truyện Kiều",
+      "author": "Nguyễn Du",
+      "language": "vi",
+      "source": "Wikisource tiếng Việt",
+      "status": "prepared",
+      "summary": "Truyện Kiều là truyện thơ Nôm bất hủ của Nguyễn Du, dựa trên tiểu thuyết Kim Vân Kiều truyện của Thanh Tâm Tài Nhân. Tác phẩm kể cuộc đời Thúy Kiều, một người con gái tài sắc phải bán mình cứu gia đình và chịu nhiều bất hạnh. Qua số phận Kiều, Nguyễn Du gửi gắm nỗi thương cảm cho con người và những trăn trở về tài, mệnh, tình yêu và công lý.",
+      "license": "Phạm vi công cộng (Wikisource)",
+      "sources": [
+        "https://vi.wikisource.org/wiki/Truy%E1%BB%87n%20Ki%E1%BB%81u"
+      ]
+    },
+    {
+      "id": "ws-vi-luc-van-tien",
+      "title": "Lục Vân Tiên",
+      "author": "Nguyễn Đình Chiểu",
+      "language": "vi",
+      "source": "Wikisource tiếng Việt",
+      "status": "prepared",
+      "summary": "Lục Vân Tiên là truyện thơ Nôm của Nguyễn Đình Chiểu, kể về chàng thư sinh Lục Vân Tiên. Trên đường về kinh thi, chàng đánh cướp cứu Kiều Nguyệt Nga rồi gặp nhiều thử thách, chia ly và hiểu lầm. Tác phẩm đề cao nghĩa khí, lòng trung hiếu và tinh thần nhân nghĩa của con người.",
+      "license": "Phạm vi công cộng (Wikisource)",
+      "sources": [
+        "https://vi.wikisource.org/wiki/L%E1%BB%A5c%20V%C3%A2n%20Ti%C3%AAn%20%28b%E1%BA%A3n%20Qu%E1%BB%91c%20ng%E1%BB%AF%202082%20c%C3%A2u%29"
+      ]
+    },
+    {
+      "id": "ws-vi-nam-hai-di-nhan",
+      "title": "Nam Hải dị nhân liệt truyện",
+      "author": "Phan Kế Bính",
+      "language": "vi",
+      "source": "Wikisource tiếng Việt",
+      "status": "prepared",
+      "summary": "Nam Hải dị nhân liệt truyện là tập truyện ký của Phan Kế Bính, ghi chép về những nhân vật kỳ lạ và truyền thuyết dân gian Việt Nam. Tác phẩm tập hợp các câu chuyện về người tài, chuyện lạ và những hiện tượng dị thường. Đây là tư liệu văn hóa dân gian quý, phản ánh tín ngưỡng và trí tưởng tượng của người Việt.",
+      "license": "Phạm vi công cộng (Wikisource)",
+      "sources": [
+        "https://vi.wikisource.org/wiki/Nam_H%E1%BA%A3i_d%E1%BB%8B_nh%C3%A2n_li%E1%BB%87t_truy%E1%BB%87n"
+      ]
+    },
+    {
+      "id": "ws-vi-ngu-tieu-y-thuat",
+      "title": "Ngư Tiều y thuật vấn đáp",
+      "author": "Nguyễn Đình Chiểu",
+      "language": "vi",
+      "source": "Wikisource tiếng Việt",
+      "status": "prepared",
+      "summary": "Ngư Tiều y thuật vấn đáp là tác phẩm của Nguyễn Đình Chiểu, viết dưới hình thức đối thoại giữa người đánh cá và người tiều phu. Nội dung bàn về y thuật, đạo làm người và cách chữa bệnh, chăm sóc sức khỏe. Tác phẩm thể hiện tấm lòng thương người và kiến thức y học của tác giả.",
+      "license": "Phạm vi công cộng (Wikisource)",
+      "sources": [
+        "https://vi.wikisource.org/wiki/Ng%C6%B0_Ti%E1%BB%81u_y_thu%E1%BA%ADt_v%E1%BA%A5n_%C4%91%C3%A1p"
+      ]
+    },
+    {
+      "id": "ws-vi-tho-ho-xuan-huong",
+      "title": "Thơ Hồ Xuân Hương",
+      "author": "Hồ Xuân Hương",
+      "language": "vi",
+      "source": "Wikisource tiếng Việt",
+      "status": "prepared",
+      "summary": "Thơ Hồ Xuân Hương là tập thơ của nữ sĩ Hồ Xuân Hương, nổi tiếng với những bài thơ Nôm độc đáo. Thơ bà thường mượn hình ảnh thiên nhiên, đồ vật và cảnh vật để nói về thân phận người phụ nữ, tình yêu và những bất công xã hội. Giọng thơ vừa trào phúng, vừa trữ tình, thể hiện khát vọng sống và bản lĩnh của người phụ nữ.",
+      "license": "Phạm vi công cộng (Wikisource)",
+      "sources": [
+        "https://vi.wikisource.org/wiki/Th%C6%A1_H%E1%BB%93_Xu%C3%A2n_H%C6%B0%C6%A1ng"
+      ]
+    },
+    {
+      "id": "ws-vi-tho-nguyen-khuyen",
+      "title": "Thơ Nguyễn Khuyến",
+      "author": "Nguyễn Khuyến",
+      "language": "vi",
+      "source": "Wikisource tiếng Việt",
+      "status": "prepared",
+      "summary": "Thơ Nguyễn Khuyến là tuyển tập thơ của nhà thơ trào phúng và trữ tình Nguyễn Khuyến. Thơ ông phản ánh cuộc sống nông thôn, cảnh nghèo và những thói hư tật xấu của xã hội phong kiến. Nhiều bài thơ như Thu điếu và Bạn đến chơi nhà thể hiện tình bạn, tình quê và tâm hồn thanh cao.",
+      "license": "Phạm vi công cộng (Wikisource)",
+      "sources": [
+        "https://vi.wikisource.org/wiki/Th%C6%A1_Nguy%E1%BB%85n_Khuy%E1%BA%BFn"
+      ]
+    },
+    {
+      "id": "ws-vi-tho-nguyen-trai",
+      "title": "Thơ Nguyễn Trãi",
+      "author": "Nguyễn Trãi",
+      "language": "vi",
+      "source": "Wikisource tiếng Việt",
+      "status": "prepared",
+      "summary": "Thơ Nguyễn Trãi là tuyển tập thơ chữ Hán và chữ Nôm của danh nhân Nguyễn Trãi. Thơ ông thể hiện tấm lòng yêu nước, thương dân, khát vọng hòa bình và triết lý sống thanh bạch. Tác phẩm cũng phản ánh vẻ đẹp thiên nhiên và tâm hồn của một nhà nho chân chính.",
+      "license": "Phạm vi công cộng (Wikisource)",
+      "sources": [
+        "https://vi.wikisource.org/wiki/Th%C6%A1_Nguy%E1%BB%85n_Tr%C3%A3i"
+      ]
+    },
+    {
+      "id": "ws-vi-tho-tan-da",
+      "title": "Thơ Tản Đà",
+      "author": "Tản Đà",
+      "language": "vi",
+      "source": "Wikisource tiếng Việt",
+      "status": "prepared",
+      "summary": "Thơ Tản Đà là tuyển tập thơ của nhà thơ lãng mạn Tản Đà. Thơ ông thể hiện cái tôi phóng khoáng, mộng mơ và nỗi buồn trước thời cuộc. Tản Đà nổi bật với những bài thơ mang phong cách độc đáo, kết hợp cổ điển và hiện đại.",
+      "license": "Phạm vi công cộng (Wikisource)",
+      "sources": [
+        "https://vi.wikisource.org/wiki/Th%C6%A1_T%E1%BA%A3n_%C4%90%C3%A0"
+      ]
+    },
+    {
+      "id": "ws-vi-tho-tran-te-xuong",
+      "title": "Thơ Trần Tế Xương",
+      "author": "Trần Tế Xương",
+      "language": "vi",
+      "source": "Wikisource tiếng Việt",
+      "status": "prepared",
+      "summary": "Thơ Trần Tế Xương là tuyển tập thơ của nhà thơ trào phúng Trần Tế Xương. Thơ ông châm biếm xã hội phong kiến, quan lại và những thói hư tật xấu, đồng thời thể hiện lòng yêu nước và thương dân. Giọng thơ vừa hóm hỉnh, vừa chua xót.",
+      "license": "Phạm vi công cộng (Wikisource)",
+      "sources": [
+        "https://vi.wikisource.org/wiki/Th%C6%A1_Tr%E1%BA%A7n_T%E1%BA%BF_X%C6%B0%C6%A1ng"
+      ]
+    },
+    {
+      "id": "ws-vi-tho-van-nguyen-dinh-chieu",
+      "title": "Thơ văn Nguyễn Đình Chiểu",
+      "author": "Nguyễn Đình Chiểu",
+      "language": "vi",
+      "source": "Wikisource tiếng Việt",
+      "status": "prepared",
+      "summary": "Thơ văn Nguyễn Đình Chiểu là tuyển tập các tác phẩm của nhà thơ yêu nước Nguyễn Đình Chiểu. Tác phẩm thể hiện lòng yêu nước, căm thù giặc và tinh thần bất khuất trước họa xâm lăng. Nhiều bài thơ, văn tế ca ngợi nghĩa sĩ và những con người trung nghĩa.",
+      "license": "Phạm vi công cộng (Wikisource)",
+      "sources": [
+        "https://vi.wikisource.org/wiki/Th%C6%A1_v%C4%83n_Nguy%E1%BB%85n_%C4%90%C3%ACnh_Chi%E1%BB%83u"
+      ]
+    },
+    {
+      "id": "ws-vi-thuong-kinh-ky-su",
+      "title": "Thượng kinh ký sự",
+      "author": "Lê Hữu Trác",
+      "language": "vi",
+      "source": "Wikisource tiếng Việt",
+      "status": "prepared",
+      "summary": "Thượng kinh ký sự là tập ký của danh y Lê Hữu Trác, ghi lại chuyến đi từ Hương Sơn ra kinh đô Thăng Long chữa bệnh cho chúa Trịnh. Tác phẩm mô tả sinh động cảnh quan, con người và sinh hoạt cung đình thế kỷ XVIII. Đây là tư liệu quý về y học, lịch sử và văn hóa Việt Nam.",
+      "license": "Phạm vi công cộng (Wikisource)",
+      "sources": [
+        "https://vi.wikisource.org/wiki/Th%C6%B0%E1%BB%A3ng_kinh_k%C3%BD_s%E1%BB%B1"
+      ]
+    },
+    {
+      "id": "ws-vi-truyen-ky-man-luc",
+      "title": "Truyền kỳ mạn lục",
+      "author": "Nguyễn Dữ",
+      "language": "vi",
+      "source": "Wikisource tiếng Việt",
+      "status": "prepared",
+      "summary": "Truyền kỳ mạn lục là tập truyện truyền kỳ của Nguyễn Dữ, gồm nhiều câu chuyện mang yếu tố kỳ ảo. Tác phẩm khai thác đề tài tình yêu, nhân nghĩa, số phận con người và những bất công xã hội. Qua các câu chuyện, tác giả gửi gắm tư tưởng nhân đạo và phê phán hiện thực.",
+      "license": "Phạm vi công cộng (Wikisource)",
+      "sources": [
+        "https://vi.wikisource.org/wiki/Truy%E1%BB%81n_k%E1%BB%B3_m%E1%BA%A1n_l%E1%BB%A5c"
+      ]
+    },
+    {
+      "id": "ws-vi-viet-nam-phong-tuc",
+      "title": "Việt Nam phong tục",
+      "author": "Phan Kế Bính",
+      "language": "vi",
+      "source": "Wikisource tiếng Việt",
+      "status": "prepared",
+      "summary": "Việt Nam phong tục là công trình khảo cứu của Phan Kế Bính về phong tục, tập quán Việt Nam. Tác phẩm ghi chép các phong tục trong gia đình, làng xã, lễ tết, hôn nhân, tang ma và tín ngưỡng. Đây là nguồn tư liệu quan trọng để hiểu văn hóa truyền thống của người Việt.",
+      "license": "Phạm vi công cộng (Wikisource)",
+      "sources": [
+        "https://vi.wikisource.org/wiki/Vi%E1%BB%87t_Nam_phong_t%E1%BB%A5c"
+      ]
+    },
+    {
+      "id": "ws-vi-viet-nam-su-luoc",
+      "title": "Việt Nam sử lược",
+      "author": "Trần Trọng Kim",
+      "language": "vi",
+      "source": "Wikisource tiếng Việt",
+      "status": "prepared",
+      "summary": "Việt Nam sử lược là bộ sử do Trần Trọng Kim biên soạn, tóm lược lịch sử Việt Nam từ thời dựng nước đến đầu thế kỷ XX. Tác phẩm trình bày các triều đại, sự kiện chính trị và nhân vật lịch sử một cách ngắn gọn, dễ hiểu. Đây là tài liệu tham khảo phổ biến cho người muốn tìm hiểu lịch sử Việt Nam.",
+      "license": "Phạm vi công cộng (Wikisource)",
+      "sources": [
+        "https://vi.wikisource.org/wiki/Vi%E1%BB%87t_Nam_s%E1%BB%AD_l%C6%B0%E1%BB%A3c"
+      ]
+    },
+    {
+      "id": "ws-vi-vu-trung-tuy-but",
+      "title": "Vũ trung tùy bút",
+      "author": "Phạm Đình Hổ",
+      "language": "vi",
+      "source": "Wikisource tiếng Việt",
+      "status": "prepared",
+      "summary": "Vũ trung tùy bút là tập tùy bút của Phạm Đình Hổ, ghi lại những quan sát và suy nghĩ về cuộc sống, phong tục và con người Việt Nam. Tác phẩm đề cập nhiều chủ đề như thi cử, quan trường, tín ngưỡng và sinh hoạt dân gian. Văn phong nhẹ nhàng, giàu chất liệu hiện thực.",
+      "license": "Phạm vi công cộng (Wikisource)",
+      "sources": [
+        "https://vi.wikisource.org/wiki/V%C5%A9_trung_t%C3%B9y_b%C3%BAt"
+      ]
+    }
+  ]
+}

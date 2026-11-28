@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Download, RefreshCw } from 'lucide-react'
 import { ApiError } from '../api'
 import type { Lang } from '../i18n'
-import { adminRequest, type AdminAnalytics as AnalyticsReport, type AdminAnalyticsDays } from './api'
+import { adminRequest, type AccountActivity, type AdminAnalytics as AnalyticsReport, type AdminAnalyticsDays } from './api'
 import { analyticsCsv } from './analyticsCsv'
 import { analyticsDuration } from './analyticsDuration'
 import { AdminAcquisition } from './AdminAcquisition'
@@ -34,6 +34,39 @@ function ReportPanel({ title, children }: { title: string; children: ReactNode }
   </section>
 }
 
+function combineAccountFeatures(recorded: AccountActivity['features'], demo: AccountActivity['features']) {
+  const totals = new Map<string, AccountActivity['features'][number]>()
+  for (const row of [...recorded, ...demo]) {
+    const previous = totals.get(row.type)
+    totals.set(row.type, {
+      type: row.type,
+      count: numeric(row.count) + numeric(previous?.count ?? 0),
+      accounts: numeric(row.accounts) + numeric(previous?.accounts ?? 0),
+      returningAccounts: numeric(row.returningAccounts) + numeric(previous?.returningAccounts ?? 0),
+    })
+  }
+  return [...totals.values()].sort((a, b) => b.count - a.count || a.type.localeCompare(b.type))
+}
+
+function AccountFeatures({ features, lang }: { features: AccountActivity['features']; lang: Lang }) {
+  const vi = lang === 'vi'
+  const number = (value: number) => numeric(value).toLocaleString(vi ? 'vi-VN' : 'en-US')
+  return <div className="admin-analytics-table-wrap">
+    <table className="admin-analytics-table">
+      <thead><tr>
+        <th scope="col">{vi ? 'Thao tác' : 'Action'}</th>
+        <th scope="col">{vi ? 'Số lần' : 'Count'}</th>
+        <th scope="col">{vi ? 'Tài khoản' : 'Accounts'}</th>
+        <th scope="col">{vi ? 'Quay lại' : 'Returning'}</th>
+      </tr></thead>
+      <tbody>{features.map(row => <tr key={row.type}>
+        <td>{featureLabels[row.type]?.[vi ? 0 : 1] || row.type}</td>
+        <td>{number(row.count)}</td><td>{number(row.accounts)}</td><td>{number(row.returningAccounts)}</td>
+      </tr>)}</tbody>
+    </table>
+  </div>
+}
+
 function downloadCsv(data: AnalyticsReport) {
   const url = URL.createObjectURL(new Blob([analyticsCsv(data)], { type: 'text/csv;charset=utf-8;' }))
   const anchor = document.createElement('a')
@@ -61,6 +94,10 @@ function AnalyticsDashboard({ token, lang, onError, onSignIn }: AdminAnalyticsPr
   const key = JSON.stringify([days, revision, lang])
   const loaded = resource?.key === key ? resource : null
   const data = loaded?.data
+  const accounts = data?.accounts
+  const simulated = data?.simulatedAccounts
+  const includesDemo = !!simulated?.activeAccounts
+  const accountFeatures = combineAccountFeatures(accounts?.features ?? [], simulated?.features ?? [])
   const loading = !loaded
   const refresh = () => setRevision(value => value + 1)
   const number = (value: number) => numeric(value).toLocaleString(lang === 'vi' ? 'vi-VN' : 'en-US')
@@ -127,11 +164,29 @@ function AnalyticsDashboard({ token, lang, onError, onSignIn }: AdminAnalyticsPr
         </ReportPanel>
         <ReportPanel title={text('Hoạt động tính năng', 'Feature activity')}>
           <p className="admin-analytics-method">{text('Số lần ghi nhận thao tác, không phải số người hay tỷ lệ hoàn thành. Bắt đầu thanh toán không có nghĩa là đã trả tiền.', 'Recorded actions, not people or completion rates. Starting checkout does not mean a payment was made.')}</p>
+          {!!simulated?.features.length && <p className="admin-analytics-method">{text('Tổng ở đây có cả thao tác demo.', 'These totals include demo actions.')}</p>}
           {featureEvents.length ? <div className="admin-analytics-table-wrap"><table className="admin-analytics-table"><thead><tr><th scope="col">{text('Thao tác', 'Action')}</th><th scope="col">{text('Số lần', 'Count')}</th></tr></thead><tbody>{featureEvents.map(event => <tr key={event.type}><td>{featureLabels[event.type][lang === 'vi' ? 0 : 1]}</td><td>{number(event.count)}</td></tr>)}</tbody></table></div> : <p>{text('Chưa ghi nhận thao tác tính năng.', 'No feature actions recorded yet.')}</p>}
         </ReportPanel>
       </div>
       {data.acquisition && <ReportPanel title={text('Nguồn truy cập, chiến dịch và thiết bị', 'Traffic sources, campaigns and devices')}>
         <AdminAcquisition data={data.acquisition} sessions={data.summary.sessions} lang={lang} />
+      </ReportPanel>}
+      {accounts && <ReportPanel title={text('Hoạt động tài khoản đã đăng ký', 'Registered account activity')}>
+        <p className="admin-analytics-method">{text('Tài khoản đăng nhập được đếm một lần trên các thiết bị. Tài khoản quay lại có hoạt động ít nhất hai ngày khác nhau trong kỳ theo giờ Việt Nam.', 'Signed-in accounts are counted once across devices. Returning accounts are active on at least two different days in this range (Vietnam time).')}
+          {includesDemo && ` ${text('Tổng hiển thị cộng thêm hồ sơ demo. Hồ sơ demo quay lại đã xuất hiện trước kỳ và có hoạt động trong kỳ.', 'Displayed totals include fictional demo profiles. Returning demo profiles were seen before this range and are active in it.')}`}</p>
+        <div className="admin-analytics-metrics">
+          {([
+            ['activeAccounts', text('Tài khoản hoạt động', 'Active accounts')],
+            ['returningAccounts', text('Tài khoản quay lại', 'Returning accounts')],
+            ['coreAccounts', text('Dùng tính năng cốt lõi', 'Core feature users')],
+          ] as const).map(([metric, label]) => <article className="admin-analytics-metric" key={metric}>
+            <h3>{label}</h3>
+            <strong>{number(numeric(accounts[metric]) + numeric(simulated?.[metric] ?? 0))}</strong>
+          </article>)}
+        </div>
+        {accountFeatures.length > 0 && <AccountFeatures features={accountFeatures} lang={lang} />}
+        <p className="admin-analytics-method">{accounts.startedAt == null ? text('Chưa có hoạt động tài khoản được ghi nhận.', 'No account activity has been recorded yet.') : <>{text('Bắt đầu ghi nhận tài khoản: ', 'Account collection started: ')}{stamp(accounts.startedAt)}.</>}
+          {includesDemo && ` ${text('Tệp CSV có số liệu theo từng nguồn.', 'The CSV lists figures by source.')}`}</p>
       </ReportPanel>}
       <ReportPanel title={text('Thông tin báo cáo', 'Report information')}>
         <p className="admin-analytics-method">{text('Khách truy cập là ước tính theo trình duyệt, không phải số người hay tài khoản duy nhất. Chỉ thống kê Web; không bao gồm ứng dụng Android. Lịch sử sự kiện được lưu khoảng 90 ngày.', 'Visitors are estimated browsers, not unique people or accounts. Web traffic only; the Android app is not included. Event history is retained for approximately 90 days.')}</p>

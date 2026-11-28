@@ -58,6 +58,30 @@ describe('payment dialog lifecycle', () => {
     expect(within(dialog).getByText(label)).toBeTruthy()
   })
 
+  it('displays all four prices and preserves the yearly choice through sign-in and checkout', async () => {
+    const onSignIn = vi.fn()
+    const { rerender } = render(<SePayCheckout session={null} entitlement={null} lang="vi" onSignIn={onSignIn} onPaid={vi.fn()} />)
+    expect(screen.getAllByRole('article')).toHaveLength(2)
+    expect(within(screen.getByRole('article', { name: 'Free' })).getByText('100 MB lưu trữ cloud')).toBeTruthy()
+    const terms = screen.getByRole('group', { name: 'Kỳ thanh toán Pro' })
+    const prices = [/29\.000/, /78\.300/, /139\.200/, /208\.800/]
+    expect(within(terms).getAllByRole('radio')).toHaveLength(prices.length)
+    for (const price of prices) expect(await within(terms).findByText(price)).toBeTruthy()
+    fireEvent.click(within(terms).getByRole('radio', { name: /1 năm/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Đăng nhập để nâng cấp' }))
+    expect(onSignIn).toHaveBeenCalledOnce()
+    expect(api.create).not.toHaveBeenCalled()
+    rerender(<SePayCheckout session={session} entitlement={null} lang="vi" onSignIn={onSignIn} onPaid={vi.fn()} />)
+    const pro = screen.getByRole('article', { name: 'Pro' })
+    expect(within(pro).getByText('2 GB lưu trữ cloud')).toBeTruthy()
+    expect(await within(pro).findByText(/208\.800/)).toBeTruthy()
+    expect(within(pro).getByText(/17\.400/)).toBeTruthy()
+    api.create.mockResolvedValue({ ...order('yearly-test'), planDays: 365, amount: 208800 })
+    const dialog = await openOrder()
+    expect(api.create).toHaveBeenLastCalledWith(session.token, 'YEARLY')
+    expect(within(dialog).getByText(/208\.800/)).toBeTruthy()
+  })
+
   it.each([null, { ...session, token: 'other-token', user: { ...session.user, id: 'other-account' } }])('clears the previous account payment dialog when the session changes to %j', async next => {
     const onPaid = vi.fn()
     const mounted = render(<SePayCheckout session={session} entitlement={null} lang="vi" onSignIn={vi.fn()} onPaid={onPaid} />)

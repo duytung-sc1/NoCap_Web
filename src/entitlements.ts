@@ -1,7 +1,7 @@
 import type { Entitlement } from './api'
 import type { Session } from './types'
 
-export type ProFeature = 'ADVANCED_READING_MEMORY' | 'KNOWLEDGE_EXPORT' | 'STEALTH_READING'
+export type ProFeature = 'ADVANCED_READING_MEMORY' | 'KNOWLEDGE_EXPORT' | 'STEALTH_READING' | 'SMART_SHELVES' | 'LIBRARY_CONTENT_SEARCH'
 export const freeFeatures = ['LOCAL_READING', 'NOTES', 'BOOKMARKS', 'HIGHLIGHTS', 'READING_MEMORY'] as const
 
 /** Matches Android: account-bound, active, unexpired and recently verified. */

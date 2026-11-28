@@ -1563,22 +1563,25 @@ describe('searching inside the open book', () => {
 })
 
 describe('Reading Memory PDF export', () => {
-  async function memory(pro: boolean) {
+  async function memory(pro: boolean, expiresAt = Date.now() + 86400000) {
     saveSession(session)
     window.history.replaceState(null, '', '/memory')
     fixtures.getFiles.mockResolvedValue([file('QA document')])
     const annotation: SyncRecord = { key: 'ACCOUNT:qa-user:highlights:note', profile: 'ACCOUNT:qa-user', kind: 'highlights', id: 'note', version: 1, deleted: false,
       payload: { book_id: 'QA document', text: 'Trích dẫn tiếng Việt', note: 'Ghi chú riêng', created_at: Date.now() } }
     fixtures.localRecords.mockResolvedValue([annotation])
-    if (pro) fixtures.entitlement.mockResolvedValue({ userId: session.user.id, plan: 'PRO', status: 'ACTIVE', updatedAt: Date.now(), expiresAt: Date.now() + 86400000 })
+    if (pro) fixtures.entitlement.mockResolvedValue({ userId: session.user.id, plan: 'PRO', status: 'ACTIVE', updatedAt: Date.now(), expiresAt })
     render(<App />)
-    return screen.findByRole('button', { name: 'Xuất PDF · Pro' })
+    await screen.findByText('Ghi chú riêng')
   }
 
-  it('replaces Markdown with PDF and prompts Free accounts without generating a document', async () => {
-    fireEvent.click(await memory(false))
-    expect(await screen.findByText(/Xuất trích dẫn, ghi chú và dấu trang thành tệp PDF cần gói Pro/)).toBeTruthy()
-    expect(screen.queryByRole('button', { name: /\.md|Markdown/ })).toBeNull()
+  it.each([false, true])('hides paid tools for Free and expired Pro accounts (previously Pro: %s)', async pro => {
+    await memory(pro, Date.now() - 60_000)
+    expect(screen.queryByRole('button', { name: 'Xuất PDF' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Tạo thẻ tự động' })).toBeNull()
+    expect(screen.queryByText('Xuất ghi chú theo sách hoặc chủ đề')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Thêm vào ôn tập' })).toBeTruthy()
+    expect(document.querySelector('.workspace-context-nav')).toBeNull()
     expect(fixtures.preparePdf).not.toHaveBeenCalled()
     expect(fixtures.saveDownload).not.toHaveBeenCalled()
   })
@@ -1586,7 +1589,9 @@ describe('Reading Memory PDF export', () => {
   it('downloads one actual PDF result for Pro and prevents repeated concurrent exports', async () => {
     const pending = deferred<{ filename: string; blob: Blob }>()
     fixtures.preparePdf.mockReturnValue(pending.promise)
-    const button = await memory(true)
+    await memory(true)
+    expect(await screen.findByText('Xuất ghi chú theo sách hoặc chủ đề')).toBeTruthy()
+    const button = screen.getByRole('button', { name: 'Xuất PDF' })
     fireEvent.click(button); fireEvent.click(button)
     await waitFor(() => expect(fixtures.preparePdf).toHaveBeenCalledTimes(1))
     expect(screen.getByRole('button', { name: 'Đang tạo PDF…' }).hasAttribute('disabled')).toBe(true)
@@ -1599,7 +1604,8 @@ describe('Reading Memory PDF export', () => {
   it('discards a generated private PDF when the user signs out in another tab', async () => {
     const pending = deferred<{ filename: string; blob: Blob }>()
     fixtures.preparePdf.mockReturnValue(pending.promise)
-    fireEvent.click(await memory(true))
+    await memory(true)
+    fireEvent.click(await screen.findByRole('button', { name: 'Xuất PDF' }))
     await waitFor(() => expect(fixtures.preparePdf).toHaveBeenCalledTimes(1))
     saveSession(null)
     fireEvent(window, new StorageEvent('storage', { key: SESSION_STORAGE_KEY, storageArea: localStorage }))
@@ -1610,9 +1616,10 @@ describe('Reading Memory PDF export', () => {
 
   it('releases the export button after a generation error and allows retry', async () => {
     fixtures.preparePdf.mockRejectedValueOnce(new Error('Font unavailable'))
-    fireEvent.click(await memory(true))
+    await memory(true)
+    fireEvent.click(await screen.findByRole('button', { name: 'Xuất PDF' }))
     expect(await screen.findByText('Không xuất được PDF. Vui lòng thử lại.')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Xuất PDF · Pro' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Xuất PDF' }))
     await waitFor(() => expect(fixtures.saveDownload).toHaveBeenCalledTimes(1))
   })
 })

@@ -8,3 +8,9 @@
 .studio-focus .studio-work-heading{margin-bottom:18px}
 .studio-focus .studio-prose{min-height:50dvh}
 .studio-work-title{max-width:100%}
+.studio-writing-layout:not([hidden]) { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
+.studio-tools-rail { min-width: 0; }
+.studio-tools-rail > .workspace-tools:first-child { margin-top: 0; }
+@media (min-width: 1440px) {
+  .studio-writing-layout:not([hidden]) { grid-template-columns: minmax(0, 1fr) minmax(240px, 28%); align-items: start; }
+}

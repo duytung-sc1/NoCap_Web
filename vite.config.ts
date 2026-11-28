@@ -54,14 +54,13 @@ function localCatalogBooks(): Plugin {
 export default defineConfig({
   plugins: [react(), localCatalogBooks(), localHttpsImport(), pdfResources(), seoExplore(), VitePWA({
     registerType: 'autoUpdate',
-    includeAssets: ['nocap.svg', 'nocap-192.png', 'nocap-512.png'],
+    includeAssets: ['brand/nocap-favicon.ico', 'brand/nocap-favicon-32.png', 'brand/nocap-touch-180.png', 'brand/nocap-logo-192.png', 'brand/nocap-logo-512.png'],
     manifest: {
       name: 'NoCap — Không gian đọc', short_name: 'NoCap', description: 'Đọc và lưu giữ kiến thức, kể cả khi không có mạng.',
       start_url: '/', scope: '/', display: 'standalone', background_color: '#fdfcf8', theme_color: '#fdfcf8',
       icons: [
-        { src: '/nocap-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-        { src: '/nocap-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-        { src: '/nocap.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
+        { src: '/brand/nocap-logo-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+        { src: '/brand/nocap-logo-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
       ],
     },
     workbox: {

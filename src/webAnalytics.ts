@@ -113,6 +113,7 @@ export function createWebAnalytics(options: Options = {}) {
       batch = { visitorId: visitorId!, sessionId: currentSession!.id, context: currentSession!.context, events: [] }; queue.push(batch)
     }
     batch.events.push({ id: crypto.randomUUID(), type, page: target, activeMs: Math.max(0, Math.min(TICK_MS, Math.floor(activeMs))) })
+    if (type !== 'heartbeat') window.dispatchEvent(new CustomEvent('nocap-usage-action', { detail: type === 'page_view' ? 'visit' : type }))
     // Do not persist a telemetry queue or allow an unbounded backlog.
     while (queue.reduce((sum, item) => sum + item.events.length, 0) > 100) queue.shift()
   }

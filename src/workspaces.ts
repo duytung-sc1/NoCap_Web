@@ -6,7 +6,7 @@ export const workspaceGroups: {id: Workspace | 'account'; vi: string; en: string
   {id:'public',vi:'Khám phá',en:'Public space',pages:['home','catalog']},
   {id:'reader',vi:'Không gian đọc',en:'Reader space',pages:['library','memory','stats']},
   {id:'author',vi:'Author Studio',en:'Author Studio',pages:['author']},
-  {id:'account',vi:'Tài khoản & quản trị',en:'Account & administration',pages:['account','admin']},
+  {id:'account',vi:'Tài khoản & quản trị',en:'Account & administration',pages:['pricing','account','admin']},
 ]
 export function workspaceForPage(page: Page | 'notFound'): Workspace | null {
   if (page === 'libraryMap') return 'reader'

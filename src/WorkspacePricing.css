@@ -1,0 +1,96 @@
+.workspace-pricing {
+  max-width: 1150px;
+  margin-inline: auto;
+  color: var(--site-text);
+  container-type: inline-size;
+}
+
+.pricing-heading { margin-bottom: 24px; }
+.pricing-heading h1 { margin: 0; font-size: clamp(29px, 4vw, 43px); line-height: 1.2; }
+.pricing-heading p { margin: 9px 0 0; color: var(--site-muted); }
+
+.pricing-billing { margin: 0 0 22px; padding: 0; border: 0; min-width: 0; }
+.pricing-billing legend { margin-bottom: 9px; padding: 0; font-weight: 700; }
+.pricing-terms { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.pricing-term {
+  display: flex;
+  align-items: start;
+  gap: 8px;
+  min-height: 44px;
+  padding: 12px;
+  border: 1px solid var(--site-line);
+  border-radius: 10px;
+  background: var(--site-panel);
+  cursor: pointer;
+  font-size: 13px;
+}
+.pricing-term:has(input:checked) { border-color: var(--site-accent); background: var(--site-tint); }
+.pricing-term:has(input:disabled) { cursor: default; }
+.pricing-term input { margin: 3px 0 0; }
+.pricing-term-details { display: grid; justify-items: start; gap: 4px; min-width: 0; }
+.pricing-term-details > small:not(.pricing-badge) { color: var(--site-muted); }
+.pricing-term-price { font-size: 16px; font-weight: 750; }
+
+.pricing-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.pricing-card {
+  display: flex;
+  flex-direction: column;
+  padding: clamp(16px, 2vw, 26px);
+  border: 1px solid var(--site-line);
+  border-radius: 16px;
+  background: var(--site-panel);
+}
+.pricing-card-pro { border-color: var(--site-accent); }
+.pricing-card-title { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 5px 8px; }
+.pricing-card-title h2 { margin: 0; font-size: 22px; }
+.pricing-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 20px;
+  background: var(--site-tint);
+  color: var(--site-text);
+  font-size: 11px;
+  line-height: 1.4;
+  font-weight: 700;
+}
+.pricing-amount { margin: 14px 0 0; font-size: clamp(22px, 3vw, 34px); font-weight: 750; line-height: 1.2; overflow-wrap: anywhere; }
+.pricing-amount strong { font-weight: inherit; }
+.pricing-amount span { display: block; margin-top: 4px; font-size: 12px; font-weight: 500; color: var(--site-muted); }
+.pricing-amount-pending { font-size: clamp(18px, 2vw, 22px); }
+.pricing-equivalent, .pricing-description, .pricing-payment-note { color: var(--site-muted); font-size: 13px; line-height: 1.55; }
+.pricing-equivalent { margin: 7px 0 0; }
+.pricing-description { margin: 10px 0 0; }
+.pricing-benefits { display: grid; gap: 2px; margin: 18px 0 0; padding: 12px 0 0; border-top: 1px solid var(--site-line); list-style: none; }
+.pricing-benefits > li { min-width: 0; font-size: 13px; line-height: 1.5; }
+.pricing-benefits summary, .pricing-inherited {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+.pricing-benefits svg { flex: none; color: var(--site-accent); }
+.pricing-inherited { margin-bottom: 2px; background: var(--site-tint); }
+.pricing-benefits summary {
+  list-style: none;
+  cursor: pointer;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.pricing-benefits summary::-webkit-details-marker { display: none; }
+.pricing-benefits summary:hover, .pricing-benefits details[open] summary { background: var(--site-tint); }
+.pricing-benefits summary:focus-visible { outline: 2px solid var(--site-accent); outline-offset: -2px; }
+.pricing-benefits .pricing-benefit-info { color: var(--site-muted); }
+.pricing-benefits p, .pricing-benefit-notes { margin: 3px 8px 10px 33px; color: var(--site-muted); overflow-wrap: anywhere; }
+.pricing-benefit-notes { padding-inline-start: 16px; }
+.pricing-card-action { margin-top: auto; padding-top: 18px; }
+.pricing-card-action button { width: 100%; white-space: normal; }
+.pricing-card-action p { margin: 0 0 8px; font-size: 13px; }
+.pricing-card-action .secondary + .primary { margin-top: 8px; }
+.pricing-payment-note { margin: 14px 0 0; }
+
+@container (max-width: 720px) {
+  .pricing-grid { grid-template-columns: 1fr; }
+  .pricing-terms { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

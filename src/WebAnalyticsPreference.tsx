@@ -16,8 +16,8 @@ export function WebAnalyticsPreference({ lang }: { lang: Lang }) {
       onChange={event => { const next = !event.target.checked; setOptedOut(next); setAnalyticsOptOut(next) }} />
       <span>{lang === 'vi' ? 'Cho phép thống kê sử dụng trên trình duyệt này' : 'Allow usage statistics in this browser'}</span></label>
     <p className="muted">{lang === 'vi'
-      ? 'Gửi loại trang, lượt dùng tính năng, thời gian tương tác, tên miền nguồn truy cập, nhãn chiến dịch UTM đã chuẩn hóa và nhóm thiết bị cùng mã ngẫu nhiên. Không gửi URL đầy đủ, email, tên sách, từ khóa tìm kiếm, nội dung ghi chú hoặc chuỗi user-agent. Không liên kết với tài khoản.'
-      : 'Sends page categories, feature counts, active time, referrer hostname, normalized UTM campaign labels and device group with random identifiers. Does not send full URLs, email, book titles, search terms, note content or user-agent strings. Not linked to your account.'}</p>
+      ? 'Gửi loại trang, lượt dùng tính năng, thời gian tương tác, tên miền nguồn truy cập, nhãn chiến dịch UTM và nhóm thiết bị cùng mã ngẫu nhiên. Khi đăng nhập, hệ thống thống kê riêng lượt dùng tính năng theo mã tài khoản đã băm để đếm tài khoản hoạt động và quay lại; không ghép với mã trình duyệt. Không gửi URL đầy đủ, email, tên sách, từ khóa tìm kiếm, nội dung ghi chú hoặc chuỗi user-agent.'
+      : 'Sends page categories, feature counts, active time, referrer hostname, UTM labels and device group with random identifiers. When signed in, feature usage is counted separately using a hashed account identifier to measure active and returning accounts, without matching browser identifiers. Does not send full URLs, email, book titles, search terms, note content or user-agent strings.'}</p>
     {privacySignal && <p className="muted">{lang === 'vi' ? 'Đã tắt theo tín hiệu quyền riêng tư của trình duyệt (DNT/GPC).' : 'Disabled by your browser privacy signal (DNT/GPC).'}</p>}
   </section>
 }

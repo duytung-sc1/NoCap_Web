@@ -201,9 +201,14 @@
 .book-badge.format{background:#f1f5f9;color:#475569}
 .book-badge.progress{background:#e0f2fe;color:#0369a1}
 .book-details-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:auto}
-.book-details-desc{border-top:1px solid #e7ecea;padding-top:20px}
-.book-details-desc h3{font-family:var(--font-ui);font-size:16px;color:#1c2940;margin:0 0 10px}
-.book-details-desc p{font-size:14px;line-height:1.7;color:#4b5c6d;white-space:pre-line;margin:0}
+.book-details-summary{margin:0 0 18px}
+.book-details-summary h3,.book-details-meta h3{font-family:var(--font-ui);font-size:16px;color:#1c2940;margin:0 0 10px}
+.book-details-summary p{font-size:14px;line-height:1.7;color:#4b5c6d;white-space:pre-line;margin:0}
+.book-details-meta{border-top:1px solid #e7ecea;padding-top:20px}
+.book-details-meta-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 18px;margin:0}
+.book-details-meta-list div{min-width:0}
+.book-details-meta-list dt{font-size:12px;font-weight:600;color:#64748b;margin-bottom:2px}
+.book-details-meta-list dd{font-size:13.5px;color:#334155;margin:0;overflow-wrap:anywhere}
 .image-host{width:100%;height:100%;overflow:auto;display:grid;place-items:center;padding:24px;background:#f3f5f7}
 .image-host img{display:block;max-width:100%;max-height:100%;object-fit:contain;box-shadow:0 10px 30px #0002}
 .image-host.sepia{background:#f3e9d3}.image-host.night{background:#111b2b}
@@ -212,6 +217,9 @@
   .book-details-cover{width:120px;height:175px}
   .book-details-badges{justify-content:center}
   .book-details-actions{justify-content:center}
+  .book-details-summary{text-align:left}
+  .book-details-meta{text-align:left}
+  .book-details-meta-list{grid-template-columns:1fr}
 }
 
 /* ==========================================================================

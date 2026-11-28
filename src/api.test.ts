@@ -59,14 +59,13 @@ describe('SePay checkout API', () => {
       .mockResolvedValueOnce(Response.json({ id: 'annual-order', amount: yearly.amount, planDays: 365 }))
     vi.stubGlobal('fetch', fetchMock)
     try {
-      expect((await getSePayPlans('test-token')).plans[0]).toEqual(yearly)
+      expect((await getSePayPlans()).plans[0]).toEqual(yearly)
       expect(fetchMock.mock.calls[0][0]).toBe(`${API_BASE}/api/v1/billing/sepay/plans`)
       expect((await createSePayOrder('test-token', 'YEARLY')).amount).toBe(352800)
       expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ plan: 'YEARLY' })
-      for (const [, options] of fetchMock.mock.calls) {
-        expect(options.cache).toBe('no-store')
-        expect(new Headers(options.headers).get('Authorization')).toBe('Bearer test-token')
-      }
+      for (const [, options] of fetchMock.mock.calls) expect(options.cache).toBe('no-store')
+      expect(new Headers(fetchMock.mock.calls[0][1].headers).has('Authorization')).toBe(false)
+      expect(new Headers(fetchMock.mock.calls[1][1].headers).get('Authorization')).toBe('Bearer test-token')
     } finally { vi.unstubAllGlobals() }
   })
   it('lets the backend set payment amount and bank details, with authenticated uncached requests', async () => {

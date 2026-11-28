@@ -7,7 +7,7 @@ import { ApiError, deleteAccount, forgotPassword, getCatalog, getEntitlement, ge
 import SystemAnnouncements from './SystemAnnouncements'
 import type { StealthPosition } from './stealth/StealthReader'
 import { clearStealthCheckpoint, readStealthCheckpoint, stealthLocator, type StealthCheckpoint } from './stealth/checkpoint'
-import { getCachedCatalog, getFile, getFiles, getOfflineBook, getOfflineBooks, getPending, keyFor, readSession, removeFile, removeLocalDocument, removeOfflineBook, resetPublicLibraryBook, saveCachedCatalog, saveSession, SESSION_STORAGE_KEY } from './store'
+import { applyLocalMutations, getCachedCatalog, getFile, getFiles, getOfflineBook, getOfflineBooks, getPending, keyFor, readSession, removeFile, removeLocalDocument, removeOfflineBook, resetPublicLibraryBook, saveCachedCatalog, saveSession, SESSION_STORAGE_KEY, type LocalMutation } from './store'
 import { androidCompositeRecordId, androidRecordId, broadcastSyncRequired, canKeepLocalConflict, connectLiveSync, getConflicts, getDeviceId, localRecords, mutate, profileFor, readableError, resolveConflict, syncNow } from './sync'
 import { prepareBookDownload, saveBookDownload } from './bookDownload'
 import { currentLocalFile, mergeBooksById } from './library'
@@ -29,7 +29,7 @@ import './ReadingWorkspace.css'
 import { CompactNavigation, MobileNavigation } from './ResponsiveNavigation'
 import './WorkspaceNavigation.css'
 import { useWorkspaceSidebar } from './useWorkspaceSidebar'
-import { workspaceGroups } from './workspaces'
+import { workspaceForPage, workspaceGroups } from './workspaces'
 import { ExploreToolbar } from './ExploreToolbar'
 import { BookCard } from './BookCard'
 import { ReadingRecommendations } from './ReadingGenreRecommendations'
@@ -50,6 +50,7 @@ import { UserAvatar } from './UserAvatar'
 import { useAdminAccess } from './admin/useAdminAccess'
 import { AnnotationEditor, AnnotationDeleteDialog } from './AnnotationDialogs'
 import { ProRequiredDialog } from './ProRequiredDialog'
+import { SePayCheckout } from './SePayCheckout'
 import { addAnnotationReview, annotationId, deleteAnnotation, updateAnnotation, type AnnotationChanges } from './annotations'
 import { buildReviewQueue, reconcileReviewSession, recordReviewAttempt, type ReviewRating, type ReviewScope, type ReviewSessionState } from './reviewSession'
 import { hasDrawing, parseDrawing, type Drawing } from './drawing'
@@ -69,13 +70,21 @@ import { ComparisonSourcesDialog } from './ComparisonSourcesDialog'
 import { ReaderErrorBoundary } from './ReaderErrorBoundary'
 import { ReaderNotesPanel } from './ReaderNotesPanel'
 import { ReaderSearchPanel } from './ReaderSearchPanel'
-import { Volume2 } from 'lucide-react'
+import { Languages, Volume2 } from 'lucide-react'
 import { ReaderSpeechPanel } from './ReaderSpeechPanel'
 import { ReaderAiPanel } from './ReaderAiPanel'
+import { MemoryAiPanel } from './MemoryAiPanel'
+import { NoteExportPanel } from './NoteExportPanel'
+import { SmartShelves } from './SmartShelves'
+import { LibraryContentSearch } from './LibraryContentSearch'
+import { prepareScopedNoteExport, scopedExportNotes, type NoteExportScope } from './noteExport'
+import { memoryOptions, memorySource, type MemoryOrganization, type MemorySource } from './memoryAi'
+import { ReaderTranslationPanel } from './ReaderTranslationPanel'
 import { speechScopeKey, type ReaderSpeechSource } from './readerSpeech'
 import { findTextMatches, type ReaderSearchHit, type ReaderSearchSource } from './readerSearch'
 import { detectReaderFormat } from './readerFormat'
 import { useWebAnalytics } from './useWebAnalytics'
+import { useAccountAnalytics } from './useAccountAnalytics'
 import { trackWebFeature } from './webAnalytics'
 type ShelfFilter = 'all' | 'reading' | 'favorites' | 'completed' | 'local'
 type AuthMode = 'login' | 'register' | 'forgot'
@@ -178,6 +187,8 @@ function App() {
   const sessionToken = session?.token
   const { access: adminAccess, reload: reloadAdminAccess, invalidate: invalidateAdminAccess } = useAdminAccess(sessionToken, session?.user.id)
   const isAdmin = adminAccess?.status === 'allowed'
+  const canUseReadingAi = !!session?.user.emailVerified
+  useAccountAnalytics(sessionToken, page !== 'admin' && page !== 'author' && !isAdmin)
   const profile = profileFor(session)
   const [catalog, setCatalog] = useState<Book[]>([])
   const [categories, setCategories] = useState<Category[]>([])
@@ -245,19 +256,35 @@ function App() {
   const [readerSearchSource, setReaderSearchSource] = useState<ReaderSearchSource | null>(null)
   const [activeSearchHit, setActiveSearchHit] = useState<ReaderSearchHit | null>(null)
   const searchToggle = useRef<HTMLButtonElement>(null)
-  const [aiOpen, setAiOpen] = useState(false)
+  const [readerTool, setReaderTool] = useState<'ai' | 'translation' | null>(null)
+  const aiOpen = readerTool === 'ai'
+  const translationOpen = readerTool === 'translation'
   const aiToggle = useRef<HTMLButtonElement>(null)
+  const translationToggle = useRef<HTMLButtonElement>(null)
+  const closeReaderTool = useCallback(() => {
+    setReaderTool(null)
+    const toggle = readerTool === 'translation' ? translationToggle : aiToggle
+    const target = toggle.current || document.querySelector<HTMLButtonElement>('.reader-toolbar-more-button')
+    target?.focus()
+  }, [readerTool])
   const [speechOpen, setSpeechOpen] = useState(false)
-  const speechVisible = speechOpen && !noteOpen && !searchOpen && !aiOpen
+  const speechVisible = speechOpen && !noteOpen && !searchOpen && !readerTool
   const [readerSpeechSource, setReaderSpeechSource] = useState<ReaderSpeechSource | null>(null)
   const speechToggle = useRef<HTMLButtonElement>(null)
   const onReaderSpeechReady = useCallback((source: ReaderSpeechSource | null) => setReaderSpeechSource(() => source), [])
   const onReaderSearchReady = useCallback((source: ReaderSearchSource | null) => setReaderSearchSource(() => source), [])
   const openReaderSearch = useCallback(() => {
-    setAiOpen(false)
+    setReaderTool(null)
     setNoteOpen(false); setSearchOpen(true); setTocOpen(false); setSettingsOpen(false)
     requestAnimationFrame(() => document.querySelector<HTMLInputElement>('#reader-search-panel input[type="search"]')?.focus())
   }, [])
+  function toggleReaderTool(tool: 'ai' | 'translation') {
+    setReaderTool(current => current === tool ? null : tool)
+    setSpeechOpen(false)
+    setNoteOpen(false)
+    setSearchOpen(false)
+    setActiveSearchHit(null)
+  }
   const [bookmarkSaving, setBookmarkSaving] = useState<string | null>(null)
   const bookmarkFlights = useRef(new Set<string>())
   const favoriteFlights = useRef(new Set<string>())
@@ -285,11 +312,13 @@ function App() {
   const [reviewBusy, setReviewBusy] = useState(false)
   const [reviewStats, setReviewStats] = useState({ mastered: 0, reviewAgain: 0, skipped: 0 })
   const [entitlement, setEntitlement] = useState<Entitlement | null>(null)
+  const showProTools = allowsPro(entitlement, session)
+  const proToolsExpiry = showProTools && entitlement && session ? proAccessExpiresAt(entitlement, session) : null
   const [accountSection, setAccountSection] = useState<AccountSettingsSection>('profile')
   const [controls, setControls] = useState<{ previous: () => void; next: () => void } | null>(null)
   const [selectedBook, setSelectedBook] = useState<Book | null>(null)
   const [stealthGrant, setStealthGrant] = useState<{ token: string; bookId: string; checkpoint?: StealthCheckpoint | null } | null>(null)
-  const stealthActive = !!stealthGrant && stealthGrant.token === session?.token && stealthGrant.bookId === reader?.book.id && allowsPro(entitlement, session)
+  const stealthActive = !!stealthGrant && stealthGrant.token === session?.token && stealthGrant.bookId === reader?.book.id && showProTools
   const stealthActiveRef = useRef(stealthActive)
   stealthActiveRef.current = stealthActive
   const [stealthProgressRequest, setStealthProgressRequest] = useState<{ progression: number; requestId: number; href?: string } | null>(null)
@@ -301,6 +330,8 @@ function App() {
   const [conflicts, setConflicts] = useState<PendingOperation[]>([])
   const [conflictModalOpen, setConflictModalOpen] = useState(false)
   const [tagsCollectionsOpen, setTagsCollectionsOpen] = useState(false)
+  const [memoryAi, setMemoryAi] = useState<{ noteKey?: string } | null>(null)
+  const memoryAiTrigger = useRef<HTMLButtonElement | null>(null)
   const [tagTab, setTagTab] = useState<'tags' | 'collections'>('tags')
   const [newTagName, setNewTagName] = useState('')
   const [newCollectionName, setNewCollectionName] = useState('')
@@ -500,7 +531,7 @@ function App() {
         openReaderSearch()
         return
       }
-      if (e.key === 'F2') {
+      if (e.key === 'F2' && showProTools) {
         if (reader) {
           e.preventDefault()
           if (!e.repeat && !proRequiredFeature) void launchStealthRef.current()
@@ -515,7 +546,7 @@ function App() {
         if (settingsOpen) { setSettingsOpen(false); return }
         if (searchOpen) { e.preventDefault(); setSearchOpen(false); setActiveSearchHit(null); searchToggle.current?.focus(); return }
         if (noteOpen) { e.preventDefault(); setNoteOpen(false); notesToggle.current?.focus(); return }
-        if (aiOpen) { e.preventDefault(); setAiOpen(false); (aiToggle.current || document.querySelector<HTMLButtonElement>('.reader-toolbar-more-button'))?.focus(); return }
+        if (readerTool) { e.preventDefault(); closeReaderTool(); return }
         if (speechOpen) { e.preventDefault(); setSpeechOpen(false); (speechToggle.current || document.querySelector<HTMLButtonElement>('.reader-toolbar-more-button'))?.focus(); return }
         if (reviewOpen) { setReviewOpen(false); return }
         if (authOpen) { setAuthOpen(false); return }
@@ -528,7 +559,13 @@ function App() {
     }
     window.addEventListener('keydown', onGlobalKey)
     return () => window.removeEventListener('keydown', onGlobalKey)
-  }, [comparison, comparisonChoosing, reader, tocOpen, settingsOpen, noteOpen, searchOpen, speechOpen, aiOpen, reviewOpen, authOpen, selectedBook, stealthActive, returnToOrigin, closeBookDetails, editingAnnotation, deletingAnnotation, annotationBusy, proRequiredFeature, openReaderSearch])
+  }, [comparison, comparisonChoosing, reader, tocOpen, settingsOpen, noteOpen, searchOpen, speechOpen, readerTool, closeReaderTool, reviewOpen, authOpen, selectedBook, stealthActive, showProTools, returnToOrigin, closeBookDetails, editingAnnotation, deletingAnnotation, annotationBusy, proRequiredFeature, openReaderSearch])
+
+  useEffect(() => {
+    if (proToolsExpiry === null) return
+    const timer = window.setTimeout(() => setStatsNow(ms()), Math.max(1, proToolsExpiry - ms() + 1))
+    return () => window.clearTimeout(timer)
+  }, [proToolsExpiry])
 
   useEffect(() => {
     const updateDay = () => setStatsNow(ms())
@@ -546,6 +583,7 @@ function App() {
     importFlight.current = null
     pendingNativeImport.current = null
     setTagsCollectionsOpen(false); setNewTagName(''); setNewCollectionName('')
+    setMemoryAi(null)
     setOrganizationFilter('all')
     setStealthGrant(null)
     reviewRun.current++
@@ -630,7 +668,7 @@ function App() {
       try {
         do {
           syncNeedsRerun.current = false
-          await syncNow(activeSession)
+          const result = await syncNow(activeSession)
           if (profileRef.current !== targetProfile || sessionRef.current?.token !== activeSession.token) return
           lastSyncAt.current = Date.now()
           await refreshLocal(profileFor(activeSession))
@@ -639,6 +677,8 @@ function App() {
             setConflicts(currentConflicts)
             if (currentConflicts.length) {
               setNotice((lang === 'vi' ? `${currentConflicts.length} xung đột đồng bộ cần giải quyết.` : `${currentConflicts.length} sync conflicts need your attention.`))
+            } else if (result?.storageBlocked) {
+              setNotice(lang === 'vi' ? 'Kho cloud đã đạt hạn mức. Tệp chưa tải lên vẫn đọc được trên thiết bị này.' : 'Cloud storage is full. Files that have not uploaded are still readable on this device.')
             } else if (!silent && !syncNeedsRerun.current) {
               setNotice(translate("Đã đồng bộ với tài khoản của bạn.", lang))
             }
@@ -992,7 +1032,25 @@ function App() {
     })
   }, [page, libraryBooks, catalog, category, query, sortOrder, records, shelfFilter, favorites, organizationFilter])
   const annotations = useMemo(() => records.filter(r => !r.deleted && (r.kind === 'highlights' || r.kind === 'bookmarks')).sort((a, b) => Number(b.payload.created_at || 0) - Number(a.payload.created_at || 0)), [records])
+  const canUseMemoryAi = canUseReadingAi && loadedProfile === profile
+  const organizeNote = canUseMemoryAi && memoryAi?.noteKey ? annotations.find(record => record.key === memoryAi.noteKey) : undefined
+  const organizeSource = organizeNote ? memorySource(organizeNote, books.find(book => book.id === organizeNote.payload.book_id), profile) : null
+  const organizeOptions = organizeSource ? {
+    tags: memoryOptions(tags, bookTags.get(organizeSource.book.id), 24),
+    collections: memoryOptions(collections, bookCollections.get(organizeSource.book.id), 16),
+  } : null
   const filteredAnnotations = useMemo(() => annotations.filter(record => !query.trim() || findTextMatches(`${record.payload.text || ''} ${record.payload.note || ''} ${record.payload.chapter_title || ''}`, query, 1).length > 0), [annotations, query])
+  const authorSources = useMemo(() => {
+    if (page !== 'author' || loadedProfile !== profile) return []
+    const byId = new Map(books.map(book => [book.id, book]))
+    return annotations.flatMap(record => {
+      if (record.profile !== profile) return []
+      const excerpt = (toText(record.payload.note).trim() || toText(record.payload.text).trim() || toText(record.payload.snippet).trim()).slice(0, 420)
+      if (!excerpt) return []
+      const book = byId.get(toText(record.payload.book_id))
+      return [{ id: `${record.kind}:${record.id}`, title: book?.title || curT.memoryPage.privateDoc, excerpt, available: !!book && !!toText(record.payload.locator_json).trim() }]
+    })
+  }, [page, loadedProfile, profile, annotations, books, curT.memoryPage.privateDoc])
   const readerAnnotations = useMemo(() => {
     if (!reader) return []
     const saved = records.filter(record => record.kind === 'highlights' && !record.deleted && record.payload.book_id === reader.book.id).map(record => ({
@@ -1032,7 +1090,7 @@ function App() {
         ? (lang === 'vi' ? 'Đã tạo tài khoản. Mở email xác minh; kiểm tra cả thư rác.' : 'Account created. Open the verification email; check Spam too.')
         : (lang === 'vi' ? 'Đã tạo tài khoản nhưng chưa gửi được thư xác minh. Kiểm tra email và thử gửi lại bên dưới.' : 'Account created, but the verification email could not be sent. Check your address and try again below.'))
     } else {
-      if (route.kind !== 'book' && route.kind !== 'read' && !(route.kind === 'page' && route.page === 'admin')) setPage('home')
+      if (route.kind !== 'book' && route.kind !== 'read' && !(route.kind === 'page' && (route.page === 'admin' || route.page === 'pricing'))) setPage('home')
       setNotice(curT.auth.signedIn(value.user.email))
     }
   }
@@ -1192,11 +1250,11 @@ function App() {
   }
 
   function libraryBookCard(book: Book) {
-    return <BookCard key={book.id} book={book} lang={lang} progress={Number(progressFor(records, book.id)?.payload.progression || 0)} onOpen={() => void openBook(book)} onStealth={() => void launchStealth(book)} onDetails={() => showBookDetails(book)} onFavorite={book.source === 'local' ? undefined : () => void toggleFavorite(book)} favorite={favorites.has(book.id)} onDelete={book.source === 'local' || book.source === 'cloud' ? () => void deleteBook(book) : undefined} onRemoveFromLibrary={page !== 'catalog' && isPublicLibraryBook(book) ? () => void removePublicBook(book) : undefined} offline={book.source === 'local' || offlineIds.has(book.id)} downloadBusy={downloadBusy === book.id} onDownload={(book.source === 'local' || book.fileUrl) ? () => void downloadBook(book) : undefined} />
+    return <BookCard key={book.id} book={book} lang={lang} progress={Number(progressFor(records, book.id)?.payload.progression || 0)} onOpen={() => void openBook(book)} onStealth={showProTools ? () => void launchStealth(book) : undefined} onDetails={() => showBookDetails(book)} onFavorite={book.source === 'local' ? undefined : () => void toggleFavorite(book)} favorite={favorites.has(book.id)} onDelete={book.source === 'local' || book.source === 'cloud' ? () => void deleteBook(book) : undefined} onRemoveFromLibrary={page !== 'catalog' && isPublicLibraryBook(book) ? () => void removePublicBook(book) : undefined} offline={book.source === 'local' || offlineIds.has(book.id)} downloadBusy={downloadBusy === book.id} onDownload={(book.source === 'local' || book.fileUrl) ? () => void downloadBook(book) : undefined} />
   }
 
   function recentBookCard(book: Book) {
-    return <BookCard key={book.id} book={book} lang={lang} progress={Number(progressFor(records, book.id)?.payload.progression || 0)} onOpen={() => void openBook(book)} onStealth={() => void launchStealth(book)} onDetails={() => showBookDetails(book)} onFavorite={() => void toggleFavorite(book)} favorite={favorites.has(book.id)} offline={book.source === 'local' || offlineIds.has(book.id)} downloadBusy={downloadBusy === book.id} onDownload={(book.source === 'local' || book.fileUrl) ? () => void downloadBook(book) : undefined} />
+    return <BookCard key={book.id} book={book} lang={lang} progress={Number(progressFor(records, book.id)?.payload.progression || 0)} onOpen={() => void openBook(book)} onStealth={showProTools ? () => void launchStealth(book) : undefined} onDetails={() => showBookDetails(book)} onFavorite={() => void toggleFavorite(book)} favorite={favorites.has(book.id)} offline={book.source === 'local' || offlineIds.has(book.id)} downloadBusy={downloadBusy === book.id} onDownload={(book.source === 'local' || book.fileUrl) ? () => void downloadBook(book) : undefined} />
   }
 
   async function handleCreateTag() {
@@ -1255,6 +1313,44 @@ function App() {
     broadcastSyncRequired(profile)
     await refreshLocal(profile)
     if (session) void synchronize(session, true)
+  }
+
+  async function applyMemoryOrganization(source: MemorySource, choices: MemoryOrganization) {
+    const activeSession = session
+    const bookId = source.book.id
+    const isCurrent = () => !!activeSession && profileRef.current === profile && sessionRef.current?.token === activeSession.token && readSession()?.token === activeSession.token
+    const changed = () => new Error(lang === 'vi' ? 'Phiên đăng nhập, ghi chú hoặc nhãn đã thay đổi. Hãy tạo lại gợi ý.' : 'Your session, note, or labels changed. Generate new suggestions.')
+    await applyLocalMutations(profile, current => {
+      const note = current.find(record => record.key === source.record.key)
+      if (!isCurrent() || !note || memorySource(note, source.book, profile)?.excerpt !== source.excerpt) throw changed()
+      const changes: LocalMutation[] = []
+      for (const { labels, labelKind, linkKind, field } of [
+        { labels: choices.tags, labelKind: 'tags', linkKind: 'book_tag_cross_ref', field: 'tag_id' },
+        { labels: choices.collections, labelKind: 'collections', linkKind: 'book_collection_cross_ref', field: 'collection_id' },
+      ] as const) {
+        for (const label of labels) {
+          if (!current.some(record => record.kind === labelKind && !record.deleted && record.payload.id === label.id && record.payload.name === label.name)) throw changed()
+          if (current.some(record => record.kind === linkKind && !record.deleted && record.payload.book_id === bookId && record.payload[field] === label.id)) continue
+          changes.push({ kind: linkKind, id: androidCompositeRecordId(linkKind, [bookId, label.id]), payload: { book_id: bookId, [field]: label.id, created_at: ms() }, localOnly: source.book.source === 'local' })
+        }
+      }
+      return changes
+    })
+    if (!isCurrent() || !activeSession) return
+    broadcastSyncRequired(profile)
+    await refreshLocal(profile)
+    if (isCurrent()) void synchronize(activeSession, true)
+  }
+
+  function openMemoryAi(trigger: HTMLButtonElement, noteKey?: string) {
+    memoryAiTrigger.current = trigger
+    setMemoryAi({ noteKey })
+  }
+
+  function closeMemoryAi() {
+    setMemoryAi(null)
+    memoryAiTrigger.current?.focus({ preventScroll: true })
+    memoryAiTrigger.current = null
   }
 
   function applyComfort(next: ReaderComfort) {
@@ -1462,7 +1558,7 @@ async function sha256Hex(file: Blob): Promise<string> {
     setNoteOpen(false); resetReaderNoteDraft(); setNoteNavigation(null); noteFlight.current = null; setNoteSaving(false)
     setSearchOpen(false); setReaderSearchSource(null); setActiveSearchHit(null)
     setSpeechOpen(false); setReaderSpeechSource(null)
-    setAiOpen(false)
+    setReaderTool(null)
     try {
       const [localResult, offlineResult] = await Promise.allSettled([
         getFile(profile, book.id),
@@ -1610,7 +1706,7 @@ async function sha256Hex(file: Blob): Promise<string> {
     resetReaderNoteDraft(); setNoteNavigation(null); noteFlight.current = null; setNoteSaving(false)
     setSearchOpen(false); setReaderSearchSource(null); setActiveSearchHit(null)
     setSpeechOpen(false); setReaderSpeechSource(null)
-    setAiOpen(false)
+    setReaderTool(null)
   }
   closeReaderRef.current = closeReader
 
@@ -1705,8 +1801,7 @@ async function sha256Hex(file: Blob): Promise<string> {
   function selectReaderPassage(text: string, locator: string) {
     if (noteFlight.current) return
     changeReaderNoteDraft({ selection: { text, locator }, anchor: { locatorJson: locator, progression: locationRef.current?.progression || 0, chapterTitle: locationRef.current?.chapterTitle || '' } })
-    // Keep the selection available to Read selection without replacing its sidebar.
-    if (!speechVisible && !aiOpen) setNoteOpen(true)
+    if (!speechVisible && !readerTool) setNoteOpen(true)
     setSearchOpen(false); setActiveSearchHit(null)
   }
 
@@ -1792,6 +1887,19 @@ async function sha256Hex(file: Blob): Promise<string> {
     } catch {
       if (profileRef.current === targetProfile) setNotice(translate('Không xuất được PDF. Vui lòng thử lại.', lang))
     } finally { pdfExportActive.current = false; setPdfExportBusy(false) }
+  }
+
+  async function exportScopedNotes(scope: NoteExportScope, name: string, format: 'md' | 'csv') {
+    const owner = profile
+    const access = await requireProFeature('KNOWLEDGE_EXPORT')
+    if (!access || profileRef.current !== owner) return
+    try {
+      const current = scopedExportNotes(await localRecords(owner), owner, scope)
+      if (profileRef.current !== owner || sessionRef.current?.token !== access.session.token || !allowsPro(access.entitlement, sessionRef.current)) return
+      if (!current.length) { setNotice(lang === 'vi' ? 'Phạm vi này chưa có ghi chú để xuất.' : 'There are no notes in this scope to export.'); return }
+      saveBookDownload(prepareScopedNoteExport(current, books, name, format, lang))
+      setNotice(lang === 'vi' ? 'Đã xuất ghi chú.' : 'Notes exported.')
+    } catch (error) { if (profileRef.current === owner) setNotice(readableError(error, lang)) }
   }
 
   async function requireProFeature(feature: ProFeature) {
@@ -2053,6 +2161,7 @@ async function sha256Hex(file: Blob): Promise<string> {
     { id: 'memory', label: curT.nav.memory, icon: Highlighter },
     { id: 'author', label: lang === 'vi' ? 'Sáng tác' : 'Write', icon: Edit3 },
     { id: 'stats', label: curT.nav.stats, icon: BarChart3 },
+    { id: 'pricing', label: lang === 'vi' ? 'Bảng giá' : 'Pricing', icon: Tag },
     { id: 'account', label: curT.nav.account, icon: Settings2 },
     ...(isAdmin ? [{ id: 'admin' as const, label: lang === 'vi' ? 'Quản trị' : 'Administration', icon: Settings2 }] : []),
   ]
@@ -2076,7 +2185,7 @@ async function sha256Hex(file: Blob): Promise<string> {
     {page === 'home' && <div className="analog-grain-overlay" aria-hidden="true" />}
     <OceanWaves enabled={!reader && !reviewOpen && !comparison && page === 'home'} appearance={siteTheme} />
     {!landingPage && <aside id="app-navigation-drawer" className={`sidebar ${sidebarVisible ? 'open' : ''}`} inert={!sidebarVisible || sidebarBlocked} aria-label={lang === 'vi' ? 'Điều hướng workspace' : 'Workspace sidebar'}>
-      <div className="brand"><div className="brand-mark"><BookOpen size={24} /></div><div><strong>NoCap</strong><span>Quiet Knowledge Workspace</span></div>{!desktopSidebar && <button className="mobile-close icon-button" onClick={() => setSidebarOpen(false)} aria-label={translate("Đóng menu", lang)}><X size={20} /></button>}</div>
+      <div className="brand"><div className="brand-mark"><img src="/brand/nocap-logo-512.png" width={38} height={38} alt="" /></div><div><strong>NoCap</strong><span>Quiet Knowledge Workspace</span></div>{!desktopSidebar && <button className="mobile-close icon-button" onClick={() => setSidebarOpen(false)} aria-label={translate("Đóng menu", lang)}><X size={20} /></button>}</div>
       <div className="sidebar-caption">{curT.nav.mySpace}</div>
       <nav className="main-nav" aria-label={translate("Điều hướng", lang)}>
         {workspaceGroups.map(group => <div key={group.id} className="navigation-group"><span>{lang === 'vi' ? group.vi : group.en}</span>{nav.filter(item=>group.pages.includes(item.id)).map(item => <button key={item.id} className={page === item.id || (page === 'libraryMap' && item.id === 'library') ? 'active' : ''} onClick={() => navigatePrimary(item.id)}><item.icon size={19} /><span>{item.label}</span></button>)}</div>)}
@@ -2117,10 +2226,10 @@ async function sha256Hex(file: Blob): Promise<string> {
           {!landingPage && <button className="profile-button" onClick={() => session ? setPage('account') : setAuthOpen(true)} aria-label={translate("Tài khoản", lang)}>
             {session ? <UserAvatar user={session.user} lang={lang} compact /> : 'G'}
           </button>}
-          {landingPage && session && <button className="landing-workspace-entry" onClick={() => navigatePrimary('library')}>{lang === 'vi' ? 'Mở NoCap' : 'Open NoCap'}<ArrowRight size={15}/></button>}
+          {landingPage && session && <button className="landing-workspace-entry" onClick={() => navigatePrimary('library')}>{lang === 'vi' ? 'Mở NoCap' : 'Start'}<ArrowRight size={15}/></button>}
         </div>
       </header>
-      {!landingPage && <CompactNavigation page={page} lang={lang} onNavigate={navigatePrimary} />}
+      {!landingPage && workspaceForPage(page) !== 'reader' && <CompactNavigation page={page} lang={lang} onNavigate={navigatePrimary} />}
 
       <SystemAnnouncements lang={lang} />
 
@@ -2278,7 +2387,10 @@ async function sha256Hex(file: Blob): Promise<string> {
       </>}
 
       <div className="content">
-        {page === 'author' && (session ? <Suspense fallback={<p role="status">{lang === 'vi' ? 'Đang mở không gian tác giả…' : 'Opening author workspace…'}</p>}><AuthorWorkspace key={`${session.user.id}:${lang}:${authorWorkspaceInstance}`} token={session.token} user={session.user} lang={lang} categories={categories} onDirtyChange={authorDirtyChanged} onFocusChange={setAuthorFocus} /></Suspense> : <div className="empty-state"><h2>{lang === 'vi' ? 'Không gian tác giả' : 'Author workspace'}</h2><p>{lang === 'vi' ? 'Đăng nhập để viết, lưu bản thảo riêng tư và gửi sách duyệt.' : 'Sign in to write, keep private drafts and submit books for review.'}</p><button className="primary" onClick={() => setAuthOpen(true)}>{curT.header.login}</button></div>)}
+        {page === 'author' && (session ? <Suspense fallback={<p role="status">{lang === 'vi' ? 'Đang mở không gian tác giả…' : 'Opening author workspace…'}</p>}><AuthorWorkspace key={`${session.user.id}:${lang}:${authorWorkspaceInstance}`} token={session.token} user={session.user} lang={lang} categories={categories} showProTools={showProTools} onDirtyChange={authorDirtyChanged} onFocusChange={setAuthorFocus} sources={authorSources} onOpenSource={id => {
+          const record = annotations.find(item => item.profile === profile && `${item.kind}:${item.id}` === id)
+          if (record) void openResearchSource(record).catch(error => setNotice(readableError(error, lang)))
+        }} /></Suspense> : <div className="empty-state"><h2>{lang === 'vi' ? 'Không gian tác giả' : 'Author workspace'}</h2><p>{lang === 'vi' ? 'Đăng nhập để viết, lưu bản thảo riêng tư và gửi sách duyệt.' : 'Sign in to write, keep private drafts and submit books for review.'}</p><button className="primary" onClick={() => setAuthOpen(true)}>{curT.header.login}</button></div>)}
         {page === 'admin' && (session && adminAccess?.status === 'allowed'
           ? <ReaderErrorBoundary key={session.token} area="admin" lang={lang} onClose={() => setPage('home')}><Suspense fallback={<p role="status">{lang === 'vi' ? 'Đang mở khu vực quản trị…' : 'Opening administration…'}</p>}><AdminWorkspace
             key={session.token}
@@ -2340,7 +2452,7 @@ async function sha256Hex(file: Blob): Promise<string> {
           <ReadingRecommendations lang={lang} genres={recommendations.genres} categories={categories} onExplore={exploreRecommendedGenre} />
           {recommendations.books.length > 0 && <>
             <SectionHeader title={recommendations.genres.length ? (lang === 'vi' ? 'Gợi ý cho bạn' : 'Recommended for You') : (lang === 'vi' ? 'Khám phá sách' : 'Explore books')} action={lang === 'vi' ? 'Xem tất cả' : 'View all'} onAction={() => setPage('catalog')} />
-            <div className="book-grid">{recommendations.books.map(book => <BookCard key={book.id} book={book} lang={lang} onOpen={() => void openBook(book)} onStealth={() => void launchStealth(book)} onDetails={() => showBookDetails(book)} onFavorite={() => void toggleFavorite(book)} favorite={favorites.has(book.id)} offline={offlineIds.has(book.id)} downloadBusy={downloadBusy === book.id} onDownload={() => void downloadBook(book)} />)}</div>
+            <div className="book-grid">{recommendations.books.map(book => <BookCard key={book.id} book={book} lang={lang} onOpen={() => void openBook(book)} onStealth={showProTools ? () => void launchStealth(book) : undefined} onDetails={() => showBookDetails(book)} onFavorite={() => void toggleFavorite(book)} favorite={favorites.has(book.id)} offline={offlineIds.has(book.id)} downloadBusy={downloadBusy === book.id} onDownload={() => void downloadBook(book)} />)}</div>
           </>}
         </>}
 
@@ -2409,6 +2521,14 @@ async function sha256Hex(file: Blob): Promise<string> {
           <div className="filter-bar"><label className="search-field"><Search size={18} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder={curT.filters.searchPlaceholder} aria-label={translate("Tìm sách", lang)} /></label><select value={category} onChange={event => setCategory(event.target.value)} aria-label={translate("Lọc thể loại", lang)}><option value="all">{curT.filters.allCategories}</option>{categories.map(item => <option key={item.id} value={item.id}>{translate(item.name, lang)}</option>)}</select><select value={sortOrder} onChange={e => setSortOrder(e.target.value as 'recent' | 'title' | 'progress')} aria-label={translate("Sắp xếp sách", lang)}><option value="recent">{curT.filters.recent}</option><option value="title">{curT.filters.title}</option><option value="progress">{curT.filters.progress}</option></select>{page === 'library' && (tags.length > 0 || collections.length > 0) && <select value={organizationFilter} onChange={event => setOrganizationFilter(event.target.value)} aria-label={translate("Lọc theo thẻ hoặc bộ sưu tập", lang)}><option value="all">{curT.filters.allTagsAndCollections}</option>{tags.length > 0 && <optgroup label={curT.filters.tagsGroup}>{tags.map(tag => <option key={`tag:${tag.id}`} value={`tag:${tag.id}`}>{tag.name}</option>)}</optgroup>}{collections.length > 0 && <optgroup label={curT.filters.collectionsGroup}>{collections.map(collection => <option key={`collection:${collection.id}`} value={`collection:${collection.id}`}>{collection.name}</option>)}</optgroup>}</select>}<span>{curT.filters.docCount(filteredBooks.length)}</span></div>
           )}
           </>}
+          {page === 'library' && loadedProfile === profile && showProTools && <div className="workspace-tool-stack">
+            <SmartShelves key={`smart:${profile}`} profile={profile} lang={lang} books={libraryBooks} records={records} tags={tags} collections={collections} authorize={async () => !!await requireProFeature('SMART_SHELVES')} progressFor={id => Number(progressFor(records, id)?.payload.progression || 0)} onOpenBook={book => void openBook(book)} />
+            <LibraryContentSearch key={`search:${profile}`} lang={lang} books={libraryBooks} authorize={async () => !!await requireProFeature('LIBRARY_CONTENT_SEARCH')} load={loadComparisonBook} onOpen={(book, locator) => {
+              if (profileRef.current === profile && libraryBooks.some(item => item.id === book.id) && allowsPro(entitlement, sessionRef.current)) void openBook(book, locator).then(opened => {
+                if (opened && profileRef.current === profile && readerRef.current?.id === book.id) setNoteNavigation({ locatorJson: locator, requestId: ++noteNavigationId.current })
+              })
+            }} />
+          </div>}
           {page !== 'catalog' ? loadedProfile !== profile ? <p role="status">{lang === 'vi' ? 'Đang mở tủ sách…' : 'Opening your library…'}</p> : <LibraryFoldersWorkspace key={profile} profile={profile} lang={lang} records={records} books={page === 'libraryMap' ? libraryBooks : filteredBooks} allBooks={libraryBooks} currentFolderId={libraryFolderId} onFolderChange={changeLibraryFolder} filterActive={page !== 'libraryMap' && (!!query.trim() || category !== 'all' || shelfFilter !== 'all' || organizationFilter !== 'all')} renderBook={libraryBookCard} onOpenBook={book => void openBook(book)} onDetailsBook={showBookDetails} onMutate={changeLibraryFolders} mapPage={page === 'libraryMap'} onOpenMap={() => setPage('libraryMap')} onBackFromMap={openedFolder => {
             if (openedFolder !== undefined) { setQuery(''); setCategory('all'); setShelfFilter('all'); setOrganizationFilter('all') }
             setPage('library')
@@ -2424,14 +2544,24 @@ async function sha256Hex(file: Blob): Promise<string> {
             </div>
             <div className="banner-action" style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
               <div className="count-chip" style={{ background: 'var(--site-panel)', color: 'var(--site-text)', border: '1px solid var(--site-line)' }}>{curT.banners.memory.statsSnippet(annotations.length, dueReviewCount)}</div>
-              {annotations.length > 0 && <><button className="light-button" onClick={() => void startFlashcardReview()}><Sparkles size={15} /> {curT.banners.memory.reviewBtn}</button><button className="light-button" onClick={() => void startFlashcardReview(true)}><Sparkles size={15} />{lang === 'vi' ? 'Tạo thẻ tự động · Pro' : 'Auto-generate cards · Pro'}</button><button className="light-button" disabled={pdfExportBusy} aria-busy={pdfExportBusy} onClick={() => void exportPdf()}><FileDown size={15} /> {pdfExportBusy ? (lang === 'vi' ? 'Đang tạo PDF…' : 'Creating PDF…') : curT.banners.memory.exportBtn}</button></>}
+              {canUseMemoryAi && <button className="light-button" onClick={event => openMemoryAi(event.currentTarget)}><Sparkles size={15} />{lang === 'vi' ? 'Hỏi kho ghi chú' : 'Ask your notes'}</button>}
+              {annotations.length > 0 && <button className="light-button" onClick={() => void startFlashcardReview()}><Sparkles size={15} /> {curT.banners.memory.reviewBtn}</button>}
+              {showProTools && annotations.length > 0 && <><button className="light-button" onClick={() => void startFlashcardReview(true)}><Sparkles size={15} />{lang === 'vi' ? 'Tạo thẻ tự động' : 'Auto-generate cards'}</button><button className="light-button" disabled={pdfExportBusy} aria-busy={pdfExportBusy} onClick={() => void exportPdf()}><FileDown size={15} /> {pdfExportBusy ? (lang === 'vi' ? 'Đang tạo PDF…' : 'Creating PDF…') : curT.banners.memory.exportBtn}</button></>}
             </div>
           </div>
+          {canUseMemoryAi && session && memoryAi && (!memoryAi.noteKey || (organizeSource && organizeOptions)) && <MemoryAiPanel
+            key={`${profile}:${memoryAi.noteKey ?? 'question'}:${organizeNote?.version ?? ''}`}
+            lang={lang} token={session.token} profile={profile} annotations={annotations} books={books}
+            organize={organizeSource && organizeOptions ? { source: organizeSource, options: organizeOptions } : undefined}
+            onApply={applyMemoryOrganization} onManage={() => setTagsCollectionsOpen(true)} onClose={closeMemoryAi}
+            onOpenSource={record => { void openResearchSource(record).catch(error => setNotice(readableError(error, lang))) }} />}
           <div className="section-header" style={{ margin: '22px 0 12px' }}><h3>{lang === 'vi' ? 'Không gian nghiên cứu' : 'Research workspace'}</h3><button className="secondary" onClick={() => setComparisonChoosing(true)}><Layers size={16} />{lang === 'vi' ? 'Đọc đối chiếu hai nguồn' : 'Compare two sources'}</button></div>
+          {loadedProfile === profile && showProTools && <NoteExportPanel key={profile} profile={profile} records={records} books={books} lang={lang} onExport={exportScopedNotes} />}
           <Suspense fallback={<p className="muted">{lang === 'vi' ? 'Đang mở chủ đề…' : 'Loading topics…'}</p>}><ResearchWorkspace key={profile} profile={profile} lang={lang} records={records} books={books} onChanged={researchChanged} onOpenSource={record => { void openResearchSource(record).catch(error => setNotice(readableError(error, lang))) }} onCompare={(left, right) => { void compareNotes(left, right).catch(error => setNotice(readableError(error, lang))) }} onStartReview={scope => { void startFlashcardReview(false, scope) }} onAddReview={async record => { await addAnnotationReview(profile, record, books.find(book => book.id === record.payload.book_id)?.source === 'local'); await researchChanged() }} /></Suspense>
           <h3 style={{ margin: '28px 0 14px' }}>{lang === 'vi' ? 'Tất cả ghi chú' : 'All notes'}</h3>
           <label className="search-field memory-search"><Search size={18} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder={curT.memoryPage.searchPlaceholder} aria-label={translate("Tìm ghi chú", lang)} /></label>{filteredAnnotations.length ? <div className="memory-list">{filteredAnnotations.map(record => { const book = books.find(item => item.id === record.payload.book_id); return <div className="memory-item" key={record.key}><div className="memory-icon">{record.kind === 'highlights' ? <Highlighter size={18} /> : <Bookmark size={18} />}</div><div><div className="memory-book">{book?.title || curT.memoryPage.privateDoc}</div><blockquote>{toText(record.payload.text) || toText(record.payload.chapter_title) || curT.memoryPage.bookmarkFallback}</blockquote>{!!record.payload.note && <p>{toText(record.payload.note)}</p>}{hasDrawing(record.payload.drawing) && <DrawingPreview drawing={record.payload.drawing} label={lang === 'vi' ? 'Ghi chú vẽ tay' : 'Handwritten note'} />}</div><div className="memory-item-actions">
           <Suspense fallback={null}><AnnotationSourceActions record={record} records={records} books={books} lang={lang} onOpenSource={item => { void openResearchSource(item).catch(error => setNotice(readableError(error, lang))) }} onCompare={(left, right) => { void compareNotes(left, right).catch(error => setNotice(readableError(error, lang))) }} /></Suspense>
+          {canUseMemoryAi && memorySource(record, book, profile) && <button className="text-button" onClick={event => openMemoryAi(event.currentTarget, record.key)}><Tag size={15} />{lang === 'vi' ? 'Gợi ý phân loại' : 'Suggest organization'}</button>}
           {record.kind === 'highlights' && <>
             {!reviewItems.some(item => item.payload.annotation_id === annotationId(record)) && <button className="text-button" onClick={() => void handleAddReview(record)}><Plus size={15} />{lang === 'vi' ? 'Thêm vào ôn tập' : 'Add to review'}</button>}
             <button className="icon-button" aria-label={lang === 'vi' ? 'Sửa highlight và ghi chú' : 'Edit highlight and note'} title={lang === 'vi' ? 'Sửa' : 'Edit'} onClick={() => { setAnnotationError(''); setEditingAnnotation(record) }}><Edit3 size={17} /></button>
@@ -2471,6 +2601,10 @@ async function sha256Hex(file: Blob): Promise<string> {
           </div>
         </>}
 
+        {page === 'pricing' && <SePayCheckout
+          session={session} entitlement={entitlement} lang={lang} onSignIn={() => setAuthOpen(true)}
+          onPaid={setEntitlement} onExplore={() => navigatePrimary('catalog')}
+        />}
         {page === 'account' && <AccountSettings
           key={profile}
           session={session}
@@ -2485,7 +2619,7 @@ async function sha256Hex(file: Blob): Promise<string> {
           onSignOut={() => void signOut()}
           onEditName={() => { setEditNameInput(session?.user.displayName || ''); setEditNameOpen(true) }}
           onDeleteAccount={() => setDeleteAccountOpen(true)}
-          onPaid={setEntitlement}
+          onPricing={() => navigatePrimary('pricing')}
           onUserUpdated={handleAccountUserUpdated}
           onSessionExpired={invalidateSession}
           onAdmin={isAdmin ? () => setPage('admin') : undefined}
@@ -2576,17 +2710,17 @@ async function sha256Hex(file: Blob): Promise<string> {
             id: 'compare', label: lang === 'vi' ? 'Đọc đối chiếu' : 'Compare sources',
             control: <button className="icon-button" onClick={() => setComparisonChoosing(true)} aria-label={lang === 'vi' ? 'Đọc đối chiếu hai nguồn' : 'Compare two sources'} title={lang === 'vi' ? 'Đọc đối chiếu' : 'Compare sources'}><Layers size={19} /></button>,
           },
-          {
-            id: 'stealth', label: lang === 'vi' ? 'Đọc ẩn · Pro (F2)' : 'Stealth · Pro (F2)',
-            control: <button className="stealth-topbar-pill" title={curT.stealth.btnTitle} aria-label={curT.stealth.btnLabel} onClick={() => void launchStealth()}><Briefcase size={15} /><span>{lang === 'vi' ? 'Đọc ẩn · Pro (F2)' : 'Stealth · Pro (F2)'}</span></button>,
-          },
+          ...(showProTools ? [{
+            id: 'stealth', label: curT.bookCard.stealthRead,
+            control: <button className="stealth-topbar-pill" title={curT.stealth.btnTitle} aria-label={curT.stealth.btnLabel} onClick={() => void launchStealth()}><Briefcase size={15} /><span>{curT.bookCard.stealthRead}</span></button>,
+          }] : []),
           {
             id: 'toc', label: lang === 'vi' ? 'Mục lục' : 'Contents', primary: true,
             control: <button className="icon-button" title={lang === 'vi' ? 'Mục lục sách' : 'Table of contents'} aria-label={lang === 'vi' ? 'Mục lục' : 'Table of contents'} onClick={() => { setNavigateTarget(null); setTocOpen(true) }}><List size={20} /></button>,
           },
           {
             id: 'search', label: lang === 'vi' ? 'Tìm' : 'Search', primary: true,
-            control: <button ref={searchToggle} className="icon-button reader-search-toggle" title={lang === 'vi' ? 'Tìm trong sách (Ctrl+F / ⌘F)' : 'Search in book (Ctrl+F / ⌘F)'} aria-label={lang === 'vi' ? 'Tìm trong sách' : 'Search in book'} aria-expanded={searchOpen} aria-controls="reader-search-panel" onClick={() => { setAiOpen(false); setSearchOpen(open => !open); setNoteOpen(false); setActiveSearchHit(null) }}><Search size={19} /></button>,
+            control: <button ref={searchToggle} className="icon-button reader-search-toggle" title={lang === 'vi' ? 'Tìm trong sách (Ctrl+F / ⌘F)' : 'Search in book (Ctrl+F / ⌘F)'} aria-label={lang === 'vi' ? 'Tìm trong sách' : 'Search in book'} aria-expanded={searchOpen} aria-controls="reader-search-panel" onClick={() => { setReaderTool(null); setSearchOpen(open => !open); setNoteOpen(false); setActiveSearchHit(null) }}><Search size={19} /></button>,
           },
           {
             id: 'settings', label: lang === 'vi' ? 'Tùy chỉnh đọc' : 'Reading settings',
@@ -2594,11 +2728,15 @@ async function sha256Hex(file: Blob): Promise<string> {
           },
           {
             id: 'speech', label: lang === 'vi' ? 'Đọc thành tiếng' : 'Read aloud',
-            control: <button ref={speechToggle} className={`icon-button reader-speech-toggle${speechVisible ? ' active' : ''}`} title={lang === 'vi' ? 'Đọc thành tiếng · Bản thử' : 'Read aloud · Preview'} aria-label={lang === 'vi' ? 'Đọc thành tiếng' : 'Read aloud'} aria-expanded={speechVisible} aria-controls="reader-speech-panel" onClick={() => { setAiOpen(false); setSpeechOpen(!speechVisible); setNoteOpen(false); setSearchOpen(false); setActiveSearchHit(null) }}><Volume2 size={20} /></button>,
+            control: <button ref={speechToggle} className={`icon-button reader-speech-toggle${speechVisible ? ' active' : ''}`} title={lang === 'vi' ? 'Đọc thành tiếng · Bản thử' : 'Read aloud · Preview'} aria-label={lang === 'vi' ? 'Đọc thành tiếng' : 'Read aloud'} aria-expanded={speechVisible} aria-controls="reader-speech-panel" onClick={() => { setReaderTool(null); setSpeechOpen(!speechVisible); setNoteOpen(false); setSearchOpen(false); setActiveSearchHit(null) }}><Volume2 size={20} /></button>,
           },
-          ...(isAdmin ? [{
-            id: 'ai', label: lang === 'vi' ? 'Trợ lý AI · Admin' : 'AI assistant · Admin',
-            control: <button ref={aiToggle} className={`icon-button${aiOpen ? ' active' : ''}`} title={lang === 'vi' ? 'NoCap AI · Admin thử nghiệm' : 'NoCap AI · Admin preview'} aria-label={lang === 'vi' ? 'Trợ lý AI' : 'AI assistant'} aria-expanded={aiOpen} aria-controls="reader-ai-panel" onClick={() => { setAiOpen(open => !open); setSpeechOpen(false); setNoteOpen(false); setSearchOpen(false); setActiveSearchHit(null) }}><Sparkles size={20} /></button>,
+          {
+            id: 'translation', label: lang === 'vi' ? 'Dịch đoạn' : 'Translate passage',
+            control: <button ref={translationToggle} className={`icon-button${translationOpen ? ' active' : ''}`} title={lang === 'vi' ? 'Dịch đoạn' : 'Translate passage'} aria-label={lang === 'vi' ? 'Dịch đoạn' : 'Translate passage'} aria-expanded={translationOpen} aria-controls="reader-translation-panel" onClick={() => toggleReaderTool('translation')}><Languages size={20} /></button>,
+          },
+          ...(canUseReadingAi ? [{
+            id: 'ai', label: lang === 'vi' ? 'Trợ lý AI · Bản thử' : 'AI assistant · Preview',
+            control: <button ref={aiToggle} className={`icon-button${aiOpen ? ' active' : ''}`} title={lang === 'vi' ? 'NoCap AI · Bản thử' : 'NoCap AI · Preview'} aria-label={lang === 'vi' ? 'Trợ lý AI' : 'AI assistant'} aria-expanded={aiOpen} aria-controls="reader-ai-panel" onClick={() => toggleReaderTool('ai')}><Sparkles size={20} /></button>,
           }] : []),
           {
             id: 'bookmark', label: currentBookmarked ? (lang === 'vi' ? 'Bỏ dấu trang' : 'Remove bookmark') : (lang === 'vi' ? 'Đánh dấu vị trí' : 'Bookmark position'),
@@ -2606,7 +2744,7 @@ async function sha256Hex(file: Blob): Promise<string> {
           },
           {
             id: 'notes', label: lang === 'vi' ? 'Ghi chú' : 'Notes', primary: true,
-            control: <button ref={notesToggle} className={`reader-notes-toggle ${noteOpen ? 'active' : ''}`} title={lang === 'vi' ? 'Vừa đọc vừa ghi chú' : 'Read and take notes'} aria-label={lang === 'vi' ? 'Bảng ghi chú' : 'Notes panel'} aria-expanded={noteOpen} aria-controls="reader-notes-panel" onClick={() => { setAiOpen(false); setNoteOpen(open => !open); setSearchOpen(false); setActiveSearchHit(null) }}><PanelRightOpen size={18} /><span>{lang === 'vi' ? 'Ghi chú' : 'Notes'}</span></button>,
+            control: <button ref={notesToggle} className={`reader-notes-toggle ${noteOpen ? 'active' : ''}`} title={lang === 'vi' ? 'Vừa đọc vừa ghi chú' : 'Read and take notes'} aria-label={lang === 'vi' ? 'Bảng ghi chú' : 'Notes panel'} aria-expanded={noteOpen} aria-controls="reader-notes-panel" onClick={() => { setReaderTool(null); setNoteOpen(open => !open); setSearchOpen(false); setActiveSearchHit(null) }}><PanelRightOpen size={18} /><span>{lang === 'vi' ? 'Ghi chú' : 'Notes'}</span></button>,
           },
         ]}
       />
@@ -2628,10 +2766,12 @@ async function sha256Hex(file: Blob): Promise<string> {
         {speechOpen && !stealthActive && !comparison && <ReaderSpeechPanel key={`speech:${profile}:${reader.book.id}`} lang={lang} language={reader.book.language} bookTitle={reader.book.title} hidden={!speechVisible}
           source={readerSpeechSource} selection={selection?.text || ''} scopeKey={JSON.stringify([speechScopeKey(location?.locatorJson), navigateTarget, noteNavigation?.requestId, stealthProgressRequest?.requestId])}
           onClose={() => { setSpeechOpen(false); (speechToggle.current || document.querySelector<HTMLButtonElement>('.reader-toolbar-more-button'))?.focus() }} />}
-        {aiOpen && isAdmin && session && !stealthActive && !comparison && <ReaderAiPanel key={`ai:${profile}:${reader.book.id}:${sessionToken}`} lang={lang} token={session.token} bookTitle={reader.book.title}
+        {aiOpen && canUseReadingAi && session && !stealthActive && !comparison && <ReaderAiPanel key={`ai:${profile}:${reader.book.id}:${sessionToken}`} lang={lang} token={session.token} bookTitle={reader.book.title}
           source={readerSpeechSource} locatorJson={location?.locatorJson} chapterTitle={location?.chapterTitle} selection={selection}
           onNavigate={locator => { setNoteNavigation({ locatorJson: locator, requestId: ++noteNavigationId.current }); setNavigateTarget(null) }}
-          onClose={() => { setAiOpen(false); (aiToggle.current || document.querySelector<HTMLButtonElement>('.reader-toolbar-more-button'))?.focus() }} />}
+          onClose={closeReaderTool} />}
+        {translationOpen && !stealthActive && !comparison && <ReaderTranslationPanel key={`translation:${profile}:${reader.book.id}`}
+          lang={lang} bookLanguage={reader.book.language} selection={selection?.text || ''} onClose={closeReaderTool} />}
         <ReaderNotesPanel key={`${profile}:${reader.book.id}`} open={noteOpen} lang={lang} bookTitle={reader.book.title}
           records={readerNotes} note={noteText} color={noteColor} quote={selection?.text || ''} saving={noteSaving}
           drawing={noteDrawing} onDrawingChange={changeReaderDrawing}
@@ -2669,7 +2809,7 @@ async function sha256Hex(file: Blob): Promise<string> {
 
     {tocOpen && reader && <div className="modal-shade" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setTocOpen(false) }}><aside className="toc-drawer" role="dialog" aria-modal="true" aria-label={translate("Mục lục sách", lang)}><div className="toc-header"><div><p className="eyebrow">{translate("MỤC LỤC SÁCH", lang)}</p><h2 lang={contentLanguage(reader.book.title, reader.book.language, lang)}>{reader.book.title}</h2></div><button className="icon-button" onClick={() => setTocOpen(false)} aria-label={translate("Đóng mục lục", lang)}><X size={19} /></button></div><div className="toc-list">{toc.length ? <TocTree items={toc} onSelect={target => { setNoteNavigation(null); setNavigateTarget(target); setTocOpen(false) }} /> : <p className="muted" style={{ padding: '20px', textAlign: 'center', fontSize: '13px' }}>{translate("Tài liệu không có cấu trúc mục lục sẵn.", lang)}</p>}</div></aside></div>}
 
-    {settingsOpen && reader && <div className="modal-shade" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setSettingsOpen(false) }}><div className="dialog settings-popup" role="dialog" aria-modal="true" aria-label={translate("Tùy chỉnh đọc", lang)}><div className="dialog-header"><h2>{translate("Tùy chỉnh đọc", lang)}</h2><button className="icon-button" onClick={() => setSettingsOpen(false)} aria-label={translate("Đóng", lang)}><X size={18} /></button></div><label className="range-label">{translate("Cỡ chữ", lang)} <strong>{fontSize}%</strong><input type="range" min="80" max="170" step="10" value={fontSize} onChange={event => updateComfort({ fontSize: Number(event.target.value) })} /></label><div className="setting-group"><span className="setting-label">{translate("Kiểu chữ", lang)}</span><p className="muted">{automaticTypefaceLabel(lang)}</p></div><div className="setting-group"><span className="setting-label">{translate("Căn lề", lang)}</span><div className="toggle-row"><button className={`choice-chip ${textAlignment === 'left' ? 'active' : ''}`} onClick={() => updateComfort({ textAlignment: 'left' })}><AlignLeft size={15} />  {translate("Trái", lang)}</button><button className={`choice-chip ${textAlignment === 'justify' ? 'active' : ''}`} onClick={() => updateComfort({ textAlignment: 'justify' })}><AlignJustify size={15} />  {translate("Căn đều 2 bên", lang)}</button></div></div><div className="setting-group"><span className="setting-label">{translate("Khoảng cách dòng", lang)}</span><div className="toggle-row"><button className={`choice-chip ${lineHeight === 1.4 ? 'active' : ''}`} onClick={() => updateComfort({ lineHeight: 1.4 })}>{translate("Gọn (1.4)", lang)}</button><button className={`choice-chip ${lineHeight === 1.65 ? 'active' : ''}`} onClick={() => updateComfort({ lineHeight: 1.65 })}>{translate("Vừa (1.65)", lang)}</button><button className={`choice-chip ${lineHeight === 1.9 ? 'active' : ''}`} onClick={() => updateComfort({ lineHeight: 1.9 })}>{translate("Thoáng (1.9)", lang)}</button></div></div><div className="setting-group"><span className="setting-label">{translate("Độ rộng trang", lang)}</span><div className="toggle-row"><button className={`choice-chip ${readerWidth === 'narrow' ? 'active' : ''}`} onClick={() => updateComfort({ readerWidth: 'narrow' })}>{translate("Gọn", lang)}</button><button className={`choice-chip ${readerWidth === 'standard' ? 'active' : ''}`} onClick={() => updateComfort({ readerWidth: 'standard' })}>{translate("Tiêu chuẩn", lang)}</button><button className={`choice-chip ${readerWidth === 'wide' ? 'active' : ''}`} onClick={() => updateComfort({ readerWidth: 'wide' })}>{translate("Rộng", lang)}</button></div></div><div className="setting-group"><span className="setting-label">{translate("Màu nền", lang)}</span><div className="theme-row">{(['paper', 'sepia', 'night'] as const).map(value => <button key={value} className={`theme-chip ${value} ${theme === value ? 'chosen' : ''}`} onClick={() => updateComfort({ theme: value })}>{value === 'paper' ? translate("Giấy sáng", lang) : value === 'sepia' ? translate("Vàng dịu", lang) : translate("Ban đêm", lang)}</button>)}</div></div><div className="setting-group stealth-settings-section"><span className="setting-label">{lang === 'vi' ? 'Chế độ ngụy trang công sở (Boss Key)' : 'Workplace Disguise (Boss Key)'}</span><p className="muted" style={{ fontSize: '11px', margin: '4px 0 10px', lineHeight: 1.5 }}>{curT.stealth.keyboardGuide} {lang === 'vi' ? 'F2: bật/tắt Đọc ẩn · Pro. F10: toàn màn hình. Alt + 1/2/3: Excel/VS Code/Word. F12 hoặc Alt + P: ẩn nội dung sách.' : 'F2: enter/leave Stealth · Pro. F10: fullscreen. Alt + 1/2/3: Excel/VS Code/Word. F12 or Alt + P: hide book content.'}</p><button type="button" className="stealth-launch-btn" onClick={() => void launchStealth()}><Briefcase size={16} /> {lang === 'vi' ? 'Bật Đọc ẩn · Pro (F2)' : 'Activate Stealth · Pro (F2)'}</button></div></div></div>}
+    {settingsOpen && reader && <div className="modal-shade" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setSettingsOpen(false) }}><div className="dialog settings-popup" role="dialog" aria-modal="true" aria-label={translate("Tùy chỉnh đọc", lang)}><div className="dialog-header"><h2>{translate("Tùy chỉnh đọc", lang)}</h2><button className="icon-button" onClick={() => setSettingsOpen(false)} aria-label={translate("Đóng", lang)}><X size={18} /></button></div><label className="range-label">{translate("Cỡ chữ", lang)} <strong>{fontSize}%</strong><input type="range" min="80" max="170" step="10" value={fontSize} onChange={event => updateComfort({ fontSize: Number(event.target.value) })} /></label><div className="setting-group"><span className="setting-label">{translate("Kiểu chữ", lang)}</span><p className="muted">{automaticTypefaceLabel(lang)}</p></div><div className="setting-group"><span className="setting-label">{translate("Căn lề", lang)}</span><div className="toggle-row"><button className={`choice-chip ${textAlignment === 'left' ? 'active' : ''}`} onClick={() => updateComfort({ textAlignment: 'left' })}><AlignLeft size={15} />  {translate("Trái", lang)}</button><button className={`choice-chip ${textAlignment === 'justify' ? 'active' : ''}`} onClick={() => updateComfort({ textAlignment: 'justify' })}><AlignJustify size={15} />  {translate("Căn đều 2 bên", lang)}</button></div></div><div className="setting-group"><span className="setting-label">{translate("Khoảng cách dòng", lang)}</span><div className="toggle-row"><button className={`choice-chip ${lineHeight === 1.4 ? 'active' : ''}`} onClick={() => updateComfort({ lineHeight: 1.4 })}>{translate("Gọn (1.4)", lang)}</button><button className={`choice-chip ${lineHeight === 1.65 ? 'active' : ''}`} onClick={() => updateComfort({ lineHeight: 1.65 })}>{translate("Vừa (1.65)", lang)}</button><button className={`choice-chip ${lineHeight === 1.9 ? 'active' : ''}`} onClick={() => updateComfort({ lineHeight: 1.9 })}>{translate("Thoáng (1.9)", lang)}</button></div></div><div className="setting-group"><span className="setting-label">{translate("Độ rộng trang", lang)}</span><div className="toggle-row"><button className={`choice-chip ${readerWidth === 'narrow' ? 'active' : ''}`} onClick={() => updateComfort({ readerWidth: 'narrow' })}>{translate("Gọn", lang)}</button><button className={`choice-chip ${readerWidth === 'standard' ? 'active' : ''}`} onClick={() => updateComfort({ readerWidth: 'standard' })}>{translate("Tiêu chuẩn", lang)}</button><button className={`choice-chip ${readerWidth === 'wide' ? 'active' : ''}`} onClick={() => updateComfort({ readerWidth: 'wide' })}>{translate("Rộng", lang)}</button></div></div><div className="setting-group"><span className="setting-label">{translate("Màu nền", lang)}</span><div className="theme-row">{(['paper', 'sepia', 'night'] as const).map(value => <button key={value} className={`theme-chip ${value} ${theme === value ? 'chosen' : ''}`} onClick={() => updateComfort({ theme: value })}>{value === 'paper' ? translate("Giấy sáng", lang) : value === 'sepia' ? translate("Vàng dịu", lang) : translate("Ban đêm", lang)}</button>)}</div></div>{showProTools && <div className="setting-group stealth-settings-section"><span className="setting-label">{lang === 'vi' ? 'Chế độ ngụy trang công sở (Boss Key)' : 'Workplace Disguise (Boss Key)'}</span><p className="muted" style={{ fontSize: '11px', margin: '4px 0 10px', lineHeight: 1.5 }}>{curT.stealth.keyboardGuide} {lang === 'vi' ? 'F2: bật/tắt Đọc ẩn. F10: toàn màn hình. Alt + 1/2/3: Excel/VS Code/Word. F12 hoặc Alt + P: ẩn nội dung sách.' : 'F2: enter/leave Stealth. F10: fullscreen. Alt + 1/2/3: Excel/VS Code/Word. F12 or Alt + P: hide book content.'}</p><button type="button" className="stealth-launch-btn" onClick={() => void launchStealth()}><Briefcase size={16} /> {lang === 'vi' ? 'Bật Đọc ẩn (F2)' : 'Activate Stealth (F2)'}</button></div>}</div></div>}
 
 
     {reviewOpen && reviewSession.queue.every(card => card.profile === profile) && <div className="modal-shade" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setReviewOpen(false) }}><div className="flashcard-modal" role="dialog" aria-modal="true" aria-label={translate("Ôn tập ghi chú Flashcards", lang)}>
@@ -2726,7 +2866,7 @@ async function sha256Hex(file: Blob): Promise<string> {
 
     {editingAnnotation?.profile === profile && <AnnotationEditor key={editingAnnotation.key} record={editingAnnotation} lang={lang} busy={annotationBusy} error={annotationError} onClose={() => { if (!annotationBusy) setEditingAnnotation(null) }} onSave={changes => void handleAnnotationSave(changes)} />}
     {deletingAnnotation?.profile === profile && <AnnotationDeleteDialog record={deletingAnnotation} lang={lang} busy={annotationBusy} error={annotationError} onClose={() => { if (!annotationBusy) setDeletingAnnotation(null) }} onDelete={() => void handleAnnotationDelete()} />}
-    {proRequiredFeature && <ProRequiredDialog feature={proRequiredFeature} lang={lang} onClose={() => setProRequiredFeature(null)} onPlans={() => { setProRequiredFeature(null); setPage('account'); setAccountSection('pro') }} />}
+    {proRequiredFeature && <ProRequiredDialog feature={proRequiredFeature} lang={lang} onClose={() => setProRequiredFeature(null)} onPlans={() => { setProRequiredFeature(null); setPage('pricing') }} />}
 
     {editNameOpen && session && <div className="modal-shade"><div className="dialog" role="dialog" aria-modal="true" aria-labelledby="edit-name-title">
       <button className="icon-button dialog-close" onClick={() => setEditNameOpen(false)} disabled={savingName} aria-label={curT.auth.close}><X size={19} /></button>
@@ -2834,7 +2974,7 @@ async function sha256Hex(file: Blob): Promise<string> {
       onToggleCollection={colId => void handleToggleBookCollection(selectedBook.id, colId)}
       onClose={closeBookDetails}
       onRead={() => { const b = selectedBook; setSelectedBook(null); void openBook(b) }}
-      onStealthRead={() => void launchStealth(selectedBook)}
+      onStealthRead={showProTools ? () => void launchStealth(selectedBook) : undefined}
       onFavorite={selectedBook.source === 'local' ? undefined : () => void toggleFavorite(selectedBook)}
       onDownload={(selectedBook.source === 'local' || selectedBook.fileUrl) ? () => void downloadBook(selectedBook) : undefined}
       onDelete={selectedBook.source === 'local' || selectedBook.source === 'cloud' ? () => { const b = selectedBook; closeBookDetails(); void deleteBook(b) } : undefined}
@@ -2897,6 +3037,17 @@ function BookDetailsModal({
   const categoryName = translate(categories.find(c => c.id === book.categoryId)?.name || (book.source === 'local' ? curT.bookModal.privateDoc : curT.bookModal.generalCategory), lang)
   const progressPct = progress ? Math.round(progress * 100) : 0
   const sizeFormatted = book.fileSizeBytes ? `${(book.fileSizeBytes / (1024 * 1024)).toFixed(1)} MB` : undefined
+  const summary = (book.description || '').trim()
+  const sourceLabel = book.source === 'local'
+    ? (lang === 'vi' ? 'Tệp trên máy' : 'Local file')
+    : book.source === 'cloud'
+      ? 'NoCap Cloud'
+      : (book.source || (lang === 'vi' ? 'Không rõ' : 'Unknown'))
+  const languageLabel = book.language === 'vi'
+    ? (lang === 'vi' ? 'Tiếng Việt' : 'Vietnamese')
+    : book.language === 'en'
+      ? 'English'
+      : (book.language || (lang === 'vi' ? 'Không rõ' : 'Unknown'))
 
   return (
     <div className="modal-shade" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
@@ -2919,13 +3070,17 @@ function BookDetailsModal({
               {sizeFormatted && <span className="book-badge format">{sizeFormatted}</span>}
               {progressPct > 0 && <span className="book-badge progress">{curT.bookModal.readPercent(progressPct)}</span>}
             </div>
+            <div className="book-details-summary">
+              <h3>{lang === 'vi' ? 'Tóm tắt' : 'Summary'}</h3>
+              <p>{summary || (lang === 'vi' ? 'Cuốn sách này chưa có tóm tắt' : 'No summary is available for this book yet.')}</p>
+            </div>
             <div className="book-details-actions">
               <button className="primary" onClick={onRead}>
                 <BookOpen size={16} /> {progressPct > 0 ? curT.bookModal.continueReading : curT.bookModal.readBook}
               </button>
               {onStealthRead && (
                 <button className="secondary stealth-modal-btn" onClick={onStealthRead} title={lang === 'vi' ? 'Đọc ngụy trang giao diện Excel / VS Code công sở (Phím F2)' : 'Stealth Read disguised as Excel / VS Code (F2)'}>
-                  <Briefcase size={16} /> {lang === 'vi' ? 'Đọc ẩn · Pro (F2)' : 'Stealth · Pro (F2)'}
+                  <Briefcase size={16} /> {curT.bookCard.stealthRead}
                 </button>
               )}
               {onDownload && (
@@ -2951,9 +3106,28 @@ function BookDetailsModal({
             </div>
           </div>
         </div>
-        <div className="book-details-desc">
-          <h3>{lang === 'vi' ? 'Giới thiệu' : 'Overview'}</h3>
-          <p>{book.description || (lang === 'vi' ? 'Chưa có phần giới thiệu chi tiết cho tác phẩm này. Bạn có thể mở đọc sách ngay để khám phá toàn bộ nội dung.' : 'No detailed description available for this work yet. You can open and read the book right away.')}</p>
+        <div className="book-details-meta">
+          <h3>{lang === 'vi' ? 'Thông tin bản sách' : 'Book details'}</h3>
+          <dl className="book-details-meta-list">
+            <div>
+              <dt>{lang === 'vi' ? 'Nguồn' : 'Source'}</dt>
+              <dd>{sourceLabel}</dd>
+            </div>
+            <div>
+              <dt>{lang === 'vi' ? 'Ngôn ngữ' : 'Language'}</dt>
+              <dd>{languageLabel}</dd>
+            </div>
+            <div>
+              <dt>{lang === 'vi' ? 'Định dạng' : 'Format'}</dt>
+              <dd>{(book.format || 'EPUB').toUpperCase()}</dd>
+            </div>
+            {book.license && (
+              <div>
+                <dt>{lang === 'vi' ? 'Giấy phép' : 'License'}</dt>
+                <dd>{book.license}</dd>
+              </div>
+            )}
+          </dl>
         </div>
         {(allTags.length > 0 || allCollections.length > 0) && (
           <div className="book-details-tags-section">
@@ -3121,7 +3295,7 @@ export function AuthDialog({ lang, onClose, onSuccess }: { lang: Lang; onClose: 
     <div className="modal-shade" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) close() }}>
       <div className="dialog auth-dialog" role="dialog" aria-modal="true" aria-labelledby="auth-title">
         <button className="icon-button dialog-close" onClick={close} aria-label={copy.close}><X size={19} /></button>
-        <div className="auth-mark"><BookOpen size={25} /></div>
+        <div className="auth-mark"><img src="/brand/nocap-logo-512.png" width={43} height={43} alt="" /></div>
         <p className="eyebrow">{copy.accountEyebrow}</p>
         <h2 id="auth-title">{mfa ? (lang === 'vi' ? 'Xác minh hai bước' : 'Two-step verification') : mode === 'login' ? copy.loginTitle : mode === 'register' ? copy.registerTitle : copy.forgotTitle}</h2>
         {mfa ? <MfaLogin key={lang} lang={lang} busy={busy} message={message} onBack={() => { cancelAttempt(); setMessage('') }} onSubmit={code => { const action = pendingFactor.current; if (action) void authenticate(action, '', code) }} /> : <>

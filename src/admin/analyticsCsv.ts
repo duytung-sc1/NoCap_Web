@@ -32,6 +32,27 @@ export function analyticsCsv(data: AnalyticsReport) {
   for (const page of data.topPages) rows.push(['page', '', page.page, numeric(page.visitors), '', numeric(page.pageViews), numeric(page.activeMs) / 1000, '', ''])
   for (const event of data.events) if (featureTypes.has(event.type)) rows.push(['feature', '', event.type, '', '', '', '', numeric(event.count), 'events'])
   const acquisition = data.acquisition
+  if (data.accounts) {
+    rows.push(['account_summary', '', 'active_accounts', '', '', '', '', numeric(data.accounts.activeAccounts), 'accounts'])
+    rows.push(['account_summary', '', 'returning_accounts', '', '', '', '', numeric(data.accounts.returningAccounts), 'accounts active on at least two days'])
+    rows.push(['account_summary', '', 'core_accounts', '', '', '', '', numeric(data.accounts.coreAccounts), 'accounts'])
+    for (const feature of data.accounts.features) {
+      rows.push(['account_feature', '', feature.type, '', '', '', '', numeric(feature.accounts), 'distinct accounts'])
+      rows.push(['account_feature_returning', '', feature.type, '', '', '', '', numeric(feature.returningAccounts), 'returning accounts'])
+      rows.push(['account_feature_actions', '', feature.type, '', '', '', '', numeric(feature.count), 'recorded account actions'])
+    }
+  }
+  if (data.simulatedAccounts) {
+    const sample = data.simulatedAccounts
+    rows.push(['simulated_account_summary', '', 'active_accounts', '', '', '', '', numeric(sample.activeAccounts), 'fictional profiles'])
+    rows.push(['simulated_account_summary', '', 'returning_accounts', '', '', '', '', numeric(sample.returningAccounts), 'fictional profiles seen before the range'])
+    rows.push(['simulated_account_summary', '', 'core_accounts', '', '', '', '', numeric(sample.coreAccounts), 'fictional profiles'])
+    for (const feature of sample.features) {
+      rows.push(['simulated_account_feature', '', feature.type, '', '', '', '', numeric(feature.accounts), 'fictional profiles'])
+      rows.push(['simulated_account_feature_returning', '', feature.type, '', '', '', '', numeric(feature.returningAccounts), 'returning fictional profiles'])
+      rows.push(['simulated_account_feature_actions', '', feature.type, '', '', '', '', numeric(feature.count), 'simulated actions'])
+    }
+  }
   if (acquisition) {
     rows.push(['metadata', '', 'acquisition_started_at', '', '', '', '', acquisition.startedAt == null ? '' : new Date(acquisition.startedAt).toISOString(), 'ISO-8601'])
     rows.push(['metadata', '', 'sessions_with_context', '', '', '', '', numeric(acquisition.coveredSessions), 'sessions'])

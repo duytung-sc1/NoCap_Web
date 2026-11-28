@@ -31,6 +31,40 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('Web analytics administrator dashboard', () => {
+  it('displays distinct registered account activity independently of browser totals and exports aggregate account counts', async () => {
+    const accounts = { startedAt: report.generatedAt, activeAccounts: 4, returningAccounts: 2, coreAccounts: 3, features: [{ type: 'note_save', count: 9, accounts: 3, returningAccounts: 2 }] }
+    request.mockResolvedValueOnce({ ...report, accounts })
+    setup()
+    const panel = (await screen.findByRole('heading', { name: 'Registered account activity' })).closest('section')!
+    expect(within(panel).getByText('Active accounts').closest('article')?.textContent).toContain('4')
+    expect(within(panel).getByText('Returning accounts').closest('article')?.textContent).toContain('2')
+    expect(within(panel).getByText(/two different days/)).toBeTruthy()
+    expect(within(panel).queryByText('17')).toBeNull()
+    expect(analyticsCsv({ ...report, accounts })).toContain('"account_feature_returning","","note_save"')
+  })
+
+  it('shows one total per metric and feature, explains its source inline, and preserves CSV provenance', async () => {
+    const accounts = { startedAt: report.generatedAt, activeAccounts: 3, returningAccounts: 0, coreAccounts: 2, features: [{ type: 'note_save', count: 2, accounts: 2, returningAccounts: 0 }] }
+    const simulatedAccounts = { activeAccounts: 7, returningAccounts: 6, coreAccounts: 5, features: [{ type: 'note_save', count: 12, accounts: 5, returningAccounts: 4 }] }
+    request.mockResolvedValueOnce({ ...report, accounts, simulatedAccounts })
+    setup()
+    const panel = (await screen.findByRole('heading', { name: 'Registered account activity' })).closest('section')!
+    expect(within(panel).getAllByRole('article').map(card => card.querySelector('strong')?.textContent)).toEqual(['10', '6', '7'])
+    expect(within(panel).queryByText('Includes demo data')).toBeNull()
+    expect(within(panel).queryByText('Simulated')).toBeNull()
+    expect(within(panel).getByText(/Displayed totals include fictional demo profiles/)).toBeTruthy()
+    const notes = within(panel).getByRole('row', { name: /Notes saved/ })
+    expect(within(notes).getAllByRole('cell').map(cell => cell.textContent)).toEqual(['Notes saved', '14', '7', '4'])
+    const csv = analyticsCsv({ ...report, accounts, simulatedAccounts })
+    expect(csv).toContain('"simulated_account_feature_actions","","note_save"')
+    expect(csv).toContain('"account_feature_actions","","note_save","","","","","2","recorded account actions"')
+    request.mockResolvedValueOnce({ ...report, accounts, simulatedAccounts: { activeAccounts: 0, returningAccounts: 0, coreAccounts: 0, features: [] } })
+    fireEvent.change(screen.getByLabelText('Date range'), { target: { value: '1' } })
+    const todayPanel = (await screen.findByRole('heading', { name: 'Registered account activity' })).closest('section')!
+    expect(within(todayPanel).getAllByRole('article').map(card => card.querySelector('strong')?.textContent)).toEqual(['3', '0', '2'])
+    expect(within(todayPanel).queryByText(/Displayed totals include fictional demo profiles/)).toBeNull()
+    expect(request.mock.lastCall?.[1]).toBe('analytics?days=1')
+  })
   it.each([
     { lang: 'vi' as const, totalLabel: 'Tổng thời gian tương tác', averageLabel: 'Tương tác trung bình / phiên', cohortHint: 'Mới: lần đầu được ghi nhận trong kỳ. Quay lại: đã được ghi nhận trước kỳ và có hoạt động trong kỳ.' },
     { lang: 'en' as const, totalLabel: 'Total active time', averageLabel: 'Average active time / session', cohortHint: 'New: first recorded within this range. Returning: recorded before this range and active within it.' },
